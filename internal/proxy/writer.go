@@ -98,11 +98,13 @@ func (w *TerminalWriter) ClearBar() error {
 	if w.barRow == 0 {
 		return nil
 	}
-	frame := terminal.SaveCursor +
+	frame := terminal.BeginSyncUpdate +
+		terminal.SaveCursor +
 		terminal.CursorTo(w.barRow, 1) +
 		terminal.ClearLine +
 		terminal.ResetAttrs +
-		terminal.RestoreCursor
+		terminal.RestoreCursor +
+		terminal.EndSyncUpdate
 	return w.writeAll([]byte(frame))
 }
 
@@ -121,12 +123,14 @@ func (w *TerminalWriter) FlushBarFrame(line string) error {
 	if !w.lastBarAt.IsZero() && time.Since(w.lastBarAt) < time.Second/maxBarRedrawHz {
 		return nil // rate-limited; stay pending for the next boundary
 	}
-	frame := terminal.SaveCursor +
+	frame := terminal.BeginSyncUpdate +
+		terminal.SaveCursor +
 		terminal.CursorTo(w.barRow, 1) +
 		terminal.ClearLine +
 		line +
 		terminal.ResetAttrs +
-		terminal.RestoreCursor
+		terminal.RestoreCursor +
+		terminal.EndSyncUpdate
 	if err := w.writeAll([]byte(frame)); err != nil {
 		return err
 	}

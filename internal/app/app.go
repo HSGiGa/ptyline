@@ -178,6 +178,9 @@ func run(opts options) int {
 		},
 		Resize: func(cols, rows uint16) {
 			alt := filter.AltActive()
+			// Erase the bar from its previous row before moving it, otherwise a
+			// grown terminal leaves the old bar behind as a ghost second line.
+			_ = writer.ClearBar()
 			state.Resize(cols, rows, alt)
 			writer.SetBarRow(rows)
 			render = renderer.New(layout.New(int(cols)))
