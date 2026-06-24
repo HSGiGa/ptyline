@@ -1,5 +1,11 @@
 package terminal
 
+import (
+	"os"
+
+	"golang.org/x/term"
+)
+
 // Size is a terminal size in character cells.
 type Size struct {
 	Cols uint16
@@ -7,9 +13,26 @@ type Size struct {
 }
 
 // QuerySize returns the current size of the real terminal (the controlling tty).
-//
-// TODO scaffold (plan 03): implement via golang.org/x/term.GetSize on the tty fd
-// (TIOCGWINSZ). Returns a safe default until then.
+// It queries the given fd via golang.org/x/term (TIOCGWINSZ).
 func QuerySize() (Size, error) {
-	return Size{Cols: 80, Rows: 24}, nil
+	return QuerySizeFd(int(os.Stdout.Fd()))
+}
+
+// QuerySizeFd returns the size of the terminal on the given file descriptor.
+func QuerySizeFd(fd int) (Size, error) {
+	cols, rows, err := term.GetSize(fd)
+	if err != nil {
+		return Size{Cols: 80, Rows: 24}, err
+	}
+	return Size{Cols: clampUint16(cols), Rows: clampUint16(rows)}, nil
+}
+
+func clampUint16(n int) uint16 {
+	if n < 0 {
+		return 0
+	}
+	if n > int(^uint16(0)) {
+		return ^uint16(0)
+	}
+	return uint16(n)
 }

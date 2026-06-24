@@ -17,6 +17,7 @@ const (
 	ShowCursor    = CSI + "?25h"
 	ResetAttrs    = CSI + "0m"
 	ClearLine     = CSI + "2K"
+	ClearScreen   = CSI + "2J"
 
 	// ResetScrollRegion clears any scroll margins (full screen).
 	ResetScrollRegion = CSI + "r"

@@ -14,7 +14,7 @@ func Default() Config {
 			Mode:   "single-line",
 			// MVP default uses only initial modules — git is a post-MVP provider
 			// (spec §8.7). Center section is empty (no `||` ... `||`).
-			Format:    "{cwd} {hostname} || {time}",
+			Format:    "{hostname} {cwd} || {time}",
 			Separator: " | ",
 		},
 		Theme: ThemeConfig{

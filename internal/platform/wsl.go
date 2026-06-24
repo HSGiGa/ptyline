@@ -9,15 +9,18 @@ import (
 
 // isWSL reports whether the Linux host is running under WSL/WSL2. WSL is a
 // runtime branch of the Linux binary, not a separate build target (spec §4.1).
-//
-// Detection uses the kernel release string, which contains "microsoft" / "WSL"
-// under WSL. TODO scaffold (plan 01): also honor $WSL_DISTRO_NAME and probe
-// /proc/sys/kernel/osrelease robustly.
 func isWSL() bool {
-	if _, ok := os.LookupEnv("WSL_DISTRO_NAME"); ok {
+	return isWSLFrom(os.LookupEnv, os.ReadFile)
+}
+
+func isWSLFrom(
+	lookupEnv func(string) (string, bool),
+	readFile func(string) ([]byte, error),
+) bool {
+	if _, ok := lookupEnv("WSL_DISTRO_NAME"); ok {
 		return true
 	}
-	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	data, err := readFile("/proc/sys/kernel/osrelease")
 	if err != nil {
 		return false
 	}

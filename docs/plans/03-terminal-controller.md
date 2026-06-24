@@ -1,5 +1,5 @@
 # 03 — Terminal Controller
-Status: [ ] not started
+Status: [x] done
 Depends on: 00
 Spec refs: spec §8.1, §6, §15; docs/terminal-safety.md
 
@@ -27,7 +27,7 @@ from a signal handler.
 
 ## Acceptance
 - [ ] Entering raw mode and restoring leaves the terminal exactly as before.
-- [ ] Scroll region set to `1..childRows`; reset clears it.
+- [x] Scroll region set to `1..childRows`; reset clears it.
 - [ ] A forced panic still restores the terminal (via `defer`).
 
 ## Tests

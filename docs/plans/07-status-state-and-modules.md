@@ -1,5 +1,5 @@
 # 07 — Status State & Module Framework
-Status: [ ] not started
+Status: [x] done
 Depends on: 05, 06
 Spec refs: spec §8.5, §8.7; arch.md §3, §9; docs/state-model.md
 
@@ -26,8 +26,8 @@ Renderer reads cached snapshots only (spec §8.7). Only the loop mutates state.
 Expensive refreshes are time-bounded (spec §16).
 
 ## Acceptance
-- [ ] `ShellMeta` updates `StatusState.Shell` and the next redraw reflects it.
-- [ ] A slow module times out and is marked stale without stalling the bar.
+- [x] `ShellMeta` updates `StatusState.Shell` and the next redraw reflects it.
+- [x] A slow module times out and is marked stale without stalling the bar.
 
 ## Tests
 State-apply unit tests (OSC → ShellState). Scheduler test with a fake slow module

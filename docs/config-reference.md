@@ -12,6 +12,22 @@ $XDG_CONFIG_HOME/ptyline/config.toml      (preferred)
 Override with `ptyline --config <path>`. A missing file is not an error: the
 built-in `config.Default()` is used (spec §13).
 
+## Project-local `.ptyline`
+
+After a shell reports a `cwd` change, ptyline searches that directory and its
+parents for the nearest `.ptyline` TOML file. Its validated `bar.format` is used
+for the active directory tree; leaving the tree restores the base bar format.
+
+Use the normal `config_version = 1` header. At runtime this file changes only bar
+presentation; it must not be used to choose child commands or execute commands.
+
+```toml
+config_version = 1
+
+[bar]
+format = "{hostname} {cwd} || {time}"
+```
+
 ## Format & versioning
 
 TOML, not Markdown (spec §13). `config_version` is **required** and currently must
@@ -31,7 +47,7 @@ shell = "auto"            # auto uses $SHELL or platform default; a command/path
 refresh_interval_ms = 1000
 
 [bar]
-format = "{cwd} {hostname} || {time}"   # left = before "||", right = after; no centre
+format = "{hostname} {cwd} || {time}"   # left = before "||", right = after; no centre
 separator = " | "
 
 [module.time]

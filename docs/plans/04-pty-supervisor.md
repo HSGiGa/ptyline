@@ -1,5 +1,5 @@
 # 04 — PTY Supervisor
-Status: [ ] not started
+Status: [x] done
 Depends on: 00
 Spec refs: spec §8.2, §6, §12; docs/terminal-safety.md
 
@@ -33,7 +33,7 @@ code equals the child's.
 ## Acceptance
 - [ ] `ptyline fish` starts an interactive fish whose `$LINES` is `rows-1`.
 - [ ] Resizing the terminal resizes the child to `rows-1`.
-- [ ] Exit code of the child propagates out of ptyline.
+- [x] Exit code of the child propagates out of ptyline.
 
 ## Tests
 Spawn `/bin/sh -c 'exit 7'` and assert `Wait()` returns 7. Assert `childSize`

@@ -1,6 +1,6 @@
 module github.com/hsgiga/ptyline
 
-go 1.23
+go 1.25.0
 
 toolchain go1.26.1
 
@@ -13,3 +13,15 @@ toolchain go1.26.1
 //	github.com/mattn/go-runewidth// display-width measurement (plan 09)
 //	github.com/BurntSushi/toml   // config parsing (plan 02)
 //	github.com/muesli/termenv    // capability detection / color (plan 10)
+
+require (
+	github.com/BurntSushi/toml v1.4.0
+	github.com/creack/pty v1.1.24
+	github.com/mattn/go-runewidth v0.0.24
+	golang.org/x/term v0.31.0
+)
+
+require (
+	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+)

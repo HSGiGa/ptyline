@@ -66,8 +66,9 @@ func NewBus(buffer int) *Bus {
 	return &Bus{ch: make(chan AppEvent, buffer)}
 }
 
-// Send enqueues an event. TODO scaffold: define backpressure / drop policy
-// for high-rate PtyOutput (docs/event-bus.md).
+// Send enqueues an event, blocking when the buffer is full. The blocking send is
+// the backpressure policy: a slow loop throttles its producers (notably high-rate
+// PtyOutput) instead of dropping or reordering bytes (docs/event-bus.md).
 func (b *Bus) Send(e AppEvent) { b.ch <- e }
 
 // Events exposes the receive side for the loop.

@@ -1,5 +1,5 @@
 # 02 — Config Loader
-Status: [ ] not started
+Status: [x] done
 Depends on: 00
 Spec refs: spec §13, §13.1; arch.md §17
 
@@ -29,10 +29,10 @@ Unknown top-level/module keys, invalid enums, and invalid width expressions are
 Custom-command modules must carry a timeout (spec §16, §17).
 
 ## Acceptance
-- [ ] Loads the spec §13 example; missing `config_version` and unknown keys are
+- [x] Loads the spec §13 example; missing `config_version` and unknown keys are
   startup errors that name the key.
-- [ ] `bar.format` + `[[bar.block]]` together is rejected.
-- [ ] `config_version` migration round-trips; enum/width validation rejects bad input.
+- [x] `bar.format` + `[[bar.block]]` together is rejected.
+- [x] `config_version` migration round-trips; enum/width validation rejects bad input.
 
 ## Tests
 Golden-file tests for the spec §13 examples; migration from a v0 fixture; invalid

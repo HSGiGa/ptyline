@@ -1,5 +1,5 @@
 # 09 — Layout & Renderer
-Status: [ ] not started
+Status: [x] done
 Depends on: 07, 08
 Spec refs: spec §8.6, §8.8; arch.md §7, §8, §15; docs/layout-and-rendering.md, docs/terminal-safety.md
 
@@ -31,9 +31,9 @@ Measure display width, not bytes/runes (spec §8.6). No newline after the bar. S
 redraw when the line is byte-identical (spec §16). Renderer reads state only.
 
 ## Acceptance
-- [ ] Left/center/right blocks render in the expected positions (spec §20.13).
+- [x] Left/center/right blocks render in the expected positions (spec §20.13).
 - [ ] Long output scrolls only above the bar; bar stays on the last row (§20.3–§20.5).
-- [ ] Narrow terminals drop low-priority blocks instead of overflowing.
+- [x] Narrow terminals drop low-priority blocks instead of overflowing.
 
 ## Tests
 Width/truncation table tests; layout packing (fill/percent/overflow) tests;

@@ -1,5 +1,5 @@
 # 06 — ANSI / OSC Filter
-Status: [ ] not started
+Status: [x] done
 Depends on: 05
 Spec refs: spec §8.4, §9, §11; arch.md §11.1; docs/ansi-osc-filter.md, docs/terminal-safety.md
 
@@ -34,9 +34,9 @@ never clamp. Handle sequences split across reads. Not a full emulator.
 ## Acceptance
 - [ ] `vim`, `less`, `fzf`, `htop` (alt screen) run without corrupting the terminal
   and get full height (spec §20.7).
-- [ ] Normal-screen child `CSI 1;30 r` on a 30-row terminal becomes `CSI 1;29 r`;
+- [x] Normal-screen child `CSI 1;30 r` on a 30-row terminal becomes `CSI 1;29 r`;
   the same sequence in the alt screen passes through unchanged.
-- [ ] Whitelisted OSC 777 messages update state and never appear on screen;
+- [x] Whitelisted OSC 777 messages update state and never appear on screen;
   non-whitelisted/oversized ones are dropped with a diagnostic.
 
 ## Tests

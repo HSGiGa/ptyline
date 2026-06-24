@@ -1,5 +1,5 @@
 # 08 — MVP Modules
-Status: [ ] not started
+Status: [x] done
 Depends on: 07
 Spec refs: spec §8.7, §18; docs/state-model.md
 

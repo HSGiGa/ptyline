@@ -1,8 +1,10 @@
 package terminal
 
 import (
+	"errors"
 	"io"
 	"os"
+	"syscall"
 )
 
 // Controller manages the real terminal lifecycle. The cardinal rule: whatever it
@@ -44,11 +46,47 @@ func (c *Controller) Restore() error {
 	return err
 }
 
-// write emits a control sequence to the real terminal.
-// TODO scaffold (plan 03): buffer and handle short writes / EINTR.
+// write emits a control sequence to the real terminal, draining short writes and
+// retrying on EINTR. Errors are intentionally swallowed: control output is
+// best-effort (notably during signal-driven cleanup), and a broken pipe means the
+// terminal is gone anyway (spec §15).
 func (c *Controller) write(s string) {
-	if c.out == nil {
+	if c.out == nil || s == "" {
 		return
 	}
-	_, _ = io.WriteString(c.out, s)
+	b := []byte(s)
+	for len(b) > 0 {
+		n, err := c.out.Write(b)
+		b = b[n:]
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		return
+	}
 }
+
+// Write satisfies io.Writer so the Controller can be the single sink shared with
+// the serialized writer; it drains short writes and retries on EINTR.
+func (c *Controller) Write(p []byte) (int, error) {
+	if c.out == nil {
+		return len(p), nil
+	}
+	total := 0
+	for total < len(p) {
+		n, err := c.out.Write(p[total:])
+		total += n
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		return total, err
+	}
+	return total, nil
+}
+
+var _ io.Writer = (*Controller)(nil)

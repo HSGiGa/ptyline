@@ -1,5 +1,5 @@
 # 01 — Runtime Environment & Capabilities
-Status: [ ] not started
+Status: [x] done
 Depends on: 00
 Spec refs: spec §4, §4.1, §4.2; arch.md §14
 
@@ -26,9 +26,9 @@ instead of OS names.
 Detection happens once; no scattered `if wsl` checks elsewhere (spec §4.2).
 
 ## Acceptance
-- [ ] On Linux, `Kind` is `native_linux` or `wsl2` correctly.
-- [ ] `unix_pty` true on linux/darwin; `windows_conpty` true on windows.
-- [ ] No package outside `platform`/`runtimeenv` references an OS name.
+- [x] On Linux, `Kind` is `native_linux` or `wsl2` correctly.
+- [x] `unix_pty` true on linux/darwin; `windows_conpty` true on windows.
+- [x] No package outside `platform`/`runtimeenv` references an OS name.
 
 ## Tests
 Table tests for `classify` and `capabilitiesFor`; `isWSL` with a temp

@@ -44,11 +44,19 @@ the core.
 ## Lifecycle (spec §7)
 
 ```text
-read config → detect runtime → save terminal state → raw mode → query size
+read base config → detect runtime → save terminal state → raw mode → query size
 → set scroll region 1..rows-reserved → spawn child PTY (cols × rows-reserved)
 → run event loop (proxy IO, render bar, handle resize/signals/ticks)
 → child exits → restore terminal state → exit with child code
 ```
+
+## Project-local bar configuration
+
+On each shell-integration `cwd` event, ptyline searches the current directory and
+its parents for the nearest `.ptyline` TOML file. When found, its validated
+`bar.format` replaces the base bar format; when no file is found, ptyline returns
+to the base configuration. This is presentation-only at runtime: a project file
+does not change the child command or execute a custom command.
 
 The restore step is guaranteed by `defer` and signal handling: if anything after
 "save terminal state" fails, the terminal is put back first (spec §15).

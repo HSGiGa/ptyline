@@ -1,19 +1,30 @@
 package runtimeenv
 
-import "github.com/hsgiga/ptyline/internal/platform"
+import (
+	"os"
+
+	"github.com/hsgiga/ptyline/internal/platform"
+)
 
 // Detect resolves the runtime Profile exactly once at startup. It delegates the
 // OS-specific classification to the build-tagged platform package, then derives
 // capability flags from the kind.
-//
-// TODO scaffold (plan 01): flesh out capability probing (terminal feature
-// detection, procfs/sysfs availability, WSL interop).
 func Detect() Profile {
 	kind := classify(platform.Detect())
+	capabilities := capabilitiesFor(kind)
+	if kind == NativeLinux || kind == WSL2 {
+		capabilities.LinuxProcfs = pathExists("/proc")
+		capabilities.LinuxSysfs = pathExists("/sys")
+	}
 	return Profile{
 		Kind:         kind,
-		Capabilities: capabilitiesFor(kind),
+		Capabilities: capabilities,
 	}
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // classify maps the platform package's raw verdict to a normalized Kind.

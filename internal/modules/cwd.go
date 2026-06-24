@@ -2,6 +2,8 @@ package modules
 
 import (
 	"context"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/status"
@@ -19,15 +21,29 @@ func NewCWD() *CWD { return &CWD{} }
 func (m *CWD) ID() status.ModuleID     { return "cwd" }
 func (m *CWD) Interval() time.Duration { return 0 }
 
-// Refresh is a no-op placeholder; the value is driven by ShellMeta events. With
-// mode = "shell-integration" it shows its fallback (empty) until an adapter
-// supplies metadata — it must not infer cwd from arbitrary PTY output (spec §13).
-// TODO scaffold (plan 08): read the latest ShellState.CWD and optionally
-// abbreviate $HOME to "~".
+// Refresh is intentionally a no-op: cwd is event-driven, not interval-driven.
+// The real value is set by the loop from ShellState.CWD (updated by the OSC
+// filter) and tilde-abbreviated via AbbreviateHome; it must never be inferred
+// from arbitrary PTY output (spec §13). Interval() == 0 keeps the scheduler from
+// ticking this module, so the renderer only ever sees the shell-supplied value.
 func (m *CWD) Refresh(_ context.Context) status.ModuleSnapshot {
 	return status.ModuleSnapshot{
 		ID:        m.ID(),
 		Value:     status.Text(""),
 		UpdatedAt: time.Now(),
 	}
+}
+
+// AbbreviateHome renders a path below home with a leading ~.
+func AbbreviateHome(path, home string) string {
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+"/") {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
 }

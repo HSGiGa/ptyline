@@ -30,10 +30,9 @@ var oscAllowedKeys = map[string]bool{
 
 // parseOSC777 splits and validates a "key=value" payload. It rejects unknown
 // keys, oversized payloads, and any value containing control characters (spec §9).
-//
-// TODO scaffold (plan 06): call this from the filter's OSC branch and forward the
-// accepted pair to AnsiFilter.onMeta. Agent events (agent.started/update/done,
-// spec §24.5) reuse the same channel with structured keys.
+// It is called from the filter's OSC branch (handleOSC); future agent events
+// (agent.started/update/done, spec §24.5) reuse the same channel with structured
+// keys.
 func parseOSC777(payload string) (key, value string, ok bool) {
 	if len(payload) > maxOSCPayload {
 		return "", "", false

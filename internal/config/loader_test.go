@@ -1,0 +1,82 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestLoad(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "config.toml")
+	content := `config_version = 1
+shell = "bash"
+[bar]
+format = "{time}"
+[module.time]
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Shell != "bash" || cfg.Bar.Format != "{time}" || cfg.Bar.Height != 1 {
+		t.Fatalf("Load() = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsInvalidConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		key  string
+	}{
+		{name: "missing version", body: "shell = \"bash\"", key: "config_version"},
+		{name: "unknown key", body: "config_version = 1\nunknown = true", key: "unknown"},
+		{name: "format and block", body: "config_version = 1\n[bar]\nformat = \"{time}\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"auto\"\ntruncate = \"right\"", key: "bar.format"},
+		{name: "bad width", body: "config_version = 1\n[bar]\nformat = \"\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"101%\"\ntruncate = \"right\"", key: "width"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(test.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), test.key) {
+				t.Fatalf("Load() error = %v, want key %q", err, test.key)
+			}
+		})
+	}
+}
+
+func TestMigrateToLatest(t *testing.T) {
+	got, err := migrateToLatest([]byte("config_version = 0\nshell = \"bash\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "config_version = 1\nshell = \"bash\"\n" {
+		t.Fatalf("migrateToLatest() = %q", got)
+	}
+}
+
+func TestFindProjectConfig(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	child := filepath.Join(project, "nested")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(project, ".ptyline")
+	if err := os.WriteFile(configPath, []byte("config_version = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := FindProjectConfig(child)
+	if !ok || got != configPath {
+		t.Fatalf("FindProjectConfig() = (%q, %t), want (%q, true)", got, ok, configPath)
+	}
+}

@@ -1,5 +1,5 @@
 # 05 — Event Bus & Loop
-Status: [ ] not started
+Status: [x] done
 Depends on: 03, 04
 Spec refs: spec §8.3, §7; arch.md §4; docs/event-bus.md
 

@@ -5,6 +5,7 @@
 package status
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/diagnostics"
@@ -20,6 +21,42 @@ type StatusState struct {
 	Modules     ModuleValues
 	Agents      []AgentState // reserved; post-MVP (spec §24.5)
 	Diagnostics diagnostics.Record
+}
+
+// NewState creates an empty, writable status state.
+func NewState() StatusState {
+	return StatusState{Modules: make(ModuleValues)}
+}
+
+// ApplyShellMeta applies a validated OSC 777 metadata value.
+func (s *StatusState) ApplyShellMeta(key, value string) {
+	switch key {
+	case "cwd":
+		s.Shell.CWD = value
+	case "command":
+		s.Shell.LastCommand = value
+	case "exit_code":
+		if code, err := strconv.Atoi(value); err == nil {
+			s.Shell.LastExitCode = code
+		}
+	case "duration_ms":
+		if duration, err := strconv.Atoi(value); err == nil {
+			s.Shell.LastDurationMS = duration
+		}
+	}
+}
+
+// UpdateModule stores a module's most recent cached snapshot.
+func (s *StatusState) UpdateModule(snapshot ModuleSnapshot) {
+	if s.Modules == nil {
+		s.Modules = make(ModuleValues)
+	}
+	s.Modules[snapshot.ID] = snapshot
+}
+
+// Resize records terminal geometry and current screen mode.
+func (s *StatusState) Resize(cols, rows uint16, alternateScreen bool) {
+	s.Terminal = TerminalState{Cols: cols, Rows: rows, AlternateScreen: alternateScreen}
 }
 
 // TerminalState mirrors the current real-terminal geometry and screen mode.
