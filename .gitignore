@@ -1,0 +1,23 @@
+# Build output
+/dist/
+/.tools/
+/.cache/
+/ptyline
+/ptyline.exe
+*.test
+*.out
+
+# Coverage
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

@@ -1,0 +1,77 @@
+// Package event defines the internal event bus. Every input source (stdin, PTY
+// output, resize, timer, shell-meta OSC, child exit, signals, future agent
+// updates) is normalized into an AppEvent and consumed by the single event loop
+// in package proxy.
+//
+// Designing around a typed event stream from day one means new sources can be
+// added without rewriting the application core. See docs/event-bus.md, arch.md §4.
+package event
+
+// AppEvent is the closed set of events the loop reacts to. It is a sealed
+// interface: implementers live in this package so the loop can exhaustively
+// type-switch over them.
+type AppEvent interface {
+	isAppEvent()
+}
+
+// StdinInput carries bytes read from the real terminal, destined for the child.
+type StdinInput struct{ Data []byte }
+
+// PtyOutput carries bytes read from the child PTY, destined (after filtering)
+// for the real terminal.
+type PtyOutput struct{ Data []byte }
+
+// Resize reports a new real-terminal size.
+type Resize struct{ Cols, Rows uint16 }
+
+// Tick is the periodic status-refresh signal.
+type Tick struct{}
+
+// ShellMeta carries a parsed shell-integration message (cwd, exit code, …).
+type ShellMeta struct {
+	Key   string
+	Value string
+}
+
+// ModuleUpdated reports that a module produced a new snapshot. The payload is
+// kept as any to avoid a dependency cycle with package status; the loop asserts
+// the concrete type.
+type ModuleUpdated struct {
+	ID       string
+	Snapshot any
+}
+
+// ChildExited reports the child process exit code.
+type ChildExited struct{ Code int }
+
+// TerminationSignal reports SIGINT/SIGTERM/SIGHUP.
+type TerminationSignal struct{ Signal string }
+
+func (StdinInput) isAppEvent()        {}
+func (PtyOutput) isAppEvent()         {}
+func (Resize) isAppEvent()            {}
+func (Tick) isAppEvent()              {}
+func (ShellMeta) isAppEvent()         {}
+func (ModuleUpdated) isAppEvent()     {}
+func (ChildExited) isAppEvent()       {}
+func (TerminationSignal) isAppEvent() {}
+
+// Bus is the fan-in channel of events. Producers send; the loop receives.
+type Bus struct {
+	ch chan AppEvent
+}
+
+// NewBus creates a buffered event bus.
+func NewBus(buffer int) *Bus {
+	return &Bus{ch: make(chan AppEvent, buffer)}
+}
+
+// Send enqueues an event. TODO scaffold: define backpressure / drop policy
+// for high-rate PtyOutput (docs/event-bus.md).
+func (b *Bus) Send(e AppEvent) { b.ch <- e }
+
+// Events exposes the receive side for the loop.
+func (b *Bus) Events() <-chan AppEvent { return b.ch }
+
+// Close shuts down the bus.
+func (b *Bus) Close() { close(b.ch) }
