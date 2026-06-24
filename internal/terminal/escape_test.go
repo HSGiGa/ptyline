@@ -25,8 +25,10 @@ func TestApplyScrollRegionExcludesReservedRow(t *testing.T) {
 	var buf bytes.Buffer
 	c := New(nil, &buf)
 	c.ApplyScrollRegion(Size{Cols: 80, Rows: 30}, reserved.Default())
-	if got := buf.String(); got != "\x1b[1;29r" {
-		t.Fatalf("ApplyScrollRegion wrote %q, want region 1..29", got)
+	// The region is 1..29, wrapped in cursor save/restore so DECSTBM does not
+	// home the cursor.
+	if got, want := buf.String(), SaveCursor+"\x1b[1;29r"+RestoreCursor; got != want {
+		t.Fatalf("ApplyScrollRegion wrote %q, want %q", got, want)
 	}
 }
 
