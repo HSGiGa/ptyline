@@ -24,6 +24,9 @@ type PtyOutput struct{ Data []byte }
 // Resize reports a new real-terminal size.
 type Resize struct{ Cols, Rows uint16 }
 
+// ResizeCommit reports the final real-terminal size after resize has settled.
+type ResizeCommit struct{ Cols, Rows uint16 }
+
 // Tick is the periodic status-refresh signal.
 type Tick struct{}
 
@@ -50,6 +53,7 @@ type TerminationSignal struct{ Signal string }
 func (StdinInput) isAppEvent()        {}
 func (PtyOutput) isAppEvent()         {}
 func (Resize) isAppEvent()            {}
+func (ResizeCommit) isAppEvent()      {}
 func (Tick) isAppEvent()              {}
 func (ShellMeta) isAppEvent()         {}
 func (ModuleUpdated) isAppEvent()     {}

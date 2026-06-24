@@ -121,7 +121,11 @@ func run(opts options) int {
 	})
 	render := renderer.New(layout.New(int(size.Cols)))
 	blocks := layout.ParseFormat(cfg.Bar.Format)
+	var resizePending bool
 	redraw := func() {
+		if resizePending {
+			return
+		}
 		writer.RequestRedraw()
 		_ = writer.FlushBarFrame(render.Render(state, blocks).Line)
 	}
@@ -146,6 +150,55 @@ func run(opts options) int {
 		ctrl.ApplyScrollRegion(terminal.Size{Cols: state.Terminal.Cols, Rows: state.Terminal.Rows}, area)
 		redraw()
 	}
+	resizeRequests := make(chan terminal.Size, 1)
+	go func() {
+		var (
+			timer   *time.Timer
+			timerC  <-chan time.Time
+			pending terminal.Size
+		)
+		stopTimer := func() {
+			if timer == nil {
+				return
+			}
+			if !timer.Stop() {
+				select {
+				case <-timerC:
+				default:
+				}
+			}
+			timer = nil
+			timerC = nil
+		}
+		resetTimer := func() {
+			if timer == nil {
+				timer = time.NewTimer(resizeCommitDelay)
+				timerC = timer.C
+				return
+			}
+			if !timer.Stop() {
+				select {
+				case <-timerC:
+				default:
+				}
+			}
+			timer.Reset(resizeCommitDelay)
+			timerC = timer.C
+		}
+		defer stopTimer()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case size := <-resizeRequests:
+				pending = size
+				resetTimer()
+			case <-timerC:
+				bus.Send(event.ResizeCommit{Cols: pending.Cols, Rows: pending.Rows})
+				stopTimer()
+			}
+		}
+	}()
 	loop.SetHandlers(proxy.Handlers{
 		WriteInput: func(data []byte) error { _, err := sup.PTY().Write(data); return err },
 		WriteOutput: func(data []byte) error {
@@ -161,6 +214,44 @@ func run(opts options) int {
 			}
 			return nil
 		},
+		ResizeRequest: func(cols, rows uint16) {
+			if !resizePending {
+				// Hide the cursor for the duration of the resize burst so it does
+				// not visibly teleport while the terminal reflows and the child
+				// repaints (tmux does the same around its redraws).
+				_, _ = ctrl.Write([]byte(terminal.HideCursor))
+			}
+			resizePending = true
+			select {
+			case resizeRequests <- terminal.Size{Cols: cols, Rows: rows}:
+			default:
+				select {
+				case <-resizeRequests:
+				default:
+				}
+				resizeRequests <- terminal.Size{Cols: cols, Rows: rows}
+			}
+		},
+		ResizeCommit: func(cols, rows uint16) {
+			alt := filter.AltActive()
+			resizePending = false
+			// Clearing only on a committed grow avoids ghost bars during resize.
+			if !alt && rows > state.Terminal.Rows {
+				_ = writer.ClearBar()
+			}
+			state.Resize(cols, rows, alt)
+			writer.SetBarRow(rows)
+			render = renderer.New(layout.New(int(cols)))
+			if alt {
+				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
+				ctrl.ResetScrollRegion()
+				_, _ = ctrl.Write([]byte(terminal.ShowCursor))
+				return
+			}
+			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
+			ctrl.ApplyScrollRegion(terminal.Size{Cols: cols, Rows: rows}, area)
+			_, _ = ctrl.Write([]byte(terminal.ShowCursor))
+		},
 		ShellMeta: func(key, value string) {
 			state.ApplyShellMeta(key, value)
 			if key == "cwd" {
@@ -175,23 +266,6 @@ func run(opts options) int {
 			if snap, ok := snapshot.(status.ModuleSnapshot); ok {
 				state.UpdateModule(snap)
 			}
-		},
-		Resize: func(cols, rows uint16) {
-			alt := filter.AltActive()
-			// Erase the bar from its previous row before moving it, otherwise a
-			// grown terminal leaves the old bar behind as a ghost second line.
-			_ = writer.ClearBar()
-			state.Resize(cols, rows, alt)
-			writer.SetBarRow(rows)
-			render = renderer.New(layout.New(int(cols)))
-			if alt {
-				// Alt screen: the child owns every row; no bar region (spec §12).
-				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
-				ctrl.ResetScrollRegion()
-				return
-			}
-			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
-			ctrl.ApplyScrollRegion(terminal.Size{Cols: cols, Rows: rows}, area)
 		},
 		Redraw:    redraw,
 		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
@@ -235,25 +309,17 @@ func startReader(bus *event.Bus, reader io.Reader, makeEvent func([]byte) event.
 
 // resizeDebounce coalesces a burst of SIGWINCH events (e.g. while dragging the
 // window edge) into a single re-query + Resize (spec §12, plan 05).
-const resizeDebounce = 40 * time.Millisecond
+const resizeCommitDelay = 120 * time.Millisecond
 
 func startSignals(bus *event.Bus) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGWINCH, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
-		var resizeTimer *time.Timer
-		sendResize := func() {
-			if size, err := terminal.QuerySize(); err == nil {
-				bus.Send(event.Resize{Cols: size.Cols, Rows: size.Rows})
-			}
-		}
 		for sig := range signals {
 			switch sig {
 			case syscall.SIGWINCH:
-				if resizeTimer == nil {
-					resizeTimer = time.AfterFunc(resizeDebounce, sendResize)
-				} else {
-					resizeTimer.Reset(resizeDebounce)
+				if size, err := terminal.QuerySize(); err == nil {
+					bus.Send(event.Resize{Cols: size.Cols, Rows: size.Rows})
 				}
 			case syscall.SIGHUP:
 				bus.Send(event.TerminationSignal{Signal: "SIGHUP"})

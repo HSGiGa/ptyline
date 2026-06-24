@@ -9,7 +9,8 @@ import (
 type Handlers struct {
 	WriteInput    func([]byte) error
 	WriteOutput   func([]byte) error
-	Resize        func(cols, rows uint16)
+	ResizeRequest func(cols, rows uint16)
+	ResizeCommit  func(cols, rows uint16)
 	ShellMeta     func(key, value string)
 	ModuleUpdated func(id string, snapshot any)
 	Tick          func()
@@ -70,8 +71,13 @@ func (l *Loop) Run() (exitCode int, err error) {
 			}
 		case event.Resize:
 			l.filter.SetRows(e.Rows)
-			if l.h.Resize != nil {
-				l.h.Resize(e.Cols, e.Rows)
+			if l.h.ResizeRequest != nil {
+				l.h.ResizeRequest(e.Cols, e.Rows)
+			}
+		case event.ResizeCommit:
+			l.filter.SetRows(e.Rows)
+			if l.h.ResizeCommit != nil {
+				l.h.ResizeCommit(e.Cols, e.Rows)
 			}
 			if l.h.Redraw != nil {
 				l.h.Redraw()
