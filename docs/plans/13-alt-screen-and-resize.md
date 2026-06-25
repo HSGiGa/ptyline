@@ -1,5 +1,5 @@
 # 13 — Alternate Screen & Resize Hardening
-Status: [ ] not started
+Status: [x] done
 Depends on: 06, 09
 Spec refs: spec §11, §12, §10, §8.3; docs/terminal-safety.md
 
@@ -30,14 +30,16 @@ suppressed while alt active; scroll region/child size reapplied on every transit
 and resize; reserved row never written by child output in the normal screen.
 
 ## Acceptance
-- [ ] Entering vim/htop hides the bar and gives the child full height; exiting
+- [x] Entering vim/htop hides the bar and gives the child full height; exiting
   restores the bar, scroll region, and reserved row (spec §20.6, §20.7).
-- [ ] Resize keeps correct PTY size + margins for the current mode (spec §20.5).
-- [ ] Very small terminals don't crash or corrupt (spec §15).
+- [x] Resize keeps correct PTY size + margins for the current mode (spec §20.5).
+- [x] Very small terminals don't crash or corrupt (spec §15).
 
 ## Tests
-Replay tests (plan 14) for alt-screen enter/exit and resize in both modes; assert
-child receives `rows` then `rows-1`, bar absent then restored (spec §20.1 matrix).
+Unit coverage verifies alt-screen detection for `?1049`/`?1047`/`?47`, bar-frame
+suppression while alt is active, forced redraw after leaving alt, mode-aware child
+geometry, and tiny-terminal bar geometry. Full recorded replay fixtures for
+vim/less/htop remain in plan 14.
 
 ## Out of scope
 Optional *visible* bar in alt screen, multi-line/panel mode (post-MVP, spec §19).

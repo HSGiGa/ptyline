@@ -73,6 +73,7 @@ func (w *TerminalWriter) SetAltActive(active bool) {
 		w.pendingFrame = false
 		// Force a redraw on return to the normal screen.
 		w.lastBars = nil
+		w.lastBarAt = time.Time{}
 	}
 }
 
@@ -113,8 +114,9 @@ func (w *TerminalWriter) ClearBar() error {
 // the alternate screen is inactive, the rate limit allows it, and the content
 // changed. The frame uses absolute positioning and carries NO trailing newline,
 // which would scroll the bar into history (spec §8.6, docs/terminal-safety.md).
-// Lines beyond barCount are ignored, and missing lines simply leave that row
-// untouched, so a short terminal never paints past its last row.
+// When the terminal is too short to show every row (barCount < len(lines)), the
+// BOTTOM rows are kept — the content nearest the prompt — and the top decorative
+// rows are dropped, so a short terminal never paints past its last row.
 func (w *TerminalWriter) FlushBarFrame(lines []string) error {
 	if w.altActive || !w.pendingFrame || w.barTop == 0 || w.barCount == 0 {
 		return nil
@@ -126,9 +128,14 @@ func (w *TerminalWriter) FlushBarFrame(lines []string) error {
 	if !w.lastBarAt.IsZero() && time.Since(w.lastBarAt) < time.Second/maxBarRedrawHz {
 		return nil // rate-limited; stay pending for the next boundary
 	}
+	// Keep the last barCount lines; drop the leading (top) ones when space is tight.
+	start := len(lines) - w.barCount
+	if start < 0 {
+		start = 0
+	}
 	frame := terminal.BeginSyncUpdate + terminal.SaveCursor
-	for i := 0; i < w.barCount && i < len(lines); i++ {
-		frame += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine + lines[i] + terminal.ResetAttrs
+	for i := 0; i < w.barCount && start+i < len(lines); i++ {
+		frame += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine + lines[start+i] + terminal.ResetAttrs
 	}
 	frame += terminal.RestoreCursor + terminal.EndSyncUpdate
 	if err := w.writeAll([]byte(frame)); err != nil {

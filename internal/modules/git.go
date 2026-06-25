@@ -16,6 +16,7 @@ import (
 type Git struct {
 	interval time.Duration
 	timeout  time.Duration
+	gitBin   string
 	// icon is the (already preset-resolved) glyph shown in front of the branch:
 	// the Nerd-Font branch glyph when a Nerd Font is configured, otherwise a
 	// plain-font fallback. Empty means no icon.
@@ -29,7 +30,7 @@ type Git struct {
 // NewGit creates a git module with refresh interval, per-refresh timeout, the
 // resolved branch icon (may be empty), and a cwd provider (may be nil).
 func NewGit(interval, timeout time.Duration, icon string, cwd func() string) *Git {
-	return &Git{interval: interval, timeout: timeout, icon: icon, cwd: cwd}
+	return &Git{interval: interval, timeout: timeout, gitBin: "git", icon: icon, cwd: cwd}
 }
 
 func (m *Git) ID() status.ModuleID     { return "git" }
@@ -40,13 +41,25 @@ func (m *Git) Interval() time.Duration { return m.interval }
 // empty value rather than an error, so the bar simply shows no branch. On timeout
 // it returns a stale snapshot rather than blocking the bar.
 func (m *Git) Refresh(ctx context.Context) status.ModuleSnapshot {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if m.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, m.timeout)
+		defer cancel()
+	}
 	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
 	if m.cwd != nil {
 		if dir := m.cwd(); dir != "" {
 			args = append([]string{"-C", dir}, args...)
 		}
 	}
-	out, err := exec.CommandContext(ctx, "git", args...).Output()
+	gitBin := m.gitBin
+	if gitBin == "" {
+		gitBin = "git"
+	}
+	out, err := exec.CommandContext(ctx, gitBin, args...).Output()
 	if err != nil {
 		return status.ModuleSnapshot{
 			ID:        m.ID(),

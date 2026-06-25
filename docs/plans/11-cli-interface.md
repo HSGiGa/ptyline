@@ -1,5 +1,5 @@
 # 11 — CLI Interface
-Status: [ ] not started
+Status: [x] done
 Depends on: 05
 Spec refs: spec §14
 
@@ -22,12 +22,13 @@ The full CLI surface: run a shell/command, `--config`, `--version`, `--help`,
 Everything after `--` (or the first non-flag) is the child argv verbatim.
 
 ## Acceptance
-- [ ] `ptyline`, `ptyline fish`, `ptyline -- bash`, `ptyline init fish`,
+- [x] `ptyline`, `ptyline fish`, `ptyline -- bash`, `ptyline init fish`,
   `ptyline --version`, `ptyline --help` all behave per spec §14.
-- [ ] Unknown flags / missing args produce a clear error and exit code 2.
+- [x] Unknown flags / missing args produce a clear error and exit code 2.
 
 ## Tests
-Extend `internal/app/cli_test.go` with `--config=path`, `--help`, error cases.
+Extended `internal/app/cli_test.go` with `--config=path`, `--help`, and error
+cases.
 
 ## Out of scope
 `doctor` / `debug-state` / `replay` subcommands (plan 14 / post-MVP).

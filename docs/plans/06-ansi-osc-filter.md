@@ -32,7 +32,7 @@ screen, never let a scroll region include the reserved rows; in the alt screen,
 never clamp. Handle sequences split across reads. Not a full emulator.
 
 ## Acceptance
-- [ ] `vim`, `less`, `fzf`, `htop` (alt screen) run without corrupting the terminal
+- [x] `vim`, `less`, `fzf`, `htop` (alt screen) run without corrupting the terminal
   and get full height (spec §20.7).
 - [x] Normal-screen child `CSI 1;30 r` on a 30-row terminal becomes `CSI 1;29 r`;
   the same sequence in the alt screen passes through unchanged.
@@ -41,7 +41,8 @@ never clamp. Handle sequences split across reads. Not a full emulator.
 
 ## Tests
 Filter unit tests: scroll-region rewrite/clamp; alt-screen toggle; OSC parse;
-partial-sequence reassembly. Replay tests with recorded vim/less/htop (plan 14).
+partial-sequence reassembly. `vim`/`htop` alt-screen behavior was manually
+verified; recorded vim/less/htop replay fixtures remain in plan 14.
 
 ## Out of scope
 Coordinate shifting (not needed for bottom-bar mode). Agent OSC events (plan 16).

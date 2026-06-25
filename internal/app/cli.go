@@ -1,6 +1,10 @@
 package app
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 const usage = `ptyline — a PTY wrapper with a configurable bottom status bar
 
@@ -10,6 +14,7 @@ Usage:
 
 Flags:
   --config <path>   use a specific config file
+  --config=<path>   use a specific config file
   --version         print version and exit
   --help            show this help
 
@@ -31,8 +36,6 @@ type options struct {
 
 // parseArgs is a minimal hand-rolled parser. Flags precede the child command;
 // everything after `--` (or the first non-flag) is the child argv (spec §14).
-//
-// TODO scaffold (plan 11): harden parsing, support `--config=path`, and validate.
 func parseArgs(args []string) (options, error) {
 	var o options
 	i := 0
@@ -60,6 +63,16 @@ func parseArgs(args []string) (options, error) {
 			o.InitShell = args[i+1]
 			return o, nil
 		default:
+			if path, ok := strings.CutPrefix(a, "--config="); ok {
+				if path == "" {
+					return o, errors.New("--config requires a path")
+				}
+				o.ConfigPath = path
+				continue
+			}
+			if strings.HasPrefix(a, "-") {
+				return o, fmt.Errorf("unknown flag %q", a)
+			}
 			// First non-flag token starts the child command.
 			o.Child = append(o.Child, args[i:]...)
 			return o, nil

@@ -30,8 +30,7 @@ must not form import cycles.
 
 ## Acceptance
 - [x] `internal/reserved` math + `app` CLI parser implemented with tests.
-- [ ] `make build` / `make test` / `make vet` succeed (requires Go toolchain — not
-  installed in the authoring environment; verify on a machine with Go).
+- [x] `make build` / `make test` / `make vet` succeed.
 
 ## Tests
 `internal/reserved/area_test.go`, `internal/app/cli_test.go`.
