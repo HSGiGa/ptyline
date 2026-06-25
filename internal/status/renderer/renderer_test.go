@@ -15,7 +15,7 @@ func TestRenderModuleValueNoNewline(t *testing.T) {
 	st.Resize(20, 1, false)
 	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:00")})
 
-	r := New(layout.New(20))
+	r := New(layout.New(20), nil)
 	out := r.Render(st, layout.ParseFormat("{time}"))
 
 	if !strings.Contains(out.Line, "12:00") {
@@ -31,7 +31,7 @@ func TestRenderThreeSectionOrder(t *testing.T) {
 	st := status.NewState()
 	st.Resize(20, 1, false)
 
-	r := New(layout.New(20))
+	r := New(layout.New(20), nil)
 	out := r.Render(st, layout.ParseFormat("L||C||R"))
 
 	l, c, rr := strings.Index(out.Line, "L"), strings.Index(out.Line, "C"), strings.Index(out.Line, "R")

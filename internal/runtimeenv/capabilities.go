@@ -1,5 +1,29 @@
 package runtimeenv
 
+// ColorLevel is the terminal's color depth, detected from the environment. The
+// theme degrades its palette to match (truecolor → 256 → 16 → none).
+type ColorLevel int
+
+const (
+	ColorNone  ColorLevel = iota // NO_COLOR / dumb terminal: plain text only
+	ColorBasic                   // 16 ANSI colors
+	Color256                     // 256-color palette
+	ColorTrue                    // 24-bit truecolor
+)
+
+func (c ColorLevel) String() string {
+	switch c {
+	case ColorBasic:
+		return "16"
+	case Color256:
+		return "256"
+	case ColorTrue:
+		return "truecolor"
+	default:
+		return "none"
+	}
+}
+
 // Capabilities are the feature flags components query instead of checking the OS
 // name directly. Backends and modules ask "do I have unix_pty / linux_procfs?"
 // rather than "am I on Linux / WSL?" (spec §4.2, arch.md §14).
@@ -11,10 +35,12 @@ type Capabilities struct {
 	LinuxSysfs     bool
 	WindowsInterop bool
 
-	// Terminal feature detection (arch.md §14). Populated later from termenv /
-	// environment probing.
+	// Terminal feature detection (arch.md §14). Color is probed from the
+	// environment; NerdFont/Emoji cannot be detected reliably and are driven by
+	// config (icons.preset), not set here.
+	Color           ColorLevel
 	OSC8Links       bool
-	TrueColor       bool
+	TrueColor       bool // convenience: Color == ColorTrue
 	NerdFont        bool
 	Emoji           bool
 	Mouse           bool

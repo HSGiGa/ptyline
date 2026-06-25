@@ -1,5 +1,5 @@
 # 10 — Theme, Style & Icons
-Status: [ ] not started
+Status: [x] done
 Depends on: 09
 Spec refs: spec §8.9, §8.10; arch.md §14, §16; docs/layout-and-rendering.md
 
@@ -29,9 +29,16 @@ theme is readable without Nerd Font or emoji (spec §20.15). Styling must not
 corrupt child output (spec §20.14) — always reset.
 
 ## Acceptance
-- [ ] `NO_COLOR`/no-color terminals render plain, correct text.
-- [ ] Basic fg/bg styling renders without leaking escapes into the shell area.
-- [ ] ASCII preset is fully usable.
+- [x] `NO_COLOR`/no-color terminals render plain, correct text.
+- [x] Basic fg/bg styling renders without leaking escapes into the shell area.
+- [x] ASCII preset is fully usable.
+
+## Implementation note
+Color capability is detected from the environment (`NO_COLOR`/`COLORTERM`/`TERM`)
+in `runtimeenv.detectColor` rather than via `termenv` — Nerd-Font/emoji can't be
+detected anyway (config-driven), so no external dep was added. The renderer
+(`internal/status/renderer`) now routes every segment through `style.Apply` +
+`theme`; no raw ANSI remains. Default palette is Catppuccin-Mocha-derived.
 
 ## Tests
 Token resolution (color vs no-color); `Style.Apply` golden sequences; icon

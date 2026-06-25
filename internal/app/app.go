@@ -24,6 +24,7 @@ import (
 	"github.com/hsgiga/ptyline/internal/status"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
+	"github.com/hsgiga/ptyline/internal/status/theme"
 	"github.com/hsgiga/ptyline/internal/terminal"
 )
 
@@ -119,7 +120,8 @@ func run(opts options) int {
 	scheduler := status.NewScheduler(func(snap status.ModuleSnapshot) {
 		bus.Send(event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
 	})
-	render := renderer.New(layout.New(int(size.Cols)))
+	th := theme.Default(colorMode(profile.Capabilities.Color))
+	render := renderer.New(layout.New(int(size.Cols)), th)
 	blocks := layout.ParseFormat(cfg.Bar.Format)
 	var resizePending bool
 	redraw := func() {
@@ -241,7 +243,7 @@ func run(opts options) int {
 			}
 			state.Resize(cols, rows, alt)
 			writer.SetBarRow(rows)
-			render = renderer.New(layout.New(int(cols)))
+			render = renderer.New(layout.New(int(cols)), th)
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
@@ -328,6 +330,20 @@ func startSignals(bus *event.Bus) {
 			}
 		}
 	}()
+}
+
+// colorMode maps the detected terminal color level to a theme render mode.
+func colorMode(level runtimeenv.ColorLevel) theme.Mode {
+	switch level {
+	case runtimeenv.ColorTrue:
+		return theme.TrueColor
+	case runtimeenv.Color256:
+		return theme.Color256
+	case runtimeenv.ColorBasic:
+		return theme.Color16
+	default:
+		return theme.NoColor
+	}
 }
 
 // resolveChild picks the command to run inside the PTY: explicit argv, else the
