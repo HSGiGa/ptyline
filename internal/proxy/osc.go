@@ -1,6 +1,10 @@
 package proxy
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/hsgiga/ptyline/internal/shellintegration"
+)
 
 // OSC shell-integration protocol (spec §9, arch.md §11.1). Messages arrive as:
 //
@@ -19,14 +23,11 @@ const (
 	maxOSCPayload = 8 * 1024
 )
 
-// oscAllowedKeys is the MVP whitelist of OSC 777 metadata keys (spec §9). Any
-// other key is dropped with a diagnostic and never causes command execution.
-var oscAllowedKeys = map[string]bool{
-	"cwd":         true,
-	"exit_code":   true,
-	"duration_ms": true,
-	"command":     true,
-}
+// oscAllowedKeys is the MVP whitelist of OSC 777 metadata keys (spec §9). The
+// whitelist's single owner is the shellintegration package (keyed by protocol
+// key, never by shell); the filter consumes it here. Any other key is dropped
+// with a diagnostic and never causes command execution.
+var oscAllowedKeys = shellintegration.AllowedSet()
 
 // parseOSC777 splits and validates a "key=value" payload. It rejects unknown
 // keys, oversized payloads, and any value containing control characters (spec §9).
