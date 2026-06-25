@@ -55,6 +55,13 @@ func parse(raw []byte) (Config, error) {
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
 		return Config{}, fmt.Errorf("unknown key %q", undecoded[0])
 	}
+	// A user who specifies a single-line `format` (or `[[bar.block]]`) but no
+	// `[[bar.row]]` overrides the multi-line default; otherwise the default rows
+	// would shadow their intent (defaults fill unset fields).
+	if !metadata.IsDefined("bar", "row") &&
+		(metadata.IsDefined("bar", "format") || metadata.IsDefined("bar", "block")) {
+		cfg.Bar.Rows = nil
+	}
 	return cfg, nil
 }
 
@@ -65,15 +72,20 @@ func parse(raw []byte) (Config, error) {
 //   - unknown top-level/module keys, invalid enums, and invalid width expressions
 //     are errors (not silently defaulted);
 //   - `bar.format` and `[[bar.block]]` are mutually exclusive;
-//   - `bar.height` must be 1 in the normal screen;
+//   - the reserved height is the number of `[[bar.row]]` entries (or 1 for the
+//     single-line `bar.format` fallback) and must be >= 1;
 //   - module IDs are unique and a block references an enabled module by ID;
 //   - custom-command modules must carry a timeout (spec §16, §17).
 func Validate(cfg *Config) error {
 	if cfg.Version != CurrentVersion {
 		return fmt.Errorf("config_version must be %d", CurrentVersion)
 	}
-	if cfg.Bar.Height != 1 {
-		return fmt.Errorf("bar.height must be 1")
+	// Multi-line: the reserved height follows the [[bar.row]] count when present.
+	if len(cfg.Bar.Rows) > 0 {
+		cfg.Bar.Height = uint16(len(cfg.Bar.Rows))
+	}
+	if cfg.Bar.Height < 1 {
+		return fmt.Errorf("bar.height must be >= 1")
 	}
 	if cfg.Bar.Format != "" && len(cfg.Bar.Blocks) > 0 {
 		return fmt.Errorf("bar.format and bar.block are mutually exclusive")

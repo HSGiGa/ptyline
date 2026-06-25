@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/hsgiga/ptyline/internal/runtimeenv"
 	"github.com/hsgiga/ptyline/internal/shellintegration"
 	"github.com/hsgiga/ptyline/internal/status"
+	"github.com/hsgiga/ptyline/internal/status/icons"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
 	"github.com/hsgiga/ptyline/internal/status/theme"
@@ -67,7 +69,8 @@ func run(opts options) int {
 		return 1
 	}
 
-	area := reserved.Default() // {Bottom, 1} for the MVP (cfg.Bar.Height drives this later)
+	barRows := buildBarRows(cfg)
+	area := reserved.Area{Edge: reserved.Bottom, Rows: uint16(len(barRows))}
 	argv := resolveChild(opts.Child, cfg, profile)
 
 	// --- Terminal: enter raw mode; ALWAYS restore on the way out (spec §15). ---
@@ -99,11 +102,17 @@ func run(opts options) int {
 	filter.SetRows(size.Rows)
 	loop := proxy.NewLoop(bus, filter)
 	writer := proxy.NewTerminalWriter(os.Stdout)
-	writer.SetBarRow(size.Rows)
+	top, count := barGeometry(area, size.Rows, len(barRows))
+	writer.SetBarRows(top, count)
 	state := status.NewState()
 	state.Resize(size.Cols, size.Rows, false)
+	// cwdHolder is read by the git module's refresh goroutine and written by the
+	// loop goroutine on cwd shell-meta, so it must be race-free.
+	var cwdHolder atomic.Value
+	cwdHolder.Store("")
 	if cwd, err := os.Getwd(); err == nil {
 		state.Shell.CWD = cwd
+		cwdHolder.Store(cwd)
 		state.UpdateModule(status.ModuleSnapshot{
 			ID:        "cwd",
 			Value:     status.Text(modules.AbbreviateHome(cwd, "")),
@@ -111,6 +120,15 @@ func run(opts options) int {
 		})
 	}
 	timeModule := modules.NewTime(cfg.Modules["time"].Format, time.Second)
+	// Resolve the git branch icon through the icon preset: the Nerd-Font glyph
+	// (U+E0A0) when icons.preset = "nerd-font", otherwise a plain-font branch
+	// glyph (U+2387 "⎇") that renders without a Nerd Font. A true Nerd-Font check
+	// is impossible at runtime, so the preset is the switch.
+	branchIcon := icons.New(icons.Preset(cfg.Icons.Preset), cfg.Icons.Fallback).Icon("", "⎇")
+	gitModule := modules.NewGit(2*time.Second, time.Second, branchIcon, func() string {
+		s, _ := cwdHolder.Load().(string)
+		return s
+	})
 	// Initial synchronous paint so the bar shows values immediately; the
 	// scheduler then refreshes interval-driven modules (e.g. time) in the
 	// background and feeds snapshots back through ModuleUpdated events.
@@ -122,14 +140,13 @@ func run(opts options) int {
 	})
 	th := theme.Default(colorMode(profile.Capabilities.Color))
 	render := renderer.New(layout.New(int(size.Cols)), th)
-	blocks := layout.ParseFormat(cfg.Bar.Format)
 	var resizePending bool
 	redraw := func() {
 		if resizePending {
 			return
 		}
 		writer.RequestRedraw()
-		_ = writer.FlushBarFrame(render.Render(state, blocks).Line)
+		_ = writer.FlushBarFrame(renderBar(render, state, barRows))
 	}
 	// applyAlt runs the alternate-screen entry/exit procedure (spec §11). It must
 	// run AFTER the triggering ?1049h/l bytes have been written to the terminal,
@@ -242,7 +259,8 @@ func run(opts options) int {
 				_ = writer.ClearBar()
 			}
 			state.Resize(cols, rows, alt)
-			writer.SetBarRow(rows)
+			top, count := barGeometry(area, rows, len(barRows))
+			writer.SetBarRows(top, count)
 			render = renderer.New(layout.New(int(cols)), th)
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
@@ -257,6 +275,7 @@ func run(opts options) int {
 		ShellMeta: func(key, value string) {
 			state.ApplyShellMeta(key, value)
 			if key == "cwd" {
+				cwdHolder.Store(state.Shell.CWD)
 				state.UpdateModule(status.ModuleSnapshot{
 					ID:        "cwd",
 					Value:     status.Text(modules.AbbreviateHome(state.Shell.CWD, "")),
@@ -283,6 +302,13 @@ func run(opts options) int {
 	go func() { code, _ := sup.Wait(); bus.Send(event.ChildExited{Code: code}) }()
 	startSignals(bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
+	scheduler.Start(ctx, gitModule, time.Second)
+	// Paint git as soon as possible without blocking startup if git hangs.
+	go func() {
+		rctx, rcancel := context.WithTimeout(ctx, time.Second)
+		defer rcancel()
+		bus.Send(event.ModuleUpdated{ID: "git", Snapshot: gitModule.Refresh(rctx)})
+	}()
 	redraw()
 	code, err := loop.Run()
 	_ = writer.ClearBar()
@@ -330,6 +356,55 @@ func startSignals(bus *event.Bus) {
 			}
 		}
 	}()
+}
+
+// barRowSpec is one resolved bar row: its parsed blocks and gap/cap fill rune.
+type barRowSpec struct {
+	blocks []layout.Block
+	fill   rune
+}
+
+// buildBarRows resolves the configured bar into rows. Multi-line [[bar.row]]
+// entries take precedence; otherwise the single-line Format is one space-filled
+// row. The number of rows is the reserved height.
+func buildBarRows(cfg config.Config) []barRowSpec {
+	if len(cfg.Bar.Rows) > 0 {
+		rows := make([]barRowSpec, len(cfg.Bar.Rows))
+		for i, rc := range cfg.Bar.Rows {
+			fill := ' '
+			if rc.Fill != "" {
+				fill = []rune(rc.Fill)[0]
+			}
+			rows[i] = barRowSpec{blocks: layout.ParseFormat(rc.Format), fill: fill}
+		}
+		return rows
+	}
+	return []barRowSpec{{blocks: layout.ParseFormat(cfg.Bar.Format), fill: ' '}}
+}
+
+// renderBar renders every bar row to a line, top to bottom.
+func renderBar(render *renderer.Renderer, st status.StatusState, rows []barRowSpec) []string {
+	lines := make([]string, len(rows))
+	for i, row := range rows {
+		lines[i] = render.RenderRow(st, row.blocks, row.fill).Line
+	}
+	return lines
+}
+
+// barGeometry returns the 1-based first bar row and how many of the `want` rows
+// actually fit above the child area; on a short terminal the bottom rows are
+// dropped so the bar never paints past the last row (spec §15).
+func barGeometry(area reserved.Area, rows uint16, want int) (top uint16, count int) {
+	child := area.ChildRows(rows)
+	top = child + 1
+	count = int(rows) - int(child)
+	if count > want {
+		count = want
+	}
+	if count < 0 {
+		count = 0
+	}
+	return top, count
 }
 
 // colorMode maps the detected terminal color level to a theme render mode.

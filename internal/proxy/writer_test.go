@@ -8,10 +8,10 @@ import (
 func TestWriterFlushAndSkipUnchanged(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewTerminalWriter(&buf)
-	w.SetBarRow(30)
+	w.SetBarRows(30, 1)
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame("hello"); err != nil {
+	if err := w.FlushBarFrame([]string{"hello"}); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() == 0 {
@@ -26,7 +26,7 @@ func TestWriterFlushAndSkipUnchanged(t *testing.T) {
 	// Re-requesting the same content is a no-op (spec §16).
 	buf.Reset()
 	w.RequestRedraw()
-	if err := w.FlushBarFrame("hello"); err != nil {
+	if err := w.FlushBarFrame([]string{"hello"}); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() != 0 {
@@ -38,11 +38,11 @@ func TestWriterFlushAndSkipUnchanged(t *testing.T) {
 func TestWriterSuppressesBarInAltScreen(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewTerminalWriter(&buf)
-	w.SetBarRow(30)
+	w.SetBarRows(30, 1)
 	w.SetAltActive(true)
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame("hidden"); err != nil {
+	if err := w.FlushBarFrame([]string{"hidden"}); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() != 0 {
@@ -55,14 +55,14 @@ func TestWriterSuppressesBarInAltScreen(t *testing.T) {
 func TestWriterRateLimits(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewTerminalWriter(&buf)
-	w.SetBarRow(30)
+	w.SetBarRows(30, 1)
 
 	w.RequestRedraw()
-	_ = w.FlushBarFrame("a")
+	_ = w.FlushBarFrame([]string{"a"})
 	buf.Reset()
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame("b"); err != nil {
+	if err := w.FlushBarFrame([]string{"b"}); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() != 0 {

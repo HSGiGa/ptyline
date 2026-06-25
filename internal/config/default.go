@@ -8,12 +8,21 @@ func Default() Config {
 		Shell:             "auto",
 		RefreshIntervalMS: 1000,
 		Bar: BarConfig{
-			// height must be 1 in the normal screen; alternate-screen behavior is
-			// fixed (bar hidden) and not configurable in the MVP (spec §13.1, §11).
+			// Height is advisory; the reserved row count is the number of [[bar.row]]
+			// entries (or 1 for the single-line Format fallback). Validate derives it.
 			Height: 1,
 			Mode:   "single-line",
-			// MVP default uses only initial modules — git is a post-MVP provider
-			// (spec §8.7). Center section is empty (no `||` ... `||`).
+			// Two-row default: a dashes "border" top line carrying git in the
+			// middle slot (left/right slots empty but available), and the main
+			// content line. Reserved rows = len(Rows). Format stays as the
+			// single-line fallback when Rows is empty.
+			Rows: []RowConfig{
+				// Fill is the box-drawing horizontal "─" (U+2500), which joins into a
+				// solid rule; a plain "-" looks like a dashed line. Set fill = "-" for
+				// an ASCII-only fallback.
+				{Format: "|| {git} ||", Fill: "─"},
+				{Format: "{hostname} {cwd} || {time}"},
+			},
 			Format:    "{hostname} {cwd} || {time}",
 			Separator: " | ",
 		},

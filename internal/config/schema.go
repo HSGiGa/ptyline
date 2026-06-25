@@ -33,11 +33,22 @@ type BarConfig struct {
 	MaxHeight uint16        `toml:"max_height"` // reserved (multi-line, post-MVP)
 	Mode      string        `toml:"mode"`       // single-line | agent-panel (future)
 	Format    string        `toml:"format"`
+	Rows      []RowConfig   `toml:"row"` // multi-line: one row per [[bar.row]] (takes precedence over Format)
 	Separator string        `toml:"separator"`
 	Padding   int           `toml:"padding"`
 	Blocks    []BlockConfig `toml:"block"`
 
 	ShowInAlternateScreen bool `toml:"show_in_alternate_screen"` // reserved; post-MVP
+}
+
+// RowConfig is one row of a multi-line bar. Format uses the same placeholder
+// template as Bar.Format (`{name}` blocks, `||` splitting into left/center/right
+// anchors — at most three slots). Fill is the character drawn in the gaps and
+// caps around the blocks (default a space); set it to "-" for a dashes "border"
+// row like `--{left} --- {center} --- {right} --`.
+type RowConfig struct {
+	Format string `toml:"format"`
+	Fill   string `toml:"fill"`
 }
 
 // BlockConfig is one layout block (spec §8.8).

@@ -28,8 +28,9 @@ const maxBarRedrawHz = 20
 type TerminalWriter struct {
 	out          io.Writer
 	altActive    bool
-	barRow       uint16    // 1-based row the bar is drawn on
-	lastBar      string    // last bar line written, to skip no-op redraws (spec §16)
+	barTop       uint16    // 1-based first bar row
+	barCount     int       // number of reserved bar rows
+	lastBars     []string  // last bar lines written, to skip no-op redraws (spec §16)
 	lastBarAt    time.Time // for rate limiting
 	pendingFrame bool      // a redraw was requested but deferred to a safe boundary
 }
@@ -71,16 +72,18 @@ func (w *TerminalWriter) SetAltActive(active bool) {
 	if active {
 		w.pendingFrame = false
 		// Force a redraw on return to the normal screen.
-		w.lastBar = ""
+		w.lastBars = nil
 	}
 }
 
-// SetBarRow records the 1-based terminal row the bar is drawn on (updated on
-// resize). A new row invalidates the no-op cache so the next flush always paints.
-func (w *TerminalWriter) SetBarRow(row uint16) {
-	if row != w.barRow {
-		w.barRow = row
-		w.lastBar = ""
+// SetBarRows records the 1-based first bar row and how many rows the bar spans
+// (updated on resize). A change invalidates the no-op cache so the next flush
+// always paints.
+func (w *TerminalWriter) SetBarRows(top uint16, count int) {
+	if top != w.barTop || count != w.barCount {
+		w.barTop = top
+		w.barCount = count
+		w.lastBars = nil
 	}
 }
 
@@ -88,54 +91,64 @@ func (w *TerminalWriter) SetBarRow(row uint16) {
 func (w *TerminalWriter) RequestRedraw() { w.pendingFrame = true }
 
 // InvalidateBar marks the terminal copy of the bar as unknown. Child output may
-// have cleared or overwritten the last row (for example fish's `clear`), so the
-// next redraw must repaint even when the rendered line itself is unchanged.
-func (w *TerminalWriter) InvalidateBar() { w.lastBar = "" }
+// have cleared or overwritten the reserved rows (for example fish's `clear`), so
+// the next redraw must repaint even when the rendered lines are unchanged.
+func (w *TerminalWriter) InvalidateBar() { w.lastBars = nil }
 
-// ClearBar removes the rendered bar while preserving the user's cursor
-// position. It is called during wrapper shutdown before terminal restoration.
+// ClearBar removes the rendered bar (all reserved rows) while preserving the
+// user's cursor position. Called during wrapper shutdown before restoration.
 func (w *TerminalWriter) ClearBar() error {
-	if w.barRow == 0 {
+	if w.barTop == 0 || w.barCount == 0 {
 		return nil
 	}
-	frame := terminal.BeginSyncUpdate +
-		terminal.SaveCursor +
-		terminal.CursorTo(w.barRow, 1) +
-		terminal.ClearLine +
-		terminal.ResetAttrs +
-		terminal.RestoreCursor +
-		terminal.EndSyncUpdate
+	frame := terminal.BeginSyncUpdate + terminal.SaveCursor
+	for i := 0; i < w.barCount; i++ {
+		frame += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine
+	}
+	frame += terminal.ResetAttrs + terminal.RestoreCursor + terminal.EndSyncUpdate
 	return w.writeAll([]byte(frame))
 }
 
-// FlushBarFrame emits a complete bar frame if one is pending, the alternate
-// screen is inactive, the rate limit allows it, and the content changed. The
-// frame uses absolute positioning and carries NO trailing newline, which would
-// scroll the bar into history (spec §8.6, docs/terminal-safety.md).
-func (w *TerminalWriter) FlushBarFrame(line string) error {
-	if w.altActive || !w.pendingFrame || w.barRow == 0 {
+// FlushBarFrame emits a complete bar frame (all reserved rows) if one is pending,
+// the alternate screen is inactive, the rate limit allows it, and the content
+// changed. The frame uses absolute positioning and carries NO trailing newline,
+// which would scroll the bar into history (spec §8.6, docs/terminal-safety.md).
+// Lines beyond barCount are ignored, and missing lines simply leave that row
+// untouched, so a short terminal never paints past its last row.
+func (w *TerminalWriter) FlushBarFrame(lines []string) error {
+	if w.altActive || !w.pendingFrame || w.barTop == 0 || w.barCount == 0 {
 		return nil
 	}
-	if line == w.lastBar {
+	if equalLines(lines, w.lastBars) {
 		w.pendingFrame = false
 		return nil
 	}
 	if !w.lastBarAt.IsZero() && time.Since(w.lastBarAt) < time.Second/maxBarRedrawHz {
 		return nil // rate-limited; stay pending for the next boundary
 	}
-	frame := terminal.BeginSyncUpdate +
-		terminal.SaveCursor +
-		terminal.CursorTo(w.barRow, 1) +
-		terminal.ClearLine +
-		line +
-		terminal.ResetAttrs +
-		terminal.RestoreCursor +
-		terminal.EndSyncUpdate
+	frame := terminal.BeginSyncUpdate + terminal.SaveCursor
+	for i := 0; i < w.barCount && i < len(lines); i++ {
+		frame += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine + lines[i] + terminal.ResetAttrs
+	}
+	frame += terminal.RestoreCursor + terminal.EndSyncUpdate
 	if err := w.writeAll([]byte(frame)); err != nil {
 		return err
 	}
-	w.lastBar = line
+	w.lastBars = append(w.lastBars[:0], lines...)
 	w.lastBarAt = time.Now()
 	w.pendingFrame = false
 	return nil
+}
+
+// equalLines reports whether two rendered bar frames are identical.
+func equalLines(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
