@@ -109,6 +109,8 @@ func run(opts options) int {
 	// cwdHolder is read by the git module's refresh goroutine and written by the
 	// loop goroutine on cwd shell-meta, so it must be race-free.
 	var cwdHolder atomic.Value
+	var activeCommandAnimating atomic.Bool
+	var lastActiveCommandActivity time.Time
 	cwdHolder.Store("")
 	if cwd, err := os.Getwd(); err == nil {
 		state.Shell.CWD = cwd
@@ -120,6 +122,7 @@ func run(opts options) int {
 		})
 	}
 	timeModule := modules.NewTime(cfg.Modules["time"].Format, time.Second)
+	activeCommandConfig := cfg.Modules["active_command"]
 	// Resolve the git branch icon through the icon preset: the Nerd-Font glyph
 	// (U+E0A0) when icons.preset = "nerd-font", otherwise a plain-font branch
 	// glyph (U+2387 "⎇") that renders without a Nerd Font. A true Nerd-Font check
@@ -138,8 +141,23 @@ func run(opts options) int {
 	scheduler := status.NewScheduler(func(snap status.ModuleSnapshot) {
 		bus.Send(event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
 	})
+	refreshGit := func(expectedCWD string) {
+		go func() {
+			rctx, rcancel := context.WithTimeout(ctx, time.Second)
+			defer rcancel()
+			snap := gitModule.Refresh(rctx)
+			if expectedCWD != "" {
+				current, _ := cwdHolder.Load().(string)
+				if current != expectedCWD {
+					return
+				}
+			}
+			bus.Send(event.ModuleUpdated{ID: "git", Snapshot: snap})
+		}()
+	}
 	th := theme.Default(colorMode(profile.Capabilities.Color))
 	render := renderer.New(layout.New(int(size.Cols)), th)
+	render.SetAnimations(animationsFromConfig(cfg.Modules))
 	var resizePending bool
 	redraw := func() {
 		if resizePending {
@@ -224,6 +242,11 @@ func run(opts options) int {
 			if err := writer.WriteChild(data); err != nil {
 				return err
 			}
+			if len(data) > 0 && state.Shell.ActiveCommand != "" {
+				lastActiveCommandActivity = time.Now()
+				state.ActiveCommandAnimating = true
+				activeCommandAnimating.Store(true)
+			}
 			writer.InvalidateBar()
 			// The child bytes (including any ?1049h/l) have now reached the
 			// terminal; run a pending alt-screen transition on the correct screen.
@@ -262,6 +285,7 @@ func run(opts options) int {
 			top, count := barGeometry(area, rows, len(barRows))
 			writer.SetBarRows(top, count)
 			render = renderer.New(layout.New(int(cols)), th)
+			render.SetAnimations(animationsFromConfig(cfg.Modules))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
@@ -281,12 +305,38 @@ func run(opts options) int {
 					Value:     status.Text(modules.AbbreviateHome(state.Shell.CWD, "")),
 					UpdatedAt: time.Now(),
 				})
+				refreshGit(state.Shell.CWD)
+			}
+			if key == shellintegration.KeyCommand && activeCommandConfig.Enabled {
+				activeCommandAnimating.Store(state.Shell.ActiveCommand != "")
+				if state.Shell.ActiveCommand == "" {
+					state.AnimationPhase = 0
+					state.ActiveCommandAnimating = false
+				} else {
+					lastActiveCommandActivity = time.Now()
+					state.ActiveCommandAnimating = true
+				}
+				state.UpdateModule(activeCommandSnapshot(state.Shell.ActiveCommand, activeCommandConfig))
 			}
 		},
 		ModuleUpdated: func(_ string, snapshot any) {
 			if snap, ok := snapshot.(status.ModuleSnapshot); ok {
 				state.UpdateModule(snap)
 			}
+		},
+		Tick: func() {
+			state.AnimationPhase++
+			if state.Shell.ActiveCommand == "" {
+				state.ActiveCommandAnimating = false
+				return
+			}
+			if time.Since(lastActiveCommandActivity) > activeCommandAnimationIdleTimeout {
+				state.ActiveCommandAnimating = false
+				activeCommandAnimating.Store(false)
+				return
+			}
+			state.ActiveCommandAnimating = true
+			state.UpdateModule(activeCommandSnapshot(state.Shell.ActiveCommand, activeCommandConfig))
 		},
 		Redraw:    redraw,
 		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
@@ -303,12 +353,9 @@ func run(opts options) int {
 	startSignals(bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
 	scheduler.Start(ctx, gitModule, time.Second)
+	startAnimationTicker(ctx, bus, cfg.Modules, &activeCommandAnimating)
 	// Paint git as soon as possible without blocking startup if git hangs.
-	go func() {
-		rctx, rcancel := context.WithTimeout(ctx, time.Second)
-		defer rcancel()
-		bus.Send(event.ModuleUpdated{ID: "git", Snapshot: gitModule.Refresh(rctx)})
-	}()
+	refreshGit("")
 	redraw()
 	code, err := loop.Run()
 	_ = writer.ClearBar()
@@ -317,6 +364,72 @@ func run(opts options) int {
 		return 1
 	}
 	return code
+}
+
+func activeCommandSnapshot(command string, cfg config.ModuleConfig) status.ModuleSnapshot {
+	return status.ModuleSnapshot{
+		ID:        "active_command",
+		Value:     status.Text(modules.FormatActiveCommand(command, cfg.Format, cfg.MaxWidth)),
+		UpdatedAt: time.Now(),
+	}
+}
+
+func startAnimationTicker(ctx context.Context, bus *event.Bus, modules map[string]config.ModuleConfig, active *atomic.Bool) {
+	interval, continuous := animationTickerConfig(modules)
+	if interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if continuous || (active != nil && active.Load()) {
+					bus.Send(event.Tick{})
+				}
+			}
+		}
+	}()
+}
+
+func animationTickerConfig(modules map[string]config.ModuleConfig) (time.Duration, bool) {
+	var (
+		interval   time.Duration
+		continuous bool
+	)
+	for id, module := range modules {
+		if !module.Enabled || module.Animation == "" || module.Animation == "none" {
+			continue
+		}
+		if id != "active_command" {
+			continuous = true
+		}
+		next := time.Duration(module.AnimationIntervalMS) * time.Millisecond
+		if next <= 0 {
+			next = 250 * time.Millisecond
+		}
+		if interval == 0 || next < interval {
+			interval = next
+		}
+	}
+	return interval, continuous
+}
+
+func animationsFromConfig(modules map[string]config.ModuleConfig) map[string]renderer.Animation {
+	animations := make(map[string]renderer.Animation)
+	for id, module := range modules {
+		if !module.Enabled || module.Animation == "" || module.Animation == "none" {
+			continue
+		}
+		animations[id] = renderer.Animation{Mode: module.Animation}
+		if id == "active_command" {
+			animations["cmd"] = renderer.Animation{Mode: module.Animation}
+		}
+	}
+	return animations
 }
 
 func startReader(bus *event.Bus, reader io.Reader, makeEvent func([]byte) event.AppEvent) {
@@ -336,8 +449,12 @@ func startReader(bus *event.Bus, reader io.Reader, makeEvent func([]byte) event.
 }
 
 // resizeDebounce coalesces a burst of SIGWINCH events (e.g. while dragging the
-// window edge) into a single re-query + Resize (spec §12, plan 05).
-const resizeCommitDelay = 120 * time.Millisecond
+// window edge) into a single re-query + Resize (spec §12, plan 13).
+const resizeCommitDelay = 50 * time.Millisecond
+
+// activeCommandAnimationIdleTimeout stops the glint for interactive commands
+// that remain active but stop producing output, such as an idle agent prompt.
+const activeCommandAnimationIdleTimeout = 1200 * time.Millisecond
 
 func startSignals(bus *event.Bus) {
 	signals := make(chan os.Signal, 1)

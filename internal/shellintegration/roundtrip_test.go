@@ -27,7 +27,8 @@ func TestCanonicalOSCRoundTrip(t *testing.T) {
 	stream := osc(shellintegration.KeyCWD, "/home/u/project") +
 		osc(shellintegration.KeyExitCode, "0") +
 		osc(shellintegration.KeyCommand, "go test ./...") +
-		osc(shellintegration.KeyDurationMS, "1234")
+		osc(shellintegration.KeyDurationMS, "1234") +
+		osc(shellintegration.KeyCommand, "")
 
 	if out := filter.Filter([]byte(stream)); len(out) != 0 {
 		t.Fatalf("OSC 777 leaked to terminal: %q", out)
@@ -35,7 +36,7 @@ func TestCanonicalOSCRoundTrip(t *testing.T) {
 
 	got := state.Shell
 	if got.CWD != "/home/u/project" || got.LastExitCode != 0 ||
-		got.LastCommand != "go test ./..." || got.LastDurationMS != 1234 {
+		got.ActiveCommand != "" || got.LastCommand != "go test ./..." || got.LastDurationMS != 1234 {
 		t.Fatalf("ShellState = %+v, want cwd/exit/command/duration populated", got)
 	}
 }

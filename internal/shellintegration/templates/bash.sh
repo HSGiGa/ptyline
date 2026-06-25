@@ -20,19 +20,20 @@ __ptyline_preexec() {
     __ptyline_running=1
     __ptyline_cmd=$BASH_COMMAND
     __ptyline_start=$(__ptyline_now_ms)
+    __ptyline_emit command "$__ptyline_cmd"
 }
 
 # PROMPT_COMMAND runs before each prompt; report exit code, cwd, and (if a command
-# actually ran) the command and its duration.
+# actually ran) its duration, then clear the active command.
 __ptyline_precmd() {
     __ptyline_exit=$?
     if [ -n "$__ptyline_running" ]; then
-        __ptyline_emit command "$__ptyline_cmd"
         __ptyline_emit duration_ms "$(($(__ptyline_now_ms) - __ptyline_start))"
         __ptyline_running=
     fi
     __ptyline_emit exit_code "$__ptyline_exit"
     __ptyline_emit cwd "$PWD"
+    __ptyline_emit command ""
 }
 
 trap '__ptyline_preexec' DEBUG

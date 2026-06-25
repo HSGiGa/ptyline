@@ -48,6 +48,30 @@ func TestScriptEmitsWhitelistedKeys(t *testing.T) {
 	}
 }
 
+func TestScriptsUseActiveCommandStartClearProtocol(t *testing.T) {
+	for _, shell := range Supported() {
+		script, ok := Script(shell)
+		if !ok {
+			t.Fatalf("Script(%q) missing", shell)
+		}
+		start := strings.Index(script, `__ptyline_emit command "$__ptyline_cmd"`)
+		clear := strings.Index(script, `__ptyline_emit command ""`)
+		duration := strings.Index(script, `__ptyline_emit duration_ms`)
+		if start < 0 {
+			t.Errorf("%s: script does not emit active command on preexec", shell)
+		}
+		if clear < 0 {
+			t.Errorf("%s: script does not clear active command", shell)
+		}
+		if duration < 0 {
+			t.Errorf("%s: script does not emit duration", shell)
+		}
+		if duration >= 0 && clear >= 0 && clear < duration {
+			t.Errorf("%s: script clears active command before duration", shell)
+		}
+	}
+}
+
 // Unknown shells and path-traversal attempts are rejected.
 func TestScriptRejectsBadNames(t *testing.T) {
 	for _, name := range []string{"", "nushell", "../osc", "bash.sh", filepath.Join("..", "osc")} {

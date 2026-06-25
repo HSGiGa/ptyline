@@ -14,19 +14,20 @@ __ptyline_now_ms() { date +%s%3N; }
 __ptyline_preexec() {
     __ptyline_cmd=$1
     __ptyline_start=$(__ptyline_now_ms)
+    __ptyline_emit command "$__ptyline_cmd"
 }
 
 # precmd runs before each prompt; report exit code, cwd, and the previous
-# command + duration when one ran.
+# command duration when one ran, then clear the active command.
 __ptyline_precmd() {
     __ptyline_exit=$?
     if [ -n "$__ptyline_start" ]; then
-        __ptyline_emit command "$__ptyline_cmd"
         __ptyline_emit duration_ms "$(($(__ptyline_now_ms) - __ptyline_start))"
         __ptyline_start=
     fi
     __ptyline_emit exit_code "$__ptyline_exit"
     __ptyline_emit cwd "$PWD"
+    __ptyline_emit command ""
 }
 
 autoload -Uz add-zsh-hook
