@@ -65,12 +65,24 @@ func (r *Renderer) SetStyles(styles map[string]style.Style) {
 	}
 }
 
-// Render produces the bar line for the given state and blocks.
+// Render produces the bar line for the given state and blocks, space-filled.
 //
 // IMPORTANT (spec §8.6, docs/terminal-safety.md): the caller draws this with
 // absolute positioning — save cursor → move to bar row → clear line → write
 // Line → reset → restore cursor — and NEVER appends a newline.
 func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) RenderedBar {
+	return r.RenderRow(st, blocks, ' ')
+}
+
+// RenderRow renders one bar row with a chosen fill character used for the gaps
+// between the left/center/right slots and the edge caps. A space fill yields a
+// plain bar; a '-' fill yields a "border" row like
+// `--{left} ----- {center} ----- {right} --` (multi-line panels, the top line).
+// Only the three anchor slots exist; blocks cannot be added beyond them.
+func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill rune) RenderedBar {
+	fillStr := string(fill)
+	border := fill != ' '
+
 	natural := make([]int, len(blocks))
 	values := make([]string, len(blocks))
 	for i, block := range blocks {
@@ -91,6 +103,16 @@ func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) Rendered
 		// the bar background continues across gaps and padding.
 		sections[placement.Block.Anchor] += r.styleFor(placement.Block).Apply(text, r.theme) + r.base
 	}
+
+	// Reserve two cells on each edge for caps when bordered; the inner layout is
+	// computed against the remaining width.
+	caps := ""
+	target := r.engine.BarWidth()
+	if border {
+		caps = strings.Repeat(fillStr, 2)
+		target = max(0, target-2*width.String(caps))
+	}
+
 	left := sections[layout.AnchorLeft]
 	center := sections[layout.AnchorCenter]
 	right := sections[layout.AnchorRight]
@@ -100,19 +122,19 @@ func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) Rendered
 	line := left
 	plainLine := plainLeft
 	if plainCenter != "" {
-		gap := max(0, (r.engine.BarWidth()-width.String(plainLeft)-width.String(plainRight)-width.String(plainCenter))/2)
-		line += strings.Repeat(" ", gap) + center
-		plainLine += strings.Repeat(" ", gap) + plainCenter
+		gap := max(0, (target-width.String(plainLeft)-width.String(plainRight)-width.String(plainCenter))/2)
+		line += strings.Repeat(fillStr, gap) + center
+		plainLine += strings.Repeat(fillStr, gap) + plainCenter
 	}
-	gap := max(0, r.engine.BarWidth()-width.String(plainLine)-width.String(plainRight))
-	line += strings.Repeat(" ", gap) + right
-	plainLine += strings.Repeat(" ", gap) + plainRight
+	gap := max(0, target-width.String(plainLine)-width.String(plainRight))
+	line += strings.Repeat(fillStr, gap) + right
+	plainLine += strings.Repeat(fillStr, gap) + plainRight
 	// ANSI styles are deliberately applied after layout. All spacing decisions use
 	// the unstyled twin line, otherwise escape bytes would corrupt cell widths.
-	if width.String(plainLine) < r.engine.BarWidth() {
-		line += strings.Repeat(" ", r.engine.BarWidth()-width.String(plainLine))
+	if width.String(plainLine) < target {
+		line += strings.Repeat(fillStr, target-width.String(plainLine))
 	}
-	return RenderedBar{Line: r.base + line}
+	return RenderedBar{Line: r.base + caps + line + caps}
 }
 
 // styleFor resolves the style for a block: an explicit config style by StyleID,
@@ -136,6 +158,8 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 		s.FG = "muted"
 	case "cwd":
 		s.FG = "base.fg"
+	case "git":
+		s.FG, s.Bold = "ok", true
 	}
 	return s
 }
