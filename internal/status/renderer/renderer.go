@@ -10,6 +10,8 @@ import (
 
 	"github.com/hsgiga/ptyline/internal/status"
 	"github.com/hsgiga/ptyline/internal/status/layout"
+	"github.com/hsgiga/ptyline/internal/status/style"
+	"github.com/hsgiga/ptyline/internal/status/theme"
 	"github.com/hsgiga/ptyline/internal/status/width"
 )
 
@@ -32,17 +34,35 @@ type RenderedBar struct {
 	ClickZones []ClickZone
 }
 
-// Renderer draws the bar. It holds the layout engine and styling context but no
-// data sources.
+// Renderer draws the bar. It holds the layout engine and styling context (theme
+// + per-block styles) but no data sources.
 type Renderer struct {
 	engine *layout.Engine
+	theme  *theme.Theme
+	// styles overrides the default block style by StyleID (from config). Empty in
+	// the MVP format-string path; populated when structured [[bar.block]] styles
+	// are wired.
+	styles map[string]style.Style
+	// base is the SGR establishing the bar's base colors, re-emitted after every
+	// styled segment so the background spans the whole row. Empty in no-color mode.
+	base string
 }
 
-const redStatusBar = "\x1b[37;41m"
+// New creates a renderer over a layout engine and theme. A nil theme renders
+// plain (no-color) output.
+func New(engine *layout.Engine, th *theme.Theme) *Renderer {
+	r := &Renderer{engine: engine, theme: th, styles: map[string]style.Style{}}
+	if th != nil && th.Mode() != theme.NoColor {
+		r.base = th.FG("base.fg") + th.BG("base.bg")
+	}
+	return r
+}
 
-// New creates a renderer over a layout engine.
-func New(engine *layout.Engine) *Renderer {
-	return &Renderer{engine: engine}
+// SetStyles installs config-resolved per-StyleID styles (post-MVP wiring).
+func (r *Renderer) SetStyles(styles map[string]style.Style) {
+	if styles != nil {
+		r.styles = styles
+	}
 }
 
 // Render produces the bar line for the given state and blocks.
@@ -60,7 +80,6 @@ func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) Rendered
 	placements := r.engine.Arrange(blocks, natural)
 	sections := map[layout.Anchor]string{}
 	plainSections := map[layout.Anchor]string{}
-	lastStyle := map[layout.Anchor]string{}
 	for i, placement := range placements {
 		if !placement.Visible {
 			continue
@@ -68,15 +87,9 @@ func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) Rendered
 		text := width.Truncate(values[i], placement.Width, placement.Block.Truncate)
 		text = width.Pad(text, placement.Width, string(placement.Block.Align))
 		plainSections[placement.Block.Anchor] += text
-		style := blockStyle(placement.Block)
-		if placement.Block.IsLiteral() {
-			if previous, ok := lastStyle[placement.Block.Anchor]; ok {
-				style = previous
-			}
-		} else {
-			lastStyle[placement.Block.Anchor] = style
-		}
-		sections[placement.Block.Anchor] += style + text + redStatusBar
+		// Each segment is styled and reset, then the base colors are re-emitted so
+		// the bar background continues across gaps and padding.
+		sections[placement.Block.Anchor] += r.styleFor(placement.Block).Apply(text, r.theme) + r.base
 	}
 	left := sections[layout.AnchorLeft]
 	center := sections[layout.AnchorCenter]
@@ -99,23 +112,32 @@ func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) Rendered
 	if width.String(plainLine) < r.engine.BarWidth() {
 		line += strings.Repeat(" ", r.engine.BarWidth()-width.String(plainLine))
 	}
-	return RenderedBar{Line: redStatusBar + line}
+	return RenderedBar{Line: r.base + line}
 }
 
-func blockStyle(block layout.Block) string {
-	if block.IsLiteral() {
-		return redStatusBar
+// styleFor resolves the style for a block: an explicit config style by StyleID,
+// otherwise a readable default that colors a few well-known modules via theme
+// tokens (never raw ANSI — arch.md §16). All defaults share the base background
+// so the bar reads as one band.
+func (r *Renderer) styleFor(block layout.Block) style.Style {
+	if block.StyleID != "" {
+		if s, ok := r.styles[block.StyleID]; ok {
+			return s
+		}
 	}
-	color := "\x1b[37;41m"
+	s := style.Style{FG: "base.fg", BG: "base.bg"}
+	if block.IsLiteral() {
+		return s
+	}
 	switch block.ModuleID {
 	case "hostname":
-		color = "\x1b[37;44m"
-	case "cwd":
-		color = "\x1b[30;43m"
+		s.FG, s.Bold = "accent", true
 	case "time":
-		color = "\x1b[1;30;42m"
+		s.FG = "muted"
+	case "cwd":
+		s.FG = "base.fg"
 	}
-	return color
+	return s
 }
 
 func blockValue(st status.StatusState, block layout.Block) string {

@@ -2,6 +2,7 @@ package runtimeenv
 
 import (
 	"os"
+	"strings"
 
 	"github.com/hsgiga/ptyline/internal/platform"
 )
@@ -16,10 +17,37 @@ func Detect() Profile {
 		capabilities.LinuxProcfs = pathExists("/proc")
 		capabilities.LinuxSysfs = pathExists("/sys")
 	}
+	capabilities.Color = detectColor(os.LookupEnv)
+	capabilities.TrueColor = capabilities.Color == ColorTrue
 	return Profile{
 		Kind:         kind,
 		Capabilities: capabilities,
 	}
+}
+
+// detectColor classifies the terminal's color depth from the environment,
+// honoring the NO_COLOR convention (https://no-color.org) and the de-facto
+// COLORTERM/TERM signals. It takes a lookup func so it is testable without
+// mutating the process environment.
+func detectColor(lookup func(string) (string, bool)) ColorLevel {
+	if v, ok := lookup("NO_COLOR"); ok && v != "" {
+		return ColorNone
+	}
+	term, _ := lookup("TERM")
+	if term == "dumb" {
+		return ColorNone
+	}
+	switch colorterm, _ := lookup("COLORTERM"); strings.ToLower(colorterm) {
+	case "truecolor", "24bit":
+		return ColorTrue
+	}
+	if strings.Contains(term, "256color") {
+		return Color256
+	}
+	if term != "" {
+		return ColorBasic
+	}
+	return ColorNone
 }
 
 func pathExists(path string) bool {

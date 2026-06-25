@@ -21,6 +21,13 @@ const (
 
 	// ResetScrollRegion clears any scroll margins (full screen).
 	ResetScrollRegion = CSI + "r"
+
+	// BeginSyncUpdate/EndSyncUpdate bracket a batch of writes so the terminal
+	// presents them atomically (DECSET 2026, "synchronized output"). This is what
+	// keeps the bar from flickering on redraw/resize, the same technique tmux uses.
+	// Terminals that do not implement it ignore the private mode harmlessly.
+	BeginSyncUpdate = CSI + "?2026h"
+	EndSyncUpdate   = CSI + "?2026l"
 )
 
 // CursorTo returns the sequence to move the cursor to a 1-based (row, col).
