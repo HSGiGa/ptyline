@@ -1,5 +1,5 @@
 # 12 — Shell Integration Adapters
-Status: [ ] not started
+Status: [x] done
 Depends on: 06, 07
 Spec refs: spec §9, §14, §18, §24.1; docs/shell-integration.md
 

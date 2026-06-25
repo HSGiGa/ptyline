@@ -2,20 +2,25 @@
 // serves the per-shell init script printed by `ptyline init <shell>`.
 //
 // The Go implementation is SHELL-AGNOSTIC: there is no code path per shell. It
-// owns one OSC 777 parser and one ShellState updater (consumed by the proxy
-// filter). A shell-specific integration is only a small embedded script template
-// that emits the common protocol. The PTY wrapper itself needs no integration and
-// works with any shell or command (bash, zsh, fish, nu, ssh, vim, …); absence of a
-// hook never affects PTY startup, job control, or terminal I/O (spec §9, §24.1).
+// owns one OSC 777 protocol (keys + whitelist, below) consumed by the proxy
+// filter and one ShellState updater. A shell-specific integration is only a small
+// embedded script template that emits the common protocol; the registry reads the
+// embedded `templates/` directory, so adding a shell is a new template file with
+// ZERO Go edits. The PTY wrapper itself needs no integration and works with any
+// shell or command; absence of a hook never affects PTY startup, job control, or
+// terminal I/O (spec §9, §24.1).
 package shellintegration
 
 import (
-	_ "embed"
+	"embed"
+	"io/fs"
 	"sort"
+	"strings"
 )
 
-// Recognized OSC 777 keys (spec §9). The proxy filter whitelists exactly these,
-// maps them to ShellMeta events, then to StatusState fields.
+// Recognized OSC 777 keys (spec §9). This package is the single owner of the
+// protocol whitelist — keyed by protocol key, never by shell. The proxy filter
+// consumes it (see AllowedSet) rather than redefining it.
 const (
 	KeyCWD        = "cwd"
 	KeyExitCode   = "exit_code"
@@ -23,35 +28,49 @@ const (
 	KeyCommand    = "command"
 )
 
-//go:embed templates/bash.sh
-var bashTemplate string
+// Keys is the OSC 777 metadata whitelist, in canonical order.
+var Keys = []string{KeyCWD, KeyExitCode, KeyDurationMS, KeyCommand}
 
-//go:embed templates/zsh.sh
-var zshTemplate string
-
-//go:embed templates/fish.sh
-var fishTemplate string
-
-// templates maps a shell name to its embedded init script. Adding a shell is a
-// new template file plus an entry here — no Go logic per shell.
-var templates = map[string]string{
-	"bash": bashTemplate,
-	"zsh":  zshTemplate,
-	"fish": fishTemplate,
+// AllowedSet returns the whitelist as a lookup set for the proxy filter.
+func AllowedSet() map[string]bool {
+	set := make(map[string]bool, len(Keys))
+	for _, k := range Keys {
+		set[k] = true
+	}
+	return set
 }
+
+//go:embed templates/*.sh
+var templatesFS embed.FS
+
+const templateDir = "templates"
 
 // Script returns the integration script for a shell, emitted by
-// `ptyline init <shell>`.
+// `ptyline init <shell>`. The lookup is purely data-driven: it reads
+// templates/<shell>.sh from the embedded FS, so no Go code names a shell.
 func Script(shell string) (string, bool) {
-	s, ok := templates[shell]
-	return s, ok
+	if shell == "" || strings.ContainsAny(shell, "/.\\") {
+		return "", false // reject path separators / traversal
+	}
+	data, err := templatesFS.ReadFile(templateDir + "/" + shell + ".sh")
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
 }
 
-// Supported returns the sorted list of shells with an integration template.
+// Supported returns the sorted list of shells with an embedded template,
+// derived from the templates/ directory contents.
 func Supported() []string {
-	names := make([]string, 0, len(templates))
-	for name := range templates {
-		names = append(names, name)
+	entries, err := fs.ReadDir(templatesFS, templateDir)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if name, ok := strings.CutSuffix(e.Name(), ".sh"); ok {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	return names
