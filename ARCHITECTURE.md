@@ -107,3 +107,4 @@ typed `ModuleValue`/`ModuleSnapshot` (stale/error aware), theme tokens, reserved
 
 - New here? Read [`docs/ARCHITECTURE-overview.md`](docs/ARCHITECTURE-overview.md).
 - Implementing? Follow [`docs/plans/`](docs/plans/) in order from `00`.
+- Multi-line panel (post-MVP design): [`docs/multi-line-panel.md`](docs/multi-line-panel.md).
