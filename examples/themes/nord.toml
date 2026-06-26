@@ -1,0 +1,36 @@
+name = "nord"
+
+[palette]
+"base.bg" = "#2e3440"
+"base.fg" = "#eceff4"
+accent = "#88c0d0"
+ok = "#a3be8c"
+warn = "#ebcb8b"
+error = "#bf616a"
+muted = "#4c566a"
+command = "#d08770"
+panel = "#3b4252"
+
+[style.hostname]
+fg = "accent"
+bg = "panel"
+bold = true
+
+[style.time]
+fg = "#d8dee9"
+bg = "panel"
+
+[style.git]
+fg = "ok"
+bg = "panel"
+bold = true
+
+[style.command]
+fg = "command"
+bg = "panel"
+
+[style.ssh]
+fg = "warn"
+bg = "panel"
+bold = true
+
