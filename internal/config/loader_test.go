@@ -55,9 +55,6 @@ func TestLoadRootConfig(t *testing.T) {
 	if got, want := cfg.Modules["env"].Env, []string{"PTYLINE_ENV"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("root env module env = %q, want %q", got, want)
 	}
-	if got, want := cfg.Modules["env"].IntervalMS, 1000; got != want {
-		t.Fatalf("root env module interval_ms = %d, want %d", got, want)
-	}
 }
 
 func TestDefaultTopRowSpacing(t *testing.T) {

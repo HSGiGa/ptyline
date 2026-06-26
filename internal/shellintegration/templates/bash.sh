@@ -64,6 +64,8 @@ case "$PROMPT_COMMAND" in
 *) PROMPT_COMMAND="__ptyline_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
 esac
 
+__ptyline_emit_env
+
 # Wrap ssh to report outbound connections to the ptyline status bar.
 # Use `command ssh` to bypass this wrapper when needed.
 ssh() {

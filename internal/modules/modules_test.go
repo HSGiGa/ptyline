@@ -51,9 +51,9 @@ func TestEnvValue(t *testing.T) {
 		t.Fatalf("envValue(empty) = %q, want empty", got)
 	}
 
-	module := NewEnv([]string{"PTYLINE_TEST_ENV"}, 1500*time.Millisecond)
-	if got := module.Interval(); got != 1500*time.Millisecond {
-		t.Fatalf("Env.Interval() = %v, want 1500ms", got)
+	module := NewEnv([]string{"PTYLINE_TEST_ENV"})
+	if got := module.Interval(); got != 0 {
+		t.Fatalf("Env.Interval() = %v, want event-driven", got)
 	}
 	if got := module.Refresh(nil).Value.Text; got != "staging" {
 		t.Fatalf("Env.Refresh() = %q, want staging", got)

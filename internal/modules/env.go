@@ -9,20 +9,19 @@ import (
 	"github.com/hsgiga/ptyline/internal/status"
 )
 
-// Env renders the value of a configured environment variable. It refreshes on an
-// interval; an empty name or missing variable hides the block.
+// Env renders configured environment variables. It is event-driven from shell
+// integration; Refresh provides only the initial parent-environment snapshot.
 type Env struct {
-	names    []string
-	interval time.Duration
+	names []string
 }
 
 // NewEnv creates an env module for one or more environment variable names.
-func NewEnv(names []string, interval time.Duration) *Env {
-	return &Env{names: append([]string(nil), names...), interval: interval}
+func NewEnv(names []string) *Env {
+	return &Env{names: append([]string(nil), names...)}
 }
 
 func (m *Env) ID() status.ModuleID     { return "env" }
-func (m *Env) Interval() time.Duration { return m.interval }
+func (m *Env) Interval() time.Duration { return 0 }
 
 func (m *Env) Refresh(_ context.Context) status.ModuleSnapshot {
 	return status.ModuleSnapshot{

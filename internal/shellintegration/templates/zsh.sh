@@ -57,6 +57,8 @@ autoload -Uz add-zsh-hook
 add-zsh-hook preexec __ptyline_preexec
 add-zsh-hook precmd __ptyline_precmd
 
+__ptyline_emit_env
+
 # Wrap ssh to report outbound connections to the ptyline status bar.
 # Use `command ssh` to bypass this wrapper when needed.
 ssh() {

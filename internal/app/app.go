@@ -112,7 +112,6 @@ func run(opts options) int {
 	// loop goroutine on cwd shell-meta, so it must be race-free.
 	var cwdHolder atomic.Value
 	var commandAnimating atomic.Bool
-	var envFromOSC atomic.Bool
 	var lastCommandActivity time.Time
 	// lastStdinInput marks the most recent keystroke so the command glint
 	// can tell genuine work output from a program echoing what the user types.
@@ -140,7 +139,7 @@ func run(opts options) int {
 		s, _ := cwdHolder.Load().(string)
 		return s
 	})
-	envModule := modules.NewEnv(cfg.Modules["env"].Env, moduleInterval(cfg.Modules["env"], time.Second))
+	envModule := modules.NewEnv(cfg.Modules["env"].Env)
 	// Initial synchronous paint so the bar shows values immediately; the
 	// scheduler then refreshes interval-driven modules (e.g. time) in the
 	// background and feeds snapshots back through ModuleUpdated events.
@@ -351,7 +350,6 @@ func run(opts options) int {
 				refreshGit(state.Shell.CWD)
 			}
 			if key == shellintegration.KeyEnv {
-				envFromOSC.Store(true)
 				state.UpdateModule(status.ModuleSnapshot{
 					ID:        "env",
 					Value:     status.Text(value),
@@ -376,9 +374,6 @@ func run(opts options) int {
 		},
 		ModuleUpdated: func(_ string, snapshot any) {
 			if snap, ok := snapshot.(status.ModuleSnapshot); ok {
-				if snap.ID == "env" && envFromOSC.Load() {
-					return
-				}
 				state.UpdateModule(snap)
 			}
 		},
@@ -432,7 +427,6 @@ func run(opts options) int {
 	startSignals(bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
 	scheduler.Start(ctx, gitModule, time.Second)
-	scheduler.Start(ctx, envModule, time.Second)
 	startAnimationTicker(ctx, bus, cfg.Modules, &commandAnimating)
 	// Paint git as soon as possible without blocking startup if git hangs.
 	refreshGit("")
