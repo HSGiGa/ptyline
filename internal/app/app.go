@@ -188,7 +188,9 @@ func run(opts options) int {
 			return
 		}
 		writer.RequestRedraw()
-		_ = writer.FlushBarFrame(bar.Render(render, state, barRows))
+		_ = writer.FlushBarFrameLazy(func() []string {
+			return bar.Render(render, state, barRows)
+		})
 	}
 	// altCoord sequences the alt-screen entry/exit protocol (spec §11):
 	// the filter records the transition; WriteOutput flushes it after bytes land.
@@ -316,4 +318,3 @@ func run(opts options) int {
 	}
 	return code
 }
-
