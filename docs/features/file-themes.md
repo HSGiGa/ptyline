@@ -1,6 +1,6 @@
 # File-Based Themes
 
-Status: proposed
+Status: implemented
 
 ## Goal
 
@@ -32,22 +32,23 @@ extension, so editors, linters, and tests can treat the file as ordinary TOML.
 
 ## Search Paths
 
-Initial implementation should use the user config directory:
+The initial implementation resolves theme files relative to the effective main
+config file:
+
+```text
+<directory containing config.toml>/themes/<name>.toml
+```
+
+With the default config path, this is:
 
 ```text
 $XDG_CONFIG_HOME/ptyline/themes/<name>.toml
 ~/.config/ptyline/themes/<name>.toml
 ```
 
-Project-local themes can be added later if project config becomes responsible
-for visual overrides:
-
-```text
-./.ptyline/themes/<name>.toml
-```
-
-If multiple search paths are supported, the nearest/more specific config source
-should win. The built-in default is not a file and is always available.
+Project-local theme search can be added later if project config becomes
+responsible for visual overrides. The built-in default is not a file and is
+always available.
 
 ## Theme File Format
 
@@ -78,7 +79,7 @@ Palette values may be:
 
 - hex colors: `#rrggbb`;
 - named ANSI colors already supported by `internal/status/theme`;
-- references to other tokens only if the resolver explicitly implements aliases.
+- references to other palette tokens, including tokens defined in the same file.
 
 The theme resolver continues to own conversion to SGR for `truecolor`, 256-color,
 16-color, and no-color terminals.

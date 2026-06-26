@@ -108,10 +108,15 @@ style = "time"
 
 ```toml
 [theme]
-color_scheme = "default"   # default|dark|light|gruvbox|catppuccin|nord|solarized
+color_scheme = "default"   # default, or themes/<name>.toml next to config.toml
 style = "flat"             # minimal|flat|powerline|box|pill
 icons = "ascii"            # nerd-font|emoji|ascii
 fallback = "ascii"
+
+[theme.palette]            # inline palette overrides
+"base.bg" = "#1e1e2e"
+"base.fg" = "#cdd6f4"
+accent = "#89b4fa"
 
 [theme.status]             # semantic tokens (arch.md §16)
 ok = "green"
@@ -131,6 +136,11 @@ bold = true
 padding_left = 1
 padding_right = 1
 ```
+
+If `color_scheme = "catppuccin"`, ptyline loads
+`themes/catppuccin.toml` from the same directory as the effective config file.
+Theme files use the same `[palette]` and `[style.<id>]` shape; see
+`docs/features/file-themes.md`.
 
 ## Custom command module (spec §8.7, §17)
 
