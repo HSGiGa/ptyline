@@ -13,7 +13,7 @@ format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-format = "{ssh} || {hostname} {cwd} || {time}"
+format = "{ssh} || {user}@{hostname} {cwd} || {runtime} {shell} {time}"
 
 [theme]
 color_scheme = "default"
@@ -33,6 +33,15 @@ format = "%H:%M:%S"
 interval_ms = 1000
 
 [module.hostname]
+enabled = true
+
+[module.user]
+enabled = true
+
+[module.runtime]
+enabled = true
+
+[module.shell]
 enabled = true
 
 [module.cwd]

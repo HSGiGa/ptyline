@@ -143,7 +143,13 @@ func run(opts options) int {
 	// sshBaseSnap is the env-based SSH snapshot (inbound SSH detection); it is
 	// reused as the fallback when an outbound ssh_end event arrives.
 	sshBaseSnap := modules.NewSSH().Refresh(nil)
-	for _, module := range []status.Module{timeModule, modules.NewHostname()} {
+	for _, module := range []status.Module{
+		timeModule,
+		modules.NewHostname(),
+		modules.NewUser(),
+		modules.NewRuntime(profile),
+		modules.NewShell(argv),
+	} {
 		state.UpdateModule(module.Refresh(nil))
 	}
 	state.UpdateModule(sshBaseSnap)

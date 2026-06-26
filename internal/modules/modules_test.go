@@ -19,6 +19,28 @@ func TestAbbreviateHome(t *testing.T) {
 	}
 }
 
+func TestUserLabelFromEnv(t *testing.T) {
+	t.Setenv("USER", "alice")
+	t.Setenv("LOGNAME", "")
+	t.Setenv("USERNAME", "")
+
+	if got := userLabel(); got != "alice" {
+		t.Fatalf("userLabel() = %q, want alice", got)
+	}
+}
+
+func TestShellLabel(t *testing.T) {
+	if got := shellLabel([]string{"/bin/zsh"}); got != "zsh" {
+		t.Fatalf("shellLabel() = %q, want zsh", got)
+	}
+	if got := shellLabel([]string{"-bash"}); got != "bash" {
+		t.Fatalf("shellLabel() = %q, want bash", got)
+	}
+	if got := shellLabel(nil); got != "" {
+		t.Fatalf("shellLabel(nil) = %q, want empty", got)
+	}
+}
+
 func TestFormatCommandActiveDoneIdle(t *testing.T) {
 	text, active := FormatCommand(status.ShellState{
 		ActiveCommand:  "npm test",

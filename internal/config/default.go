@@ -43,6 +43,15 @@ func Default() Config {
 				Format:     "%H:%M:%S",
 				IntervalMS: 1000,
 			},
+			"user": {
+				Enabled: true,
+			},
+			"runtime": {
+				Enabled: true,
+			},
+			"shell": {
+				Enabled: true,
+			},
 		},
 	}
 }
