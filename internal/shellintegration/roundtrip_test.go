@@ -18,11 +18,18 @@ func osc(key, value string) string {
 	return "\x1b]777;" + key + "=" + value + "\x1b\\"
 }
 
+// applyMeta drains the filter and applies each metadata update to state.
+func applyMeta(filter *proxy.AnsiFilter, state *status.StatusState) {
+	for _, m := range filter.DrainMeta() {
+		state.ApplyShellMeta(m.Key, m.Value)
+	}
+}
+
 // The canonical metadata each shell normalizes to, fed through the single filter,
 // yields one expected ShellState — no per-shell decode path exists.
 func TestCanonicalOSCRoundTrip(t *testing.T) {
 	state := status.NewState()
-	filter := proxy.NewAnsiFilter(reserved.Default(), state.ApplyShellMeta)
+	filter := proxy.NewAnsiFilter(reserved.Default())
 
 	stream := osc(shellintegration.KeyCWD, "/home/u/project") +
 		osc(shellintegration.KeyExitCode, "0") +
@@ -33,6 +40,7 @@ func TestCanonicalOSCRoundTrip(t *testing.T) {
 	if out := filter.Filter([]byte(stream)); len(out) != 0 {
 		t.Fatalf("OSC 777 leaked to terminal: %q", out)
 	}
+	applyMeta(filter, &state)
 
 	got := state.Shell
 	if got.CWD != "/home/u/project" || got.LastExitCode != 0 ||
@@ -44,10 +52,11 @@ func TestCanonicalOSCRoundTrip(t *testing.T) {
 // Non-whitelisted keys never reach ShellState and are not forwarded.
 func TestNonWhitelistedKeyIgnored(t *testing.T) {
 	state := status.NewState()
-	filter := proxy.NewAnsiFilter(reserved.Default(), state.ApplyShellMeta)
+	filter := proxy.NewAnsiFilter(reserved.Default())
 	if out := filter.Filter([]byte(osc("evil_key", "rm -rf /"))); len(out) != 0 {
 		t.Fatalf("dropped OSC still forwarded: %q", out)
 	}
+	applyMeta(filter, &state)
 	if state.Shell != (status.ShellState{}) {
 		t.Fatalf("non-whitelisted key mutated state: %+v", state.Shell)
 	}

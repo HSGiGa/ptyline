@@ -118,15 +118,38 @@ func (w *TerminalWriter) ClearBar() error {
 // BOTTOM rows are kept — the content nearest the prompt — and the top decorative
 // rows are dropped, so a short terminal never paints past its last row.
 func (w *TerminalWriter) FlushBarFrame(lines []string) error {
-	if w.altActive || !w.pendingFrame || w.barTop == 0 || w.barCount == 0 {
+	if !w.readyForBarFrame() {
 		return nil
 	}
-	if equalLines(lines, w.lastBars) {
-		w.pendingFrame = false
+	return w.flushBarFrame(lines)
+}
+
+// FlushBarFrameLazy is the hot-path variant of FlushBarFrame: render is called
+// only when a frame is actually eligible to be emitted. This keeps high-rate PTY
+// output from paying layout/render costs for frames that the rate limiter will
+// suppress.
+func (w *TerminalWriter) FlushBarFrameLazy(render func() []string) error {
+	if !w.readyForBarFrame() {
 		return nil
+	}
+	return w.flushBarFrame(render())
+}
+
+func (w *TerminalWriter) readyForBarFrame() bool {
+	if w.altActive || !w.pendingFrame || w.barTop == 0 || w.barCount == 0 {
+		return false
 	}
 	if !w.lastBarAt.IsZero() && time.Since(w.lastBarAt) < time.Second/maxBarRedrawHz {
-		return nil // rate-limited; stay pending for the next boundary
+		return false
+	}
+	return true
+}
+
+func (w *TerminalWriter) flushBarFrame(lines []string) error {
+	if equalLines(lines, w.lastBars) {
+		w.pendingFrame = false
+		w.lastBarAt = time.Now()
+		return nil
 	}
 	// Keep the last barCount lines; drop the leading (top) ones when space is tight.
 	start := len(lines) - w.barCount

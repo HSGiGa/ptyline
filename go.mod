@@ -2,8 +2,6 @@ module github.com/hsgiga/ptyline
 
 go 1.25.0
 
-toolchain go1.26.1
-
 // External dependencies are intentionally not declared yet. The scaffold compiles
 // against the standard library only; each implementation plan (docs/plans/NN-*.md)
 // adds the packages it needs and runs `go mod tidy`. Expected future requires:

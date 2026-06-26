@@ -100,13 +100,7 @@ func run(opts options) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // stops module refresh tickers on every exit path
 	bus := event.NewBus(256)
-	filter := proxy.NewAnsiFilter(area, func(key, value string) {
-		// TrySend (non-blocking): this callback is called synchronously from
-		// filter.Filter inside the event loop, so a blocking Send would deadlock
-		// if the bus buffer is full. Shell-meta events are rare enough that an
-		// occasional drop is acceptable over a guaranteed deadlock.
-		bus.TrySend(event.ShellMeta{Key: key, Value: value})
-	})
+	filter := proxy.NewAnsiFilter(area)
 	filter.SetRows(size.Rows)
 	loop := proxy.NewLoop(bus, filter)
 	writer := proxy.NewTerminalWriter(os.Stdout)
@@ -183,12 +177,13 @@ func run(opts options) int {
 	render := renderer.New(layout.New(int(size.Cols)), th)
 	render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
 	var resizePending bool
+	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
 		if resizePending {
 			return
 		}
 		writer.RequestRedraw()
-		_ = writer.FlushBarFrame(bar.Render(render, state, barRows))
+		_ = writer.FlushBarFrameLazy(renderFn)
 	}
 	// altCoord sequences the alt-screen entry/exit protocol (spec §11):
 	// the filter records the transition; WriteOutput flushes it after bytes land.
@@ -316,4 +311,3 @@ func run(opts options) int {
 	}
 	return code
 }
-

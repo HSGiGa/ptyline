@@ -7,8 +7,8 @@ import (
 )
 
 // newFilter builds a filter for a 30-row terminal (child rows = 29, bottom = 29).
-func newFilter(onMeta func(k, v string)) *AnsiFilter {
-	f := NewAnsiFilter(reserved.Default(), onMeta)
+func newFilter() *AnsiFilter {
+	f := NewAnsiFilter(reserved.Default())
 	f.SetRows(30)
 	return f
 }
@@ -22,7 +22,7 @@ func TestNormalScreenScrollRegionRewrite(t *testing.T) {
 		{"\x1b[5;20r", "\x1b[5;20r"}, // already inside child area → unchanged
 	}
 	for _, c := range cases {
-		f := newFilter(nil)
+		f := newFilter()
 		if got := string(f.Filter([]byte(c.in))); got != c.want {
 			t.Fatalf("Filter(%q) = %q, want %q", c.in, got, c.want)
 		}
@@ -32,7 +32,7 @@ func TestNormalScreenScrollRegionRewrite(t *testing.T) {
 // In the alternate screen the child owns every row, so the filter must NOT clamp
 // scroll margins (spec §8.4, §11).
 func TestAltScreenScrollRegionPassesThrough(t *testing.T) {
-	f := newFilter(nil)
+	f := newFilter()
 	f.Filter([]byte("\x1b[?1049h")) // enter alt screen
 	if got := string(f.Filter([]byte("\x1b[1;30r"))); got != "\x1b[1;30r" {
 		t.Fatalf("alt-screen DECSTBM = %q, want pass-through", got)
@@ -40,7 +40,7 @@ func TestAltScreenScrollRegionPassesThrough(t *testing.T) {
 }
 
 func TestAltScreenToggleHandler(t *testing.T) {
-	f := newFilter(nil)
+	f := newFilter()
 	var active bool
 	var calls int
 	f.SetAltHandler(func(a bool) { active = a; calls++ })
@@ -61,7 +61,7 @@ func TestAltScreenToggleHandler(t *testing.T) {
 func TestAltScreenToggleVariants(t *testing.T) {
 	for _, code := range []string{"?1049", "?1047", "?47"} {
 		t.Run(code, func(t *testing.T) {
-			f := newFilter(nil)
+			f := newFilter()
 			var calls int
 			f.SetAltHandler(func(bool) { calls++ })
 
@@ -84,7 +84,7 @@ func TestAltScreenToggleVariants(t *testing.T) {
 
 // A sequence split across two reads must be reassembled via the tail buffer.
 func TestPartialSequenceReassembly(t *testing.T) {
-	f := newFilter(nil)
+	f := newFilter()
 	if got := f.Filter([]byte("\x1b[1;3")); len(got) != 0 {
 		t.Fatalf("incomplete sequence produced output %q, want buffered", got)
 	}
@@ -93,21 +93,24 @@ func TestPartialSequenceReassembly(t *testing.T) {
 	}
 }
 
-// Whitelisted OSC 777 is consumed (never forwarded) and reported via onMeta.
+// Whitelisted OSC 777 is consumed (never forwarded) and drained via DrainMeta.
 func TestOSC777Consumed(t *testing.T) {
-	var k, v string
-	f := newFilter(func(key, val string) { k, v = key, val })
+	f := newFilter()
 	if got := f.Filter([]byte("\x1b]777;cwd=/tmp\x07")); len(got) != 0 {
 		t.Fatalf("OSC 777 forwarded %q, want consumed", got)
 	}
-	if k != "cwd" || v != "/tmp" {
-		t.Fatalf("onMeta got (%q,%q), want (cwd,/tmp)", k, v)
+	meta := f.DrainMeta()
+	if len(meta) != 1 || meta[0].Key != "cwd" || meta[0].Value != "/tmp" {
+		t.Fatalf("DrainMeta got %+v, want cwd=/tmp", meta)
+	}
+	if meta := f.DrainMeta(); len(meta) != 0 {
+		t.Fatalf("DrainMeta second call got %+v, want empty", meta)
 	}
 }
 
 // Ordinary OSC (e.g. window title, OSC 0) passes through unchanged.
 func TestOrdinaryOSCPassThrough(t *testing.T) {
-	f := newFilter(nil)
+	f := newFilter()
 	in := "\x1b]0;my title\x07"
 	if got := string(f.Filter([]byte(in))); got != in {
 		t.Fatalf("OSC 0 = %q, want pass-through", got)

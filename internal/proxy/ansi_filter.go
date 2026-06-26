@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hsgiga/ptyline/internal/event"
 	"github.com/hsgiga/ptyline/internal/reserved"
 )
 
@@ -48,14 +49,14 @@ type AnsiFilter struct {
 	rows   uint16 // current real-terminal rows
 	alt    AltScreenState
 	tail   []byte // buffered incomplete escape sequence
-	onMeta func(key, value string)
+	meta   []event.ShellMeta
 	onAlt  func(active bool)
 	onDiag func(msg string)
 }
 
-// NewAnsiFilter creates a filter for the given reserved area and meta callback.
-func NewAnsiFilter(area reserved.Area, onMeta func(key, value string)) *AnsiFilter {
-	return &AnsiFilter{area: area, onMeta: onMeta}
+// NewAnsiFilter creates a filter for the given reserved area.
+func NewAnsiFilter(area reserved.Area) *AnsiFilter {
+	return &AnsiFilter{area: area}
 }
 
 // SetAltHandler registers the callback invoked when the child enters/leaves the
@@ -71,6 +72,18 @@ func (f *AnsiFilter) SetRows(rows uint16) { f.rows = rows }
 
 // AltActive reports whether the child is currently in the alternate screen.
 func (f *AnsiFilter) AltActive() bool { return f.alt.Active }
+
+// DrainMeta returns shell metadata consumed during Filter calls since the last
+// drain. The event loop applies these directly instead of sending them back
+// through its own bus, so metadata cannot be dropped under bus backpressure.
+func (f *AnsiFilter) DrainMeta() []event.ShellMeta {
+	if len(f.meta) == 0 {
+		return nil
+	}
+	meta := f.meta
+	f.meta = nil
+	return meta
+}
 
 // bottom is the last row the child is allowed to touch.
 func (f *AnsiFilter) bottom() uint16 { return f.area.ChildRows(f.rows) }
@@ -277,9 +290,7 @@ func (f *AnsiFilter) handleOSC(seq []byte, out []byte) []byte {
 		f.diag("dropped non-whitelisted or oversized OSC 777 message")
 		return out
 	}
-	if f.onMeta != nil {
-		f.onMeta(key, value)
-	}
+	f.meta = append(f.meta, event.ShellMeta{Key: key, Value: value})
 	return out
 }
 

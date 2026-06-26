@@ -110,3 +110,28 @@ func TestWriterRateLimits(t *testing.T) {
 		t.Fatalf("rate limit not enforced: wrote %q", buf.Bytes())
 	}
 }
+
+func TestWriterLazyFlushSkipsRenderWhenRateLimited(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewTerminalWriter(&buf)
+	w.SetBarRows(30, 1)
+
+	w.RequestRedraw()
+	_ = w.FlushBarFrameLazy(func() []string { return []string{"a"} })
+	buf.Reset()
+
+	called := false
+	w.RequestRedraw()
+	if err := w.FlushBarFrameLazy(func() []string {
+		called = true
+		return []string{"b"}
+	}); err != nil {
+		t.Fatalf("FlushBarFrameLazy: %v", err)
+	}
+	if called {
+		t.Fatal("lazy render called while frame was rate-limited")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("rate-limited lazy frame wrote %q", buf.Bytes())
+	}
+}
