@@ -53,7 +53,9 @@ func Default() Config {
 				Enabled: true,
 			},
 			"env": {
-				Enabled: true,
+				Enabled:    true,
+				Env:        []string{},
+				IntervalMS: 1000,
 			},
 		},
 	}

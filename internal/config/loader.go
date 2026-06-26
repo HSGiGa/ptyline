@@ -142,6 +142,11 @@ func Validate(cfg *Config) error {
 		if module.DoneFailureTTLMS < 0 {
 			return fmt.Errorf("module.%s.done_failure_ttl_ms must be >= 0", id)
 		}
+		for _, name := range module.Env {
+			if !validEnvName(name) {
+				return fmt.Errorf("module.%s.env has invalid value %q", id, name)
+			}
+		}
 	}
 	return nil
 }
@@ -156,6 +161,7 @@ func oneOf(value string, values ...string) bool {
 }
 
 var numericWidth = regexp.MustCompile(`^[1-9][0-9]*%?$`)
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validWidth(width string) bool {
 	if width == "auto" || width == "fill" {
@@ -169,6 +175,10 @@ func validWidth(width string) bool {
 	}
 	percent, _ := strconv.Atoi(strings.TrimSuffix(width, "%"))
 	return percent <= 100
+}
+
+func validEnvName(name string) bool {
+	return envName.MatchString(name)
 }
 
 // DefaultPath returns $XDG_CONFIG_HOME/ptyline/config.toml, falling back to

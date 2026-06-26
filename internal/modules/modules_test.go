@@ -50,6 +50,33 @@ func TestEnvValue(t *testing.T) {
 	if got := envValue(""); got != "" {
 		t.Fatalf("envValue(empty) = %q, want empty", got)
 	}
+
+	module := NewEnv([]string{"PTYLINE_TEST_ENV"}, 1500*time.Millisecond)
+	if got := module.Interval(); got != 1500*time.Millisecond {
+		t.Fatalf("Env.Interval() = %v, want 1500ms", got)
+	}
+	if got := module.Refresh(nil).Value.Text; got != "staging" {
+		t.Fatalf("Env.Refresh() = %q, want staging", got)
+	}
+}
+
+func TestFormatEnvValues(t *testing.T) {
+	lookup := func(name string) string {
+		switch name {
+		case "APP_ENV":
+			return "dev"
+		case "REGION":
+			return "eu"
+		default:
+			return ""
+		}
+	}
+	if got := formatEnvValues([]string{"APP_ENV"}, lookup); got != "dev" {
+		t.Fatalf("single env = %q, want dev", got)
+	}
+	if got := formatEnvValues([]string{"APP_ENV", "REGION", "EMPTY"}, lookup); got != "APP_ENV=dev REGION=eu" {
+		t.Fatalf("env list = %q, want APP_ENV=dev REGION=eu", got)
+	}
 }
 
 func TestFormatCommandActiveDoneIdle(t *testing.T) {

@@ -11,7 +11,7 @@ not run work during redraw.
 | `{user}` | environment / OS user | static | Checks `USER`, `LOGNAME`, `USERNAME`, then OS user lookup. |
 | `{runtime}` | runtime detector | static | Values match `runtimeenv.Kind.String()` such as `native_linux`, `wsl2`, `macos`. |
 | `{shell}` | resolved child argv | static | Shows the basename of the shell/command ptyline starts. |
-| `{env}` | configured environment variable | static | Reads `[module.env].env`; empty or unset values hide the block. |
+| `{env}` | configured environment variables | interval + event | Reads `[module.env].env = ["FOO", "BAR"]` every `interval_ms` and via shell OSC hook; one name shows its value, multiple names show `NAME=value` entries. |
 | `{cwd}` | shell integration | event | Empty until OSC shell integration reports `cwd`; abbreviated under `$HOME`. |
 | `{ssh}` | SSH environment / integration | static + event | Shows inbound SSH env or outbound `ssh_start`/`ssh_end` metadata. |
 | `{git}` | git provider | interval + cwd event | Refreshes against the current shell cwd and hides outside a git repo. |

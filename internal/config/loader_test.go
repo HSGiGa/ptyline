@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -51,8 +52,11 @@ func TestLoadRootConfig(t *testing.T) {
 			t.Fatalf("root %s module = %+v, want enabled", id, module)
 		}
 	}
-	if got, want := cfg.Modules["env"].Env, "PTYLINE_ENV"; got != want {
+	if got, want := cfg.Modules["env"].Env, []string{"PTYLINE_ENV"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("root env module env = %q, want %q", got, want)
+	}
+	if got, want := cfg.Modules["env"].IntervalMS, 1000; got != want {
+		t.Fatalf("root env module interval_ms = %d, want %d", got, want)
 	}
 }
 
@@ -79,6 +83,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 		{name: "unknown key", body: "config_version = 1\nunknown = true", key: "unknown"},
 		{name: "format and block", body: "config_version = 1\n[bar]\nformat = \"{time}\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"auto\"\ntruncate = \"right\"", key: "bar.format"},
 		{name: "bad width", body: "config_version = 1\n[bar]\nformat = \"\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"101%\"\ntruncate = \"right\"", key: "width"},
+		{name: "bad env name", body: "config_version = 1\n[module.env]\nenabled = true\nenv = [\"BAD-NAME\"]", key: "module.env.env"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

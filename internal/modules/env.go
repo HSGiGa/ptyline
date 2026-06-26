@@ -3,30 +3,31 @@ package modules
 import (
 	"context"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/status"
 )
 
-// Env renders the value of a configured environment variable. It is static for
-// the process lifetime; an empty name or missing variable hides the block.
+// Env renders the value of a configured environment variable. It refreshes on an
+// interval; an empty name or missing variable hides the block.
 type Env struct {
-	name  string
-	value string
+	names    []string
+	interval time.Duration
 }
 
-// NewEnv creates an env module for one environment variable name.
-func NewEnv(name string) *Env {
-	return &Env{name: name, value: envValue(name)}
+// NewEnv creates an env module for one or more environment variable names.
+func NewEnv(names []string, interval time.Duration) *Env {
+	return &Env{names: append([]string(nil), names...), interval: interval}
 }
 
 func (m *Env) ID() status.ModuleID     { return "env" }
-func (m *Env) Interval() time.Duration { return 0 }
+func (m *Env) Interval() time.Duration { return m.interval }
 
 func (m *Env) Refresh(_ context.Context) status.ModuleSnapshot {
 	return status.ModuleSnapshot{
 		ID:        m.ID(),
-		Value:     status.Text(m.value),
+		Value:     status.Text(formatEnvValues(m.names, os.Getenv)),
 		UpdatedAt: time.Now(),
 	}
 }
@@ -36,4 +37,22 @@ func envValue(name string) string {
 		return ""
 	}
 	return os.Getenv(name)
+}
+
+func formatEnvValues(names []string, lookup func(string) string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	if len(names) == 1 {
+		return lookup(names[0])
+	}
+	values := make([]string, 0, len(names))
+	for _, name := range names {
+		value := lookup(name)
+		if value == "" {
+			continue
+		}
+		values = append(values, name+"="+value)
+	}
+	return strings.Join(values, " ")
 }

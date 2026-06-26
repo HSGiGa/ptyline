@@ -59,10 +59,11 @@ OSC 777 ; cwd=/home/u/project ST
 OSC 777 ; exit_code=0 ST
 OSC 777 ; duration_ms=153 ST
 OSC 777 ; command=git status ST
+OSC 777 ; env=APP_ENV=dev REGION=eu ST
 ```
 
 - `ST` = `ESC \` (preferred) or `BEL`.
-- **Whitelist:** only `cwd`, `exit_code`, `duration_ms`, `command` are accepted.
+- **Whitelist:** only `cwd`, `exit_code`, `duration_ms`, `command`, `env` are accepted.
 - Values must contain **no control characters**; payloads are capped at
   **8 KiB** (`maxOSCPayload`). Unknown/malformed/oversized messages are dropped
   with a diagnostic and **never** cause command execution (spec §9, §17).

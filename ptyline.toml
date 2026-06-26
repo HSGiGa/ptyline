@@ -46,7 +46,8 @@ enabled = true
 
 [module.env]
 enabled = true
-env = "PTYLINE_ENV"
+env = ["PTYLINE_ENV"]
+interval_ms = 1000
 
 [module.cwd]
 enabled = true
