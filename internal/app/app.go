@@ -112,6 +112,7 @@ func run(opts options) int {
 	// loop goroutine on cwd shell-meta, so it must be race-free.
 	var cwdHolder atomic.Value
 	var commandAnimating atomic.Bool
+	var envFromOSC atomic.Bool
 	var lastCommandActivity time.Time
 	// lastStdinInput marks the most recent keystroke so the command glint
 	// can tell genuine work output from a program echoing what the user types.
@@ -350,6 +351,7 @@ func run(opts options) int {
 				refreshGit(state.Shell.CWD)
 			}
 			if key == shellintegration.KeyEnv {
+				envFromOSC.Store(true)
 				state.UpdateModule(status.ModuleSnapshot{
 					ID:        "env",
 					Value:     status.Text(value),
@@ -374,6 +376,9 @@ func run(opts options) int {
 		},
 		ModuleUpdated: func(_ string, snapshot any) {
 			if snap, ok := snapshot.(status.ModuleSnapshot); ok {
+				if snap.ID == "env" && envFromOSC.Load() {
+					return
+				}
 				state.UpdateModule(snap)
 			}
 		},
