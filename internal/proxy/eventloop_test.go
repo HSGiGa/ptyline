@@ -36,6 +36,31 @@ func TestLoopForwardsCtrlD(t *testing.T) {
 	}
 }
 
+func TestLoopAppliesFilterMetadataDuringPtyOutput(t *testing.T) {
+	bus := event.NewBus(2)
+	bus.Send(event.PtyOutput{Data: []byte("x\x1b]777;cwd=/tmp\x07y")})
+	bus.Send(event.ChildExited{Code: 0})
+
+	var written bytes.Buffer
+	var gotKey, gotValue string
+	loop := NewLoop(bus, NewAnsiFilter(reserved.Default(), nil))
+	loop.SetHandlers(Handlers{
+		WriteOutput: func(b []byte) error { written.Write(b); return nil },
+		ShellMeta:   func(key, value string) { gotKey, gotValue = key, value },
+	})
+
+	code, err := loop.Run()
+	if err != nil || code != 0 {
+		t.Fatalf("Run() = (%d, %v), want (0, nil)", code, err)
+	}
+	if got := written.String(); got != "xy" {
+		t.Fatalf("WriteOutput got %q, want filtered output %q", got, "xy")
+	}
+	if gotKey != "cwd" || gotValue != "/tmp" {
+		t.Fatalf("ShellMeta got (%q,%q), want (cwd,/tmp)", gotKey, gotValue)
+	}
+}
+
 // A termination signal exits with the conventional 128+signo code and invokes the
 // Terminate handler with the canonical signal token.
 func TestLoopTerminationExitCode(t *testing.T) {

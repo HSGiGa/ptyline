@@ -61,8 +61,10 @@ func (l *Loop) Run() (exitCode int, err error) {
 				}
 			}
 		case event.PtyOutput:
+			output := l.filter.Filter(e.Data)
+			l.applyFilterMeta()
 			if l.h.WriteOutput != nil {
-				if err := l.h.WriteOutput(l.filter.Filter(e.Data)); err != nil {
+				if err := l.h.WriteOutput(output); err != nil {
 					return 1, err
 				}
 			}
@@ -106,6 +108,16 @@ func (l *Loop) Run() (exitCode int, err error) {
 		}
 	}
 	return 0, nil
+}
+
+func (l *Loop) applyFilterMeta() {
+	if l.h.ShellMeta == nil {
+		_ = l.filter.DrainMeta()
+		return
+	}
+	for _, meta := range l.filter.DrainMeta() {
+		l.h.ShellMeta(meta.Key, meta.Value)
+	}
 }
 
 // terminationExitCode maps a termination-signal name to the conventional

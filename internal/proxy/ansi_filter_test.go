@@ -103,6 +103,13 @@ func TestOSC777Consumed(t *testing.T) {
 	if k != "cwd" || v != "/tmp" {
 		t.Fatalf("onMeta got (%q,%q), want (cwd,/tmp)", k, v)
 	}
+	meta := f.DrainMeta()
+	if len(meta) != 1 || meta[0].Key != "cwd" || meta[0].Value != "/tmp" {
+		t.Fatalf("DrainMeta got %+v, want cwd=/tmp", meta)
+	}
+	if meta := f.DrainMeta(); len(meta) != 0 {
+		t.Fatalf("DrainMeta second call got %+v, want empty", meta)
+	}
 }
 
 // Ordinary OSC (e.g. window title, OSC 0) passes through unchanged.
