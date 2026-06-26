@@ -15,12 +15,14 @@ import (
 // MVP populates a small subset; the remaining fields are reserved so future
 // providers (git, agents) slot in without reshaping the type (spec §24.1).
 type StatusState struct {
-	Terminal    TerminalState
-	Shell       ShellState
-	Git         *GitState // reserved; provider is post-MVP (spec §8.7, §19)
-	Modules     ModuleValues
-	Agents      []AgentState // reserved; post-MVP (spec §24.5)
-	Diagnostics diagnostics.Record
+	Terminal               TerminalState
+	Shell                  ShellState
+	Git                    *GitState // reserved; provider is post-MVP (spec §8.7, §19)
+	Modules                ModuleValues
+	Agents                 []AgentState // reserved; post-MVP (spec §24.5)
+	Diagnostics            diagnostics.Record
+	AnimationPhase         int
+	ActiveCommandAnimating bool
 }
 
 // NewState creates an empty, writable status state.
@@ -34,7 +36,12 @@ func (s *StatusState) ApplyShellMeta(key, value string) {
 	case "cwd":
 		s.Shell.CWD = value
 	case "command":
-		s.Shell.LastCommand = value
+		if value != "" {
+			s.Shell.ActiveCommand = value
+			s.Shell.LastCommand = value
+			return
+		}
+		s.Shell.ActiveCommand = ""
 	case "exit_code":
 		if code, err := strconv.Atoi(value); err == nil {
 			s.Shell.LastExitCode = code
@@ -73,6 +80,7 @@ type ShellState struct {
 	Username       string
 	Hostname       string
 	Shell          string
+	ActiveCommand  string
 	LastExitCode   int
 	LastCommand    string
 	LastDurationMS int

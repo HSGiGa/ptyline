@@ -34,6 +34,25 @@ func TestWriterFlushAndSkipUnchanged(t *testing.T) {
 	}
 }
 
+// When fewer rows fit than the bar has, the bottom rows (content nearest the
+// prompt) are kept and the top decorative rows are dropped.
+func TestWriterShortTerminalKeepsBottomRows(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewTerminalWriter(&buf)
+	w.SetBarRows(30, 1) // only one row fits
+
+	w.RequestRedraw()
+	if err := w.FlushBarFrame([]string{"TOP-border", "BOTTOM-content"}); err != nil {
+		t.Fatalf("FlushBarFrame: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("BOTTOM-content")) {
+		t.Fatalf("bottom row dropped: %q", buf.Bytes())
+	}
+	if bytes.Contains(buf.Bytes(), []byte("TOP-border")) {
+		t.Fatalf("top row painted despite no room: %q", buf.Bytes())
+	}
+}
+
 // While the alternate screen is active, bar frames are suppressed entirely (§11).
 func TestWriterSuppressesBarInAltScreen(t *testing.T) {
 	var buf bytes.Buffer
@@ -47,6 +66,28 @@ func TestWriterSuppressesBarInAltScreen(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("bar painted in alt screen: %q", buf.Bytes())
+	}
+}
+
+func TestWriterForcesRedrawAfterAltScreen(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewTerminalWriter(&buf)
+	w.SetBarRows(30, 1)
+
+	w.RequestRedraw()
+	if err := w.FlushBarFrame([]string{"bar"}); err != nil {
+		t.Fatalf("initial FlushBarFrame: %v", err)
+	}
+	buf.Reset()
+
+	w.SetAltActive(true)
+	w.SetAltActive(false)
+	w.RequestRedraw()
+	if err := w.FlushBarFrame([]string{"bar"}); err != nil {
+		t.Fatalf("post-alt FlushBarFrame: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("expected bar to repaint after leaving alt screen")
 	}
 }
 

@@ -124,6 +124,15 @@ func Validate(cfg *Config) error {
 		if module.Command != "" && module.TimeoutMS <= 0 {
 			return fmt.Errorf("module.%s.timeout_ms is required for custom commands", id)
 		}
+		if module.Animation != "" && !oneOf(module.Animation, "none", "glint") {
+			return fmt.Errorf("module.%s.animation has invalid value %q", id, module.Animation)
+		}
+		if module.AnimationIntervalMS < 0 {
+			return fmt.Errorf("module.%s.animation_interval_ms must be >= 0", id)
+		}
+		if module.MaxWidth < 0 {
+			return fmt.Errorf("module.%s.max_width must be >= 0", id)
+		}
 	}
 	return nil
 }

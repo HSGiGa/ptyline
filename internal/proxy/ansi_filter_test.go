@@ -58,6 +58,30 @@ func TestAltScreenToggleHandler(t *testing.T) {
 	}
 }
 
+func TestAltScreenToggleVariants(t *testing.T) {
+	for _, code := range []string{"?1049", "?1047", "?47"} {
+		t.Run(code, func(t *testing.T) {
+			f := newFilter(nil)
+			var calls int
+			f.SetAltHandler(func(bool) { calls++ })
+
+			f.Filter([]byte("\x1b[" + code + "h"))
+			f.Filter([]byte("\x1b[" + code + "h")) // duplicate enter is ignored
+			if !f.AltActive() {
+				t.Fatalf("%s enter did not activate alt screen", code)
+			}
+			f.Filter([]byte("\x1b[" + code + "l"))
+			f.Filter([]byte("\x1b[" + code + "l")) // duplicate leave is ignored
+			if f.AltActive() {
+				t.Fatalf("%s leave did not deactivate alt screen", code)
+			}
+			if calls != 2 {
+				t.Fatalf("%s handler calls = %d, want 2", code, calls)
+			}
+		})
+	}
+}
+
 // A sequence split across two reads must be reassembled via the tail buffer.
 func TestPartialSequenceReassembly(t *testing.T) {
 	f := newFilter(nil)

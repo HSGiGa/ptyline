@@ -32,12 +32,13 @@ redraw when the line is byte-identical (spec §16). Renderer reads state only.
 
 ## Acceptance
 - [x] Left/center/right blocks render in the expected positions (spec §20.13).
-- [ ] Long output scrolls only above the bar; bar stays on the last row (§20.3–§20.5).
+- [x] Long output scrolls only above the bar; bar stays on the last row (§20.3–§20.5).
 - [x] Narrow terminals drop low-priority blocks instead of overflowing.
 
 ## Tests
 Width/truncation table tests; layout packing (fill/percent/overflow) tests;
-renderer golden-line tests for sample states.
+renderer golden-line tests for sample states, including border-row fill and
+empty-module hiding.
 
 ## Out of scope
 Color/theme/icons depth (plan 10) — render plain or basic fg/bg here. Mouse

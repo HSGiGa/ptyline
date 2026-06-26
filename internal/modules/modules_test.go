@@ -13,3 +13,15 @@ func TestAbbreviateHome(t *testing.T) {
 		t.Fatalf("AbbreviateHome() = %q", got)
 	}
 }
+
+func TestFormatActiveCommand(t *testing.T) {
+	if got := FormatActiveCommand("go test ./...", "[{command}]", 20); got != "[go test ./...]" {
+		t.Fatalf("FormatActiveCommand() = %q", got)
+	}
+	if got := FormatActiveCommand("abcdefghijklmnopqrstuvwxyz", "{command}", 10); got != "abcdefghi…" {
+		t.Fatalf("truncated command = %q", got)
+	}
+	if got := FormatActiveCommand("", "{command}", 10); got != "" {
+		t.Fatalf("empty command = %q", got)
+	}
+}

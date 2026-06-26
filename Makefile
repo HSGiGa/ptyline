@@ -44,8 +44,12 @@ build-all: ## Cross-compile linux, darwin, windows binaries
 	GOOS=windows GOARCH=amd64 $(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-windows-amd64.exe $(PKG)
 
 .PHONY: run
-run: ## Build and run (use ARGS="fish" to pass a child command)
-	$(GO) run $(GO_BUILD_FLAGS) $(PKG) $(ARGS)
+run: build ## Build and run with fish integration (use ARGS="..." to override)
+	@if [ -n "$(ARGS)" ]; then \
+		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) $(ARGS); \
+	else \
+		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) fish -C 'ptyline init fish | source'; \
+	fi
 
 .PHONY: test
 test: ## Run the full test suite

@@ -24,13 +24,13 @@ The MVP module set produces real values: time, hostname, static text, and cwd
 Modules return typed `ModuleValue`. No per-render work (spec §8.7).
 
 ## Acceptance
-- [ ] Bar (once plan 09 lands) shows current time updating each second.
-- [ ] Hostname and static text render.
-- [ ] `cd` in the shell updates cwd (with fish integration, plan 12).
+- [x] Bar (once plan 09 lands) shows current time updating each second.
+- [x] Hostname and static text render.
+- [x] `cd` in the shell updates cwd (with fish integration, plan 12).
 
 ## Tests
-Time formatting table tests; cwd tilde-abbreviation; hostname error path
-(`Stale`/fallback).
+Time formatting table tests; cwd tilde-abbreviation; hostname/static module
+tests. CWD updates are covered through shell integration + app wiring.
 
 ## Out of scope
 Git (plan 15), command-duration/exit-code modules (post-MVP), custom commands.

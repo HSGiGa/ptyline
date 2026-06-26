@@ -48,10 +48,10 @@ a single owner (`shellintegration`), keyed by protocol key, never by shell.
 ## Acceptance
 - [ ] `eval "$(ptyline init bash)"` (and zsh/fish equivalents) updates cwd, exit
   code, and duration on the bar.
-- [ ] Raw OSC sequences never appear on screen; non-whitelisted keys are ignored.
-- [ ] Adding a shell is a new `templates/<shell>.sh` only — no Go change makes
+- [x] Raw OSC sequences never appear on screen; non-whitelisted keys are ignored.
+- [x] Adding a shell is a new `templates/<shell>.sh` only — no Go change makes
   `ptyline init <shell>` and `Supported()` pick it up (registry is data-driven).
-- [ ] No Go identifier or branch names a specific shell (grep stays clean).
+- [x] No Go identifier or branch names a specific shell (grep stays clean).
 
 ## Tests
 Snapshot the emitted scripts. **Canonical round-trip:** feed each shell's OSC output

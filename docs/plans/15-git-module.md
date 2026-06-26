@@ -1,5 +1,5 @@
 # 15 — Git Module
-Status: [ ] not started
+Status: [x] done
 Depends on: 07, 09
 Spec refs: spec §8.7, §16, §19; docs/state-model.md
 
@@ -23,13 +23,20 @@ interval with a timeout and fully cached — proving the caching abstraction.
 time-bounded (spec §16). Renderer reads the cached snapshot.
 
 ## Acceptance
-- [ ] Branch shows and updates within one interval after `git checkout`.
-- [ ] A hung git (simulated) yields a stale snapshot, never a stalled bar.
-- [ ] Outside a repo, the module hides cleanly.
+- [x] Branch shows and updates within one interval after `git checkout`.
+- [x] A hung git (simulated) yields a stale snapshot, never a stalled bar.
+- [x] Outside a repo, the module hides cleanly.
 
 ## Tests
-Run against a temp git repo (init, branch, checkout) and assert the value; a fake
-slow command asserts timeout → stale.
+`internal/modules/git_test.go` runs against a temp git repo (`init`, commit,
+checkout) and asserts the rendered branch value. A fake hung git binary asserts
+timeout → stale.
+
+## Implementation note
+Git still refreshes on its own interval as a fallback, but `cwd` shell metadata
+now also triggers an immediate async git refresh. Empty git values hide the block
+in normal status rows; border rows fill the empty section with the row's `Fill`
+character.
 
 ## Out of scope
 Dirty-state details, ahead/behind counts (post-MVP polish, spec §19).

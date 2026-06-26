@@ -66,15 +66,18 @@ type BlockConfig struct {
 
 // ModuleConfig is the per-module configuration (spec §8.7).
 type ModuleConfig struct {
-	Enabled      bool   `toml:"enabled"`
-	Format       string `toml:"format"`
-	Mode         string `toml:"mode"`     // e.g. "shell-integration"
-	Provider     string `toml:"provider"` // command | osc | socket (future)
-	Command      string `toml:"command"`
-	IntervalMS   int    `toml:"interval_ms"`
-	TimeoutMS    int    `toml:"timeout_ms"`
-	Icon         string `toml:"icon"`
-	FallbackIcon string `toml:"fallback_icon"`
+	Enabled             bool   `toml:"enabled"`
+	Format              string `toml:"format"`
+	Mode                string `toml:"mode"`     // e.g. "shell-integration"
+	Provider            string `toml:"provider"` // command | osc | socket (future)
+	Command             string `toml:"command"`
+	IntervalMS          int    `toml:"interval_ms"`
+	TimeoutMS           int    `toml:"timeout_ms"`
+	MaxWidth            int    `toml:"max_width"`
+	Animation           string `toml:"animation"` // none | glint
+	AnimationIntervalMS int    `toml:"animation_interval_ms"`
+	Icon                string `toml:"icon"`
+	FallbackIcon        string `toml:"fallback_icon"`
 }
 
 // ThemeConfig selects color scheme, style preset, and semantic tokens (arch.md §16).

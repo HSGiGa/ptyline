@@ -29,6 +29,16 @@ enabled = true
 	}
 }
 
+func TestDefaultTopRowSpacing(t *testing.T) {
+	cfg := Default()
+	if len(cfg.Bar.Rows) == 0 {
+		t.Fatal("Default() has no bar rows")
+	}
+	if got, want := cfg.Bar.Rows[0].Format, " {cmd} || || {git} "; got != want {
+		t.Fatalf("top row format = %q, want %q", got, want)
+	}
+}
+
 func TestLoadRejectsInvalidConfig(t *testing.T) {
 	tests := []struct {
 		name string

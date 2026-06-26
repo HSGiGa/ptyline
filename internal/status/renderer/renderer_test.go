@@ -1,11 +1,13 @@
 package renderer
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/hsgiga/ptyline/internal/status"
 	"github.com/hsgiga/ptyline/internal/status/layout"
+	"github.com/hsgiga/ptyline/internal/status/style"
 	"github.com/hsgiga/ptyline/internal/status/theme"
 	"github.com/hsgiga/ptyline/internal/status/width"
 )
@@ -64,4 +66,147 @@ func TestRenderRowBorderFill(t *testing.T) {
 	if strings.Contains(line, "\n") {
 		t.Fatalf("border row contains a newline: %q", line)
 	}
+}
+
+func TestRenderRowBorderFillEmptyModuleUsesFill(t *testing.T) {
+	st := status.NewState()
+	st.Resize(30, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("")})
+
+	r := New(layout.New(30), theme.Default(theme.NoColor))
+	line := r.RenderRow(st, layout.ParseFormat("|| {git} ||"), '─').Line
+
+	if w := width.String(line); w != 30 {
+		t.Fatalf("border row width = %d, want 30: %q", w, line)
+	}
+	if strings.Contains(line, " ") {
+		t.Fatalf("empty git left a whitespace hole in border row: %q", line)
+	}
+	if want := strings.Repeat("─", 30); line != want {
+		t.Fatalf("empty git border row = %q, want %q", line, want)
+	}
+}
+
+func TestRenderMainBarHidesEmptyModuleBlock(t *testing.T) {
+	st := status.NewState()
+	st.Resize(20, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("")})
+
+	blocks := layout.ParseFormat("{git}")
+	blocks[0].StyleID = "git"
+	r := New(layout.New(20), theme.Default(theme.NoColor))
+	r.SetStyles(map[string]style.Style{
+		"git": {PaddingLeft: 2, PaddingRight: 2},
+	})
+	line := r.RenderRow(st, blocks, ' ').Line
+
+	if line != strings.Repeat(" ", 20) {
+		t.Fatalf("empty main-bar git block rendered %q, want blank bar", line)
+	}
+}
+
+func TestActiveCommandAlias(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.Shell.ActiveCommand = "go test ./..."
+	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("go test ./...")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	blocks := layout.ParseFormat("{cmd}")
+
+	line := r.RenderRow(st, blocks, ' ').Line
+
+	if !strings.Contains(line, "go test ./...") {
+		t.Fatalf("active command alias did not render command: %q", line)
+	}
+}
+
+func TestActiveCommandGlintKeepsVisibleText(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.Shell.ActiveCommand = "sleep 30"
+	st.AnimationPhase = 1
+	st.ActiveCommandAnimating = true
+	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
+	line := r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
+
+	if !strings.Contains(line, "\x1b[38;2;255;240;194m") {
+		t.Fatalf("glint output missing highlight color: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), "sleep 30") {
+		t.Fatalf("glint changed visible text: %q", line)
+	}
+}
+
+func TestActiveCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
+	render := func(phase int) string {
+		st := status.NewState()
+		st.Resize(40, 1, false)
+		st.Shell.ActiveCommand = "sleep 30"
+		st.AnimationPhase = phase
+		st.ActiveCommandAnimating = true
+		st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30")})
+		r := New(layout.New(40), theme.Default(theme.TrueColor))
+		r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
+		return r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
+	}
+	// Only colors change between frames: the visible cells stay identical, so the
+	// display width never shifts.
+	base := stripANSI(render(0))
+	for _, phase := range []int{1, 2, 3, 4, 7, 8, 11} {
+		if got := stripANSI(render(phase)); got != base {
+			t.Fatalf("phase %d changed visible cells: %q vs %q", phase, got, base)
+		}
+	}
+	// "sleep 30" is 8 cells and the shimmer wraps on a ring of that length, so a
+	// full cycle returns an identical frame, colors included — no snap.
+	if render(2) != render(2+len("sleep 30")) {
+		t.Fatalf("shimmer is not seamless across a full cycle")
+	}
+}
+
+func TestActiveCommandGlintStopsWhenIdle(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.Shell.ActiveCommand = "codex"
+	st.ActiveCommandAnimating = false
+	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("codex")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
+	line := r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
+
+	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
+		t.Fatalf("idle active command should not glint: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), "codex") {
+		t.Fatalf("idle active command missing visible text: %q", line)
+	}
+}
+
+func TestAnyModuleCanGlint(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.AnimationPhase = 1
+	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"time": {Mode: "glint"}})
+	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+
+	if !strings.Contains(line, "\x1b[38;2;255;240;194m") {
+		t.Fatalf("animated time block missing glint highlight: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), "12:34") {
+		t.Fatalf("animated time block changed visible text: %q", line)
+	}
+}
+
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string {
+	return ansiRE.ReplaceAllString(s, "")
 }
