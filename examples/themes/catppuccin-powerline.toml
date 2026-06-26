@@ -1,0 +1,61 @@
+name = "catppuccin-powerline"
+
+[palette]
+"base.bg" = "#1e1e2e"
+"base.fg" = "#cdd6f4"
+accent = "#89b4fa"
+ok = "#a6e3a1"
+warn = "#f9e2af"
+error = "#f38ba8"
+muted = "#9399b2"
+command = "#f2b35d"
+panel = "#313244"
+
+[style.hostname]
+fg = "base.bg"
+bg = "accent"
+bold = true
+shape = "powerline"
+left_separator = ""
+right_separator = ""
+padding_left = 1
+padding_right = 1
+
+[style.time]
+fg = "base.fg"
+bg = "panel"
+shape = "powerline"
+left_separator = ""
+right_separator = ""
+padding_left = 1
+padding_right = 1
+
+[style.git]
+fg = "base.bg"
+bg = "ok"
+bold = true
+shape = "powerline"
+left_separator = ""
+right_separator = ""
+padding_left = 1
+padding_right = 1
+
+[style.command]
+fg = "base.bg"
+bg = "command"
+shape = "powerline"
+left_separator = ""
+right_separator = ""
+padding_left = 1
+padding_right = 1
+
+[style.ssh]
+fg = "base.bg"
+bg = "warn"
+bold = true
+shape = "powerline"
+left_separator = ""
+right_separator = ""
+padding_left = 1
+padding_right = 1
+

@@ -1,0 +1,61 @@
+name = "nord-pill"
+
+[palette]
+"base.bg" = "#2e3440"
+"base.fg" = "#eceff4"
+accent = "#88c0d0"
+ok = "#a3be8c"
+warn = "#ebcb8b"
+error = "#bf616a"
+muted = "#4c566a"
+command = "#d08770"
+panel = "#3b4252"
+
+[style.hostname]
+fg = "base.bg"
+bg = "accent"
+bold = true
+shape = "pill"
+left_separator = " "
+right_separator = " "
+padding_left = 1
+padding_right = 1
+
+[style.time]
+fg = "#d8dee9"
+bg = "panel"
+shape = "pill"
+left_separator = " "
+right_separator = " "
+padding_left = 1
+padding_right = 1
+
+[style.git]
+fg = "base.bg"
+bg = "ok"
+bold = true
+shape = "pill"
+left_separator = " "
+right_separator = " "
+padding_left = 1
+padding_right = 1
+
+[style.command]
+fg = "base.bg"
+bg = "command"
+shape = "pill"
+left_separator = " "
+right_separator = " "
+padding_left = 1
+padding_right = 1
+
+[style.ssh]
+fg = "base.bg"
+bg = "warn"
+bold = true
+shape = "pill"
+left_separator = " "
+right_separator = " "
+padding_left = 1
+padding_right = 1
+

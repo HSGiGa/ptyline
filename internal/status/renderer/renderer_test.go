@@ -125,6 +125,25 @@ func TestRenderMainBarHidesEmptyModuleBlock(t *testing.T) {
 	}
 }
 
+func TestRenderUsesModuleIDStyleFallback(t *testing.T) {
+	st := status.NewState()
+	st.Resize(20, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
+
+	r := New(layout.New(20), theme.Default(theme.TrueColor))
+	r.SetStyles(map[string]style.Style{
+		"time": {FG: "base.bg", BG: "accent", Bold: true, PaddingLeft: 1, PaddingRight: 1},
+	})
+	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+
+	if !strings.Contains(line, "\x1b[48;2;137;180;250m") {
+		t.Fatalf("module-id style bg missing: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), " 12:34 ") {
+		t.Fatalf("module-id style padding missing: %q", line)
+	}
+}
+
 func TestCommandGlintKeepsVisibleText(t *testing.T) {
 	st := status.NewState()
 	st.Resize(40, 1, false)

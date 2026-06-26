@@ -208,6 +208,11 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 			return s
 		}
 	}
+	if moduleID != "" {
+		if s, ok := r.styles[moduleID]; ok {
+			return s
+		}
+	}
 	s := style.Style{FG: "base.fg", BG: "base.bg"}
 	if block.IsLiteral() {
 		return s
