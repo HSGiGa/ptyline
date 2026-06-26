@@ -18,9 +18,7 @@ import (
 // If path is empty, DefaultPath() is used; a missing file yields Default()
 // without error (spec §13).
 func Load(path string) (Config, error) {
-	if path == "" {
-		path = DefaultPath()
-	}
+	path = ResolvePath(path)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -40,6 +38,14 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// ResolvePath returns the effective config path for a user-supplied path.
+func ResolvePath(path string) string {
+	if path != "" {
+		return path
+	}
+	return DefaultPath()
 }
 
 // parse decodes already-migrated TOML bytes into a Config layered over Default().

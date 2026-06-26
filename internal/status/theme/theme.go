@@ -41,10 +41,9 @@ func New(mode Mode, palette map[string]RGB) *Theme {
 	return &Theme{mode: mode, palette: palette}
 }
 
-// Default returns the built-in readable dark palette (Catppuccin-Mocha-derived).
-// It is legible without Nerd Fonts or emoji (spec §20.15).
-func Default(mode Mode) *Theme {
-	return New(mode, map[string]RGB{
+// DefaultPalette returns a copy of the built-in readable dark palette.
+func DefaultPalette() map[string]RGB {
+	return map[string]RGB{
 		"base.bg": {30, 30, 46},
 		"base.fg": {205, 214, 244},
 		"accent":  {137, 180, 250},
@@ -52,7 +51,13 @@ func Default(mode Mode) *Theme {
 		"warn":    {249, 226, 175},
 		"error":   {243, 139, 168},
 		"muted":   {147, 153, 178},
-	})
+	}
+}
+
+// Default returns the built-in readable dark palette (Catppuccin-Mocha-derived).
+// It is legible without Nerd Fonts or emoji (spec §20.15).
+func Default(mode Mode) *Theme {
+	return New(mode, DefaultPalette())
 }
 
 // Mode reports the color depth this theme renders for.
@@ -69,6 +74,21 @@ func (t *Theme) BG(ref string) string { return t.sgr(ref, 48) }
 // color) to its RGB value. It lets callers interpolate between concrete colors —
 // e.g. animation effects that blend a base color toward a highlight.
 func (t *Theme) Resolve(ref string) (RGB, bool) { return t.resolve(ref) }
+
+// ResolveInPalette maps a color reference using an explicit palette. It accepts
+// palette tokens, "#rrggbb" literals, and named ANSI colors.
+func ResolveInPalette(ref string, palette map[string]RGB) (RGB, bool) {
+	if c, ok := palette[ref]; ok {
+		return c, true
+	}
+	if strings.HasPrefix(ref, "#") {
+		return parseHex(ref)
+	}
+	if c, ok := namedColors[strings.ToLower(ref)]; ok {
+		return c, true
+	}
+	return RGB{}, false
+}
 
 // FGRGB returns the SGR sequence setting the foreground to an arbitrary RGB,
 // degraded to the active Mode, or "" in no-color mode.
@@ -93,16 +113,7 @@ func (t *Theme) sgr(ref string, layer int) string {
 // resolve maps a color reference to an RGB value. References are, in order: a
 // palette token, a "#rrggbb" literal, or a named ANSI color.
 func (t *Theme) resolve(ref string) (RGB, bool) {
-	if c, ok := t.palette[ref]; ok {
-		return c, true
-	}
-	if strings.HasPrefix(ref, "#") {
-		return parseHex(ref)
-	}
-	if c, ok := namedColors[strings.ToLower(ref)]; ok {
-		return c, true
-	}
-	return RGB{}, false
+	return ResolveInPalette(ref, t.palette)
 }
 
 func parseHex(s string) (RGB, bool) {
