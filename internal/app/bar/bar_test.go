@@ -1,15 +1,14 @@
-package app
+package bar
 
 import (
 	"testing"
 	"time"
 
-	"github.com/hsgiga/ptyline/internal/app/bar"
 	"github.com/hsgiga/ptyline/internal/config"
 	"github.com/hsgiga/ptyline/internal/reserved"
 )
 
-func TestBarGeometry(t *testing.T) {
+func TestGeometry(t *testing.T) {
 	cases := []struct {
 		name      string
 		area      reserved.Area
@@ -46,24 +45,24 @@ func TestBarGeometry(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			top, count := bar.Geometry(c.area, c.rows, c.wantRows)
+			top, count := Geometry(c.area, c.rows, c.wantRows)
 			if top != c.wantTop || count != c.wantCount {
-				t.Fatalf("bar.Geometry(%+v, %d, %d) = (%d, %d), want (%d, %d)",
+				t.Fatalf("Geometry(%+v, %d, %d) = (%d, %d), want (%d, %d)",
 					c.area, c.rows, c.wantRows, top, count, c.wantTop, c.wantCount)
 			}
 		})
 	}
 }
 
-func TestAnimationTickerConfig(t *testing.T) {
-	interval, continuous := bar.TickerConfig(map[string]config.ModuleConfig{
+func TestTickerConfig(t *testing.T) {
+	interval, continuous := TickerConfig(map[string]config.ModuleConfig{
 		"command": {Enabled: true, Animation: "glint", AnimationIntervalMS: 80},
 	})
 	if interval != 80*time.Millisecond || continuous {
 		t.Fatalf("command animation = (%v, %t), want (80ms, false)", interval, continuous)
 	}
 
-	interval, continuous = bar.TickerConfig(map[string]config.ModuleConfig{
+	interval, continuous = TickerConfig(map[string]config.ModuleConfig{
 		"time": {Enabled: true, Animation: "glint", AnimationIntervalMS: 120},
 	})
 	if interval != 120*time.Millisecond || !continuous {
@@ -72,7 +71,7 @@ func TestAnimationTickerConfig(t *testing.T) {
 }
 
 func TestAnimationsFromConfig(t *testing.T) {
-	got := bar.AnimationsFromConfig(map[string]config.ModuleConfig{
+	got := AnimationsFromConfig(map[string]config.ModuleConfig{
 		"time": {Enabled: true, Animation: "glint"},
 		"git":  {Enabled: true, Animation: "none"},
 	})

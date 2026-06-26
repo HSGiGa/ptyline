@@ -7,6 +7,8 @@
 // added without rewriting the application core. See docs/event-bus.md, arch.md §4.
 package event
 
+import "context"
+
 // AppEvent is the closed set of events the loop reacts to. It is a sealed
 // interface: implementers live in this package so the loop can exhaustively
 // type-switch over them.
@@ -74,6 +76,29 @@ func NewBus(buffer int) *Bus {
 // the backpressure policy: a slow loop throttles its producers (notably high-rate
 // PtyOutput) instead of dropping or reordering bytes (docs/event-bus.md).
 func (b *Bus) Send(e AppEvent) { b.ch <- e }
+
+// SendCtx enqueues an event but returns false immediately when ctx is cancelled,
+// preventing goroutines from blocking on a bus whose consumer has already exited.
+func (b *Bus) SendCtx(ctx context.Context, e AppEvent) bool {
+	select {
+	case b.ch <- e:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// TrySend enqueues an event non-blocking. Returns false when the buffer is full.
+// Use inside the event loop itself (e.g. filter callbacks) where blocking would
+// deadlock because the loop is the sole consumer.
+func (b *Bus) TrySend(e AppEvent) bool {
+	select {
+	case b.ch <- e:
+		return true
+	default:
+		return false
+	}
+}
 
 // Events exposes the receive side for the loop.
 func (b *Bus) Events() <-chan AppEvent { return b.ch }

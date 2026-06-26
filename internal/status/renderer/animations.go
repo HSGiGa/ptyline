@@ -56,13 +56,21 @@ func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 			phase = -phase
 		}
 		center := phase % l
+		// Pre-compute the color palette (glintHalfWidth distinct blended colors)
+		// so the hot per-glyph loop only indexes, avoiding repeated Sprintf calls.
+		var palette [glintHalfWidth]string
+		for d := 0; d < glintHalfWidth; d++ {
+			t := 1 - float64(d)/glintHalfWidth
+			palette[d] = r.theme.FGRGB(mixRGB(base, glintHighlight, t))
+		}
+		baseSGR := r.theme.FGRGB(base)
 		for i, ch := range runes {
 			d := circularDistance(i, center, l)
-			t := 1 - float64(d)/glintHalfWidth
-			if t < 0 {
-				t = 0
+			if d >= glintHalfWidth {
+				b.WriteString(baseSGR)
+			} else {
+				b.WriteString(palette[d])
 			}
-			b.WriteString(r.theme.FGRGB(mixRGB(base, glintHighlight, t)))
 			b.WriteRune(ch)
 		}
 	}

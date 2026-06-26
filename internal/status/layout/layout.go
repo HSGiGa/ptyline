@@ -92,6 +92,22 @@ type Placement struct {
 // barWidth (which would wrap the bar and corrupt the screen). StartCol/EndCol are
 // filled in by the renderer once section strings are assembled.
 func (e *Engine) Arrange(blocks []Block, natural []int) []Placement {
+	return e.arrange(blocks, natural)
+}
+
+// ArrangeIn is like Arrange but uses effectiveWidth instead of the engine's
+// barWidth. Use this when part of the bar is reserved for caps or decorations
+// (e.g. border rows) so block widths are computed against the inner area only.
+// The caller must not invoke ArrangeIn concurrently on the same engine.
+func (e *Engine) ArrangeIn(blocks []Block, natural []int, effectiveWidth int) []Placement {
+	saved := e.barWidth
+	e.barWidth = effectiveWidth
+	p := e.arrange(blocks, natural)
+	e.barWidth = saved
+	return p
+}
+
+func (e *Engine) arrange(blocks []Block, natural []int) []Placement {
 	placements := make([]Placement, len(blocks))
 	for i, b := range blocks {
 		placements[i] = Placement{Block: b, Width: e.resolveWidth(b, natural[i])}

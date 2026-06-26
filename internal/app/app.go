@@ -7,14 +7,13 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/signal"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
+	"github.com/hsgiga/ptyline/internal/app/bar"
+	"github.com/hsgiga/ptyline/internal/command"
 	"github.com/hsgiga/ptyline/internal/config"
 	"github.com/hsgiga/ptyline/internal/event"
 	"github.com/hsgiga/ptyline/internal/modules"
@@ -70,7 +69,7 @@ func run(opts options) int {
 		return 1
 	}
 
-	barRows := buildBarRows(cfg)
+	barRows := bar.BuildRows(cfg)
 	area := reserved.Area{Edge: reserved.Bottom, Rows: uint16(len(barRows))}
 	argv := resolveChild(opts.Child, cfg, profile)
 
@@ -82,7 +81,10 @@ func run(opts options) int {
 	}
 	defer func() { _ = ctrl.Restore() }()
 
-	size, _ := terminal.QuerySize()
+	size, err := terminal.QuerySize()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ptyline: warning: cannot query terminal size, using 80x24")
+	}
 	ctrl.ApplyScrollRegion(size, area)
 	_, _ = ctrl.Write([]byte(terminal.ClearScreen + terminal.CursorTo(1, 1)))
 
@@ -99,25 +101,22 @@ func run(opts options) int {
 	defer cancel() // stops module refresh tickers on every exit path
 	bus := event.NewBus(256)
 	filter := proxy.NewAnsiFilter(area, func(key, value string) {
-		bus.Send(event.ShellMeta{Key: key, Value: value})
+		// TrySend (non-blocking): this callback is called synchronously from
+		// filter.Filter inside the event loop, so a blocking Send would deadlock
+		// if the bus buffer is full. Shell-meta events are rare enough that an
+		// occasional drop is acceptable over a guaranteed deadlock.
+		bus.TrySend(event.ShellMeta{Key: key, Value: value})
 	})
 	filter.SetRows(size.Rows)
 	loop := proxy.NewLoop(bus, filter)
 	writer := proxy.NewTerminalWriter(os.Stdout)
-	top, count := barGeometry(area, size.Rows, len(barRows))
+	top, count := bar.Geometry(area, size.Rows, len(barRows))
 	writer.SetBarRows(top, count)
 	state := status.NewState()
 	state.Resize(size.Cols, size.Rows, false)
 	// cwdHolder is read by the git module's refresh goroutine and written by the
 	// loop goroutine on cwd shell-meta, so it must be race-free.
 	var cwdHolder atomic.Value
-	var commandAnimating atomic.Bool
-	var lastCommandActivity time.Time
-	// lastStdinInput marks the most recent keystroke so the command glint
-	// can tell genuine work output from a program echoing what the user types.
-	var lastStdinInput time.Time
-	var sshAnimating bool
-	var lastSSHStart time.Time
 	cwdHolder.Store("")
 	if cwd, err := os.Getwd(); err == nil {
 		state.Shell.CWD = cwd
@@ -128,14 +127,14 @@ func run(opts options) int {
 			UpdatedAt: time.Now(),
 		})
 	}
-	timeModule := modules.NewTime(cfg.Modules["time"].Format, time.Second)
-	commandConfig := cfg.Modules["command"]
+	timeModule := modules.NewTime(cfg.Modules["time"].Format, moduleInterval(cfg.Modules["time"], time.Second))
+	cmdTracker := command.NewTracker(cfg.Modules["command"])
 	// Resolve the git branch icon through the icon preset: the Nerd-Font glyph
 	// (U+E0A0) when icons.preset = "nerd-font", otherwise a plain-font branch
 	// glyph (U+2387 "⎇") that renders without a Nerd Font. A true Nerd-Font check
 	// is impossible at runtime, so the preset is the switch.
 	branchIcon := icons.New(icons.Preset(cfg.Icons.Preset), cfg.Icons.Fallback).Icon("", "⎇")
-	gitModule := modules.NewGit(2*time.Second, time.Second, branchIcon, func() string {
+	gitModule := modules.NewGit(moduleInterval(cfg.Modules["git"], 2*time.Second), time.Second, branchIcon, func() string {
 		s, _ := cwdHolder.Load().(string)
 		return s
 	})
@@ -157,11 +156,17 @@ func run(opts options) int {
 		state.UpdateModule(module.Refresh(nil))
 	}
 	state.UpdateModule(sshBaseSnap)
+	sshAnim := modules.NewSSHAnimator(sshBaseSnap)
 	scheduler := status.NewScheduler(func(snap status.ModuleSnapshot) {
-		bus.Send(event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
+		bus.SendCtx(ctx, event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
 	})
+	var gitRefreshing atomic.Bool
 	refreshGit := func(expectedCWD string) {
+		if !gitRefreshing.CompareAndSwap(false, true) {
+			return // a refresh is already in flight; the scheduler will pick up the next tick
+		}
 		go func() {
+			defer gitRefreshing.Store(false)
 			rctx, rcancel := context.WithTimeout(ctx, time.Second)
 			defer rcancel()
 			snap := gitModule.Refresh(rctx)
@@ -171,94 +176,31 @@ func run(opts options) int {
 					return
 				}
 			}
-			bus.Send(event.ModuleUpdated{ID: "git", Snapshot: snap})
+			bus.SendCtx(ctx, event.ModuleUpdated{ID: "git", Snapshot: snap})
 		}()
 	}
 	th := theme.Default(colorMode(profile.Capabilities.Color))
 	render := renderer.New(layout.New(int(size.Cols)), th)
-	render.SetAnimations(animationsFromConfig(cfg.Modules))
+	render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
 	var resizePending bool
 	redraw := func() {
 		if resizePending {
 			return
 		}
 		writer.RequestRedraw()
-		_ = writer.FlushBarFrame(renderBar(render, state, barRows))
+		_ = writer.FlushBarFrame(bar.Render(render, state, barRows))
 	}
-	// applyAlt runs the alternate-screen entry/exit procedure (spec §11). It must
-	// run AFTER the triggering ?1049h/l bytes have been written to the terminal,
-	// otherwise it operates on the wrong screen — on exit the bar/scroll-region
-	// work would be clobbered when the terminal restores the normal screen. The
-	// filter records the transition; WriteOutput applies it once the bytes flush.
-	var pendingAlt *bool
-	applyAlt := func(active bool) {
-		writer.SetAltActive(active)
-		state.Terminal.AlternateScreen = active
-		if active {
-			ctrl.ResetScrollRegion()
-			_ = sup.ResizeFull(pty.Size{Cols: state.Terminal.Cols, Rows: state.Terminal.Rows})
-			return
-		}
-		// Leaving alt: the terminal has just restored the normal screen and the
-		// pre-alt cursor; re-establish the child size and the protected region,
-		// then repaint the bar.
-		_ = sup.Resize(pty.Size{Cols: state.Terminal.Cols, Rows: state.Terminal.Rows})
-		ctrl.ApplyScrollRegion(terminal.Size{Cols: state.Terminal.Cols, Rows: state.Terminal.Rows}, area)
-		redraw()
+	// altCoord sequences the alt-screen entry/exit protocol (spec §11):
+	// the filter records the transition; WriteOutput flushes it after bytes land.
+	altCoord := &altScreenCoordinator{
+		ctrl: ctrl, sup: sup, writer: writer, state: &state, area: area, redraw: redraw,
 	}
-	resizeRequests := make(chan terminal.Size, 1)
-	go func() {
-		var (
-			timer   *time.Timer
-			timerC  <-chan time.Time
-			pending terminal.Size
-		)
-		stopTimer := func() {
-			if timer == nil {
-				return
-			}
-			if !timer.Stop() {
-				select {
-				case <-timerC:
-				default:
-				}
-			}
-			timer = nil
-			timerC = nil
-		}
-		resetTimer := func() {
-			if timer == nil {
-				timer = time.NewTimer(resizeCommitDelay)
-				timerC = timer.C
-				return
-			}
-			if !timer.Stop() {
-				select {
-				case <-timerC:
-				default:
-				}
-			}
-			timer.Reset(resizeCommitDelay)
-			timerC = timer.C
-		}
-		defer stopTimer()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case size := <-resizeRequests:
-				pending = size
-				resetTimer()
-			case <-timerC:
-				bus.Send(event.ResizeCommit{Cols: pending.Cols, Rows: pending.Rows})
-				stopTimer()
-			}
-		}
-	}()
+	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
+	resizeDebouncer.Start(ctx, bus)
 	loop.SetHandlers(proxy.Handlers{
 		WriteInput: func(data []byte) error {
 			if len(data) > 0 {
-				lastStdinInput = time.Now()
+				cmdTracker.RecordKeystroke()
 			}
 			_, err := sup.PTY().Write(data)
 			return err
@@ -267,22 +209,15 @@ func run(opts options) int {
 			if err := writer.WriteChild(data); err != nil {
 				return err
 			}
-			// Only count output as the command "working" when it did not closely
-			// follow a keystroke; otherwise it is just the program echoing typing
-			// and the bar should stay quiet (it spins on work, not on typing).
-			if len(data) > 0 && state.Shell.ActiveCommand != "" &&
-				time.Since(lastStdinInput) > keystrokeEchoWindow {
-				lastCommandActivity = time.Now()
-				state.ActiveCommandAnimating = true
-				commandAnimating.Store(true)
+			if len(data) > 0 {
+				if changed := cmdTracker.RecordOutput(&state.Shell); changed {
+					state.ActiveCommandAnimating = true
+				}
 			}
 			writer.InvalidateBar()
 			// The child bytes (including any ?1049h/l) have now reached the
-			// terminal; run a pending alt-screen transition on the correct screen.
-			if pendingAlt != nil {
-				applyAlt(*pendingAlt)
-				pendingAlt = nil
-			}
+			// terminal; flush a pending alt-screen transition on the correct screen.
+			altCoord.FlushPending()
 			return nil
 		},
 		ResizeRequest: func(cols, rows uint16) {
@@ -293,15 +228,7 @@ func run(opts options) int {
 				_, _ = ctrl.Write([]byte(terminal.HideCursor))
 			}
 			resizePending = true
-			select {
-			case resizeRequests <- terminal.Size{Cols: cols, Rows: rows}:
-			default:
-				select {
-				case <-resizeRequests:
-				default:
-				}
-				resizeRequests <- terminal.Size{Cols: cols, Rows: rows}
-			}
+			resizeDebouncer.Send(terminal.Size{Cols: cols, Rows: rows})
 		},
 		ResizeCommit: func(cols, rows uint16) {
 			alt := filter.AltActive()
@@ -311,10 +238,10 @@ func run(opts options) int {
 				_ = writer.ClearBar()
 			}
 			state.Resize(cols, rows, alt)
-			top, count := barGeometry(area, rows, len(barRows))
+			top, count := bar.Geometry(area, rows, len(barRows))
 			writer.SetBarRows(top, count)
 			render = renderer.New(layout.New(int(cols)), th)
-			render.SetAnimations(animationsFromConfig(cfg.Modules))
+			render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
@@ -328,17 +255,10 @@ func run(opts options) int {
 		ShellMeta: func(key, value string) {
 			state.ApplyShellMeta(key, value)
 			if key == shellintegration.KeySSHStart {
-				sshAnimating = true
-				lastSSHStart = time.Now()
-				state.UpdateModule(status.ModuleSnapshot{
-					ID:        "ssh",
-					Value:     status.Text(state.Shell.SSHTarget),
-					UpdatedAt: time.Now(),
-				})
+				state.UpdateModule(sshAnim.OnSSHStart(state.Shell.SSHTarget))
 			}
 			if key == shellintegration.KeySSHEnd {
-				sshAnimating = false
-				state.UpdateModule(sshBaseSnap)
+				state.UpdateModule(sshAnim.OnSSHEnd())
 			}
 			if key == "cwd" {
 				cwdHolder.Store(state.Shell.CWD)
@@ -356,20 +276,8 @@ func run(opts options) int {
 					UpdatedAt: time.Now(),
 				})
 			}
-			if key == shellintegration.KeyCommand {
-				cmd := state.Shell.ActiveCommand
-				if cmd == "" {
-					state.AnimationPhase = 0
-					state.ActiveCommandAnimating = false
-					commandAnimating.Store(modules.ShouldTickDoneCommand(state.Shell, commandDisplayPolicy(commandConfig)))
-				} else {
-					lastCommandActivity = time.Now()
-					state.ActiveCommandAnimating = true
-					commandAnimating.Store(true)
-				}
-			}
-			if commandConfig.Enabled && (key == shellintegration.KeyCommand || key == "exit_code" || key == "duration_ms") {
-				state.UpdateModule(commandSnapshot(state.Shell, commandConfig, state.ActiveCommandAnimating))
+			if snap := cmdTracker.ApplyShellMeta(key, &state); snap != nil {
+				state.UpdateModule(*snap)
 			}
 		},
 		ModuleUpdated: func(_ string, snapshot any) {
@@ -379,55 +287,24 @@ func run(opts options) int {
 		},
 		Tick: func() {
 			state.AnimationPhase++
-			if sshAnimating && time.Since(lastSSHStart) > sshConnectingAnimationTimeout {
-				sshAnimating = false
-				state.UpdateModule(status.ModuleSnapshot{
-					ID:                  "ssh",
-					Value:               status.Text(state.Shell.SSHTarget),
-					UpdatedAt:           time.Now(),
-					AnimationSuppressed: true,
-				})
+			if snap := sshAnim.Tick(state.Shell.SSHTarget); snap != nil {
+				state.UpdateModule(*snap)
 			}
-			if state.Shell.ActiveCommand == "" {
-				state.ActiveCommandAnimating = false
-				if modules.ShouldClearDoneCommand(state.Shell, commandDisplayPolicy(commandConfig)) {
-					clearLastCommand(&state.Shell)
-					commandAnimating.Store(false)
-					if commandConfig.Enabled {
-						state.UpdateModule(commandSnapshot(state.Shell, commandConfig, false))
-					}
-				}
-				return
-			}
-			if time.Since(lastCommandActivity) > commandAnimationIdleTimeout {
-				state.ActiveCommandAnimating = false
-				commandAnimating.Store(false)
-				if commandConfig.Enabled {
-					state.UpdateModule(commandSnapshot(state.Shell, commandConfig, false))
-				}
-				return
-			}
-			state.ActiveCommandAnimating = true
-			if commandConfig.Enabled {
-				state.UpdateModule(commandSnapshot(state.Shell, commandConfig, true))
+			if snap := cmdTracker.Tick(&state); snap != nil {
+				state.UpdateModule(*snap)
 			}
 		},
 		Redraw:    redraw,
 		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
 	})
-	// The filter detects the transition mid-stream; defer the actual procedure to
-	// WriteOutput so it runs after the ?1049h/l bytes have been written.
-	filter.SetAltHandler(func(active bool) {
-		a := active
-		pendingAlt = &a
-	})
-	startReader(bus, os.Stdin, func(data []byte) event.AppEvent { return event.StdinInput{Data: data} })
-	startReader(bus, sup.PTY(), func(data []byte) event.AppEvent { return event.PtyOutput{Data: data} })
-	go func() { code, _ := sup.Wait(); bus.Send(event.ChildExited{Code: code}) }()
-	startSignals(bus)
+	filter.SetAltHandler(altCoord.SetPending)
+	proxy.StartReader(ctx, bus, os.Stdin, func(data []byte) event.AppEvent { return event.StdinInput{Data: data} })
+	proxy.StartReader(ctx, bus, sup.PTY(), func(data []byte) event.AppEvent { return event.PtyOutput{Data: data} })
+	go func() { code, _ := sup.Wait(); bus.SendCtx(ctx, event.ChildExited{Code: code}) }()
+	proxy.StartSignals(ctx, bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
 	scheduler.Start(ctx, gitModule, time.Second)
-	startAnimationTicker(ctx, bus, cfg.Modules, &commandAnimating)
+	bar.StartTicker(ctx, bus, cfg.Modules, cmdTracker.Animating())
 	// Paint git as soon as possible without blocking startup if git hangs.
 	refreshGit("")
 	redraw()
@@ -440,221 +317,3 @@ func run(opts options) int {
 	return code
 }
 
-func commandSnapshot(shell status.ShellState, cfg config.ModuleConfig, animating bool) status.ModuleSnapshot {
-	text, active := modules.FormatCommand(shell, cfg.Format, cfg.MaxWidth, commandDisplayPolicy(cfg))
-	return status.ModuleSnapshot{
-		ID:                  "command",
-		Value:               status.Text(text),
-		UpdatedAt:           time.Now(),
-		AnimationSuppressed: !active || !animating,
-	}
-}
-
-func commandDisplayPolicy(cfg config.ModuleConfig) modules.CommandDisplayPolicy {
-	return modules.CommandDisplayPolicy{
-		DoneMinDuration: time.Duration(cfg.DoneMinDurationMS) * time.Millisecond,
-		DoneSuccessTTL:  time.Duration(cfg.DoneSuccessTTLMS) * time.Millisecond,
-		DoneFailureTTL:  time.Duration(cfg.DoneFailureTTLMS) * time.Millisecond,
-	}
-}
-
-func clearLastCommand(shell *status.ShellState) {
-	shell.LastCommand = ""
-	shell.LastExitCode = 0
-	shell.LastDurationMS = 0
-	shell.LastCommandCompleted = false
-	shell.LastCommandCompletedAt = time.Time{}
-}
-
-func startAnimationTicker(ctx context.Context, bus *event.Bus, modules map[string]config.ModuleConfig, active *atomic.Bool) {
-	interval, continuous := animationTickerConfig(modules)
-	if interval <= 0 {
-		return
-	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if continuous || (active != nil && active.Load()) {
-					bus.Send(event.Tick{})
-				}
-			}
-		}
-	}()
-}
-
-func animationTickerConfig(modules map[string]config.ModuleConfig) (time.Duration, bool) {
-	var (
-		interval   time.Duration
-		continuous bool
-	)
-	for id, module := range modules {
-		if !module.Enabled || module.Animation == "" || module.Animation == "none" {
-			continue
-		}
-		if id != "command" {
-			continuous = true
-		}
-		next := time.Duration(module.AnimationIntervalMS) * time.Millisecond
-		if next <= 0 {
-			next = 250 * time.Millisecond
-		}
-		if interval == 0 || next < interval {
-			interval = next
-		}
-	}
-	return interval, continuous
-}
-
-func animationsFromConfig(modules map[string]config.ModuleConfig) map[string]renderer.Animation {
-	animations := make(map[string]renderer.Animation)
-	for id, module := range modules {
-		if !module.Enabled || module.Animation == "" || module.Animation == "none" {
-			continue
-		}
-		animations[id] = renderer.Animation{Mode: module.Animation}
-	}
-	return animations
-}
-
-func moduleInterval(cfg config.ModuleConfig, fallback time.Duration) time.Duration {
-	if cfg.IntervalMS <= 0 {
-		return fallback
-	}
-	return time.Duration(cfg.IntervalMS) * time.Millisecond
-}
-
-func startReader(bus *event.Bus, reader io.Reader, makeEvent func([]byte) event.AppEvent) {
-	go func() {
-		buffer := make([]byte, 32*1024)
-		for {
-			n, err := reader.Read(buffer)
-			if n > 0 {
-				data := append([]byte(nil), buffer[:n]...)
-				bus.Send(makeEvent(data))
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-}
-
-// resizeDebounce coalesces a burst of SIGWINCH events (e.g. while dragging the
-// window edge) into a single re-query + Resize (spec §12, plan 13).
-const resizeCommitDelay = 50 * time.Millisecond
-
-// sshConnectingAnimationTimeout is how long the SSH module animates after
-// ssh_start before settling into a static label. Covers the typical TCP
-// handshake + key exchange window.
-const sshConnectingAnimationTimeout = 2500 * time.Millisecond
-
-// commandAnimationIdleTimeout stops the glint for interactive commands
-// that remain active but stop producing output, such as an idle agent prompt.
-const commandAnimationIdleTimeout = 1200 * time.Millisecond
-
-// keystrokeEchoWindow is how long after a keystroke output is treated as the
-// program echoing the user's typing rather than doing work; within it the
-// command glint does not start.
-const keystrokeEchoWindow = 180 * time.Millisecond
-
-func startSignals(bus *event.Bus) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGWINCH, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		for sig := range signals {
-			switch sig {
-			case syscall.SIGWINCH:
-				if size, err := terminal.QuerySize(); err == nil {
-					bus.Send(event.Resize{Cols: size.Cols, Rows: size.Rows})
-				}
-			case syscall.SIGHUP:
-				bus.Send(event.TerminationSignal{Signal: "SIGHUP"})
-			default: // SIGTERM
-				bus.Send(event.TerminationSignal{Signal: "SIGTERM"})
-			}
-		}
-	}()
-}
-
-// barRowSpec is one resolved bar row: its parsed blocks and gap/cap fill rune.
-type barRowSpec struct {
-	blocks []layout.Block
-	fill   rune
-}
-
-// buildBarRows resolves the configured bar into rows. Multi-line [[bar.row]]
-// entries take precedence; otherwise the single-line Format is one space-filled
-// row. The number of rows is the reserved height.
-func buildBarRows(cfg config.Config) []barRowSpec {
-	if len(cfg.Bar.Rows) > 0 {
-		rows := make([]barRowSpec, len(cfg.Bar.Rows))
-		for i, rc := range cfg.Bar.Rows {
-			fill := ' '
-			if rc.Fill != "" {
-				fill = []rune(rc.Fill)[0]
-			}
-			rows[i] = barRowSpec{blocks: layout.ParseFormat(rc.Format), fill: fill}
-		}
-		return rows
-	}
-	return []barRowSpec{{blocks: layout.ParseFormat(cfg.Bar.Format), fill: ' '}}
-}
-
-// renderBar renders every bar row to a line, top to bottom.
-func renderBar(render *renderer.Renderer, st status.StatusState, rows []barRowSpec) []string {
-	lines := make([]string, len(rows))
-	for i, row := range rows {
-		lines[i] = render.RenderRow(st, row.blocks, row.fill).Line
-	}
-	return lines
-}
-
-// barGeometry returns the 1-based first bar row and how many of the `want` rows
-// actually fit above the child area; on a short terminal the bottom rows are
-// dropped so the bar never paints past the last row (spec §15).
-func barGeometry(area reserved.Area, rows uint16, want int) (top uint16, count int) {
-	child := area.ChildRows(rows)
-	top = child + 1
-	count = int(rows) - int(child)
-	if count > want {
-		count = want
-	}
-	if count < 0 {
-		count = 0
-	}
-	return top, count
-}
-
-// colorMode maps the detected terminal color level to a theme render mode.
-func colorMode(level runtimeenv.ColorLevel) theme.Mode {
-	switch level {
-	case runtimeenv.ColorTrue:
-		return theme.TrueColor
-	case runtimeenv.Color256:
-		return theme.Color256
-	case runtimeenv.ColorBasic:
-		return theme.Color16
-	default:
-		return theme.NoColor
-	}
-}
-
-// resolveChild picks the command to run inside the PTY: explicit argv, else the
-// configured shell, else $SHELL (spec §14).
-func resolveChild(child []string, cfg config.Config, _ runtimeenv.Profile) []string {
-	if len(child) > 0 {
-		return child
-	}
-	if cfg.Shell != "" && cfg.Shell != "auto" {
-		return []string{cfg.Shell}
-	}
-	if sh := os.Getenv("SHELL"); sh != "" {
-		return []string{sh}
-	}
-	return []string{"/bin/sh"}
-}
