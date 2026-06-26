@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/hsgiga/ptyline/internal/reserved"
@@ -48,6 +49,22 @@ func New(argv []string, area reserved.Area) *Supervisor {
 		area:     area,
 		waitDone: make(chan struct{}),
 	}
+}
+
+// SetEnv appends or overrides one environment variable in the child process.
+func (s *Supervisor) SetEnv(key, value string) {
+	s.cmd.Env = setEnv(s.cmd.Env, key, value)
+}
+
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 // Start spawns the child inside a new PTY sized to terminal rows minus the

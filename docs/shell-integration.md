@@ -22,7 +22,7 @@ inside a PTY and proxies terminal I/O. The child may equally be `bash`, `zsh`,
 
 The status bar's base data comes from ptyline itself: terminal size, clock, hostname,
 and module providers. Shell integration only adds data a shell can report accurately,
-such as its current directory, the last exit code, and command duration. Absence of a
+such as its current directory, selected environment values, the last exit code, and command duration. Absence of a
 shell hook must never affect PTY startup, job control, or normal terminal I/O.
 
 Consequently, there is no Go implementation per shell. The Go code owns one generic
@@ -44,7 +44,8 @@ change and as a checklist for adding a shell.
    its shell's idioms into the **canonical** protocol representation before the
    bytes cross into Go: `exit_code` as a plain integer, `duration_ms` already
    computed (bash `EPOCHREALTIME`, zsh `$EPOCHREALTIME`, fish `date +%s%3N` are
-   template concerns), `cwd` as an absolute path. Go consumes one canonical form
+   template concerns), `cwd` as an absolute path, `env` as the configured value/list.
+   Go consumes one canonical form
    and must never special-case a shell's quirks (e.g. signal-encoded exit codes).
 
 3. **Adding a shell = adding a template file, with zero Go changes.** The template
@@ -71,10 +72,11 @@ OSC 777 ; cwd=/home/u/project ST
 OSC 777 ; exit_code=0 ST
 OSC 777 ; duration_ms=153 ST
 OSC 777 ; command=git status ST
+OSC 777 ; env=APP_ENV=dev REGION=eu ST
 ```
 
 - `ST` = `ESC \` (preferred) or `BEL`.
-- **Whitelist:** only `cwd`, `exit_code`, `duration_ms`, `command` (constants in
+- **Whitelist:** only `cwd`, `exit_code`, `duration_ms`, `command`, `env` (constants in
   `internal/shellintegration/osc.go`).
 - Values contain **no control characters**; payloads ≤ **8 KiB**.
 - Unknown/malformed/oversized payloads are dropped with a diagnostic and **never**
@@ -109,7 +111,7 @@ added by dropping a template file.
 
 ## Graceful degradation
 
-Without integration, cwd/exit/duration modules show their fallback (e.g. `cwd`
+Without integration, cwd/exit/duration/env modules show their fallback (e.g. `cwd`
 with `mode = "shell-integration"` renders empty) and never infer from arbitrary
 PTY output (spec §13). Typed snapshots make "unavailable" explicit — see
 [`state-model.md`](state-model.md). The bar still works; it just shows less.

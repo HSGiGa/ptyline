@@ -13,6 +13,7 @@ func TestParseOSC777(t *testing.T) {
 		{"cwd", "cwd=/home/u", "cwd", "/home/u", true},
 		{"exit_code", "exit_code=0", "exit_code", "0", true},
 		{"command", "command=ls -la", "command", "ls -la", true},
+		{"env", "env=staging", "env", "staging", true},
 		{"not whitelisted", "hostname=x", "", "", false},
 		{"control char", "cwd=a\x01b", "", "", false},
 		{"no equals", "cwd", "", "", false},

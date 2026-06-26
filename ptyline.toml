@@ -13,7 +13,7 @@ format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-format = "{ssh} || {user}@{hostname} {cwd} || {runtime} {shell} {time}"
+format = "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} {time}"
 
 [theme]
 color_scheme = "default"
@@ -43,6 +43,10 @@ enabled = true
 
 [module.shell]
 enabled = true
+
+[module.env]
+enabled = true
+env = ["PTYLINE_ENV"]
 
 [module.cwd]
 enabled = true

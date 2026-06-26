@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -87,6 +88,7 @@ func run(opts options) int {
 
 	// --- Child PTY sized to rows-minus-reserved (spec §8.2). ---
 	sup := pty.New(argv, area)
+	sup.SetEnv("PTYLINE_ENV_NAMES", strings.Join(cfg.Modules["env"].Env, ","))
 	if err := sup.Start(pty.Size{Cols: size.Cols, Rows: size.Rows}); err != nil {
 		fmt.Fprintln(os.Stderr, "ptyline: pty:", err)
 		return 1
@@ -137,6 +139,7 @@ func run(opts options) int {
 		s, _ := cwdHolder.Load().(string)
 		return s
 	})
+	envModule := modules.NewEnv(cfg.Modules["env"].Env)
 	// Initial synchronous paint so the bar shows values immediately; the
 	// scheduler then refreshes interval-driven modules (e.g. time) in the
 	// background and feeds snapshots back through ModuleUpdated events.
@@ -149,6 +152,7 @@ func run(opts options) int {
 		modules.NewUser(),
 		modules.NewRuntime(profile),
 		modules.NewShell(argv),
+		envModule,
 	} {
 		state.UpdateModule(module.Refresh(nil))
 	}
@@ -345,6 +349,13 @@ func run(opts options) int {
 				})
 				refreshGit(state.Shell.CWD)
 			}
+			if key == shellintegration.KeyEnv {
+				state.UpdateModule(status.ModuleSnapshot{
+					ID:        "env",
+					Value:     status.Text(value),
+					UpdatedAt: time.Now(),
+				})
+			}
 			if key == shellintegration.KeyCommand {
 				cmd := state.Shell.ActiveCommand
 				if cmd == "" {
@@ -508,6 +519,13 @@ func animationsFromConfig(modules map[string]config.ModuleConfig) map[string]ren
 		animations[id] = renderer.Animation{Mode: module.Animation}
 	}
 	return animations
+}
+
+func moduleInterval(cfg config.ModuleConfig, fallback time.Duration) time.Duration {
+	if cfg.IntervalMS <= 0 {
+		return fallback
+	}
+	return time.Duration(cfg.IntervalMS) * time.Millisecond
 }
 
 func startReader(bus *event.Bus, reader io.Reader, makeEvent func([]byte) event.AppEvent) {

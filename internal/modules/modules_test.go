@@ -41,6 +41,44 @@ func TestShellLabel(t *testing.T) {
 	}
 }
 
+func TestEnvValue(t *testing.T) {
+	t.Setenv("PTYLINE_TEST_ENV", "staging")
+
+	if got := envValue("PTYLINE_TEST_ENV"); got != "staging" {
+		t.Fatalf("envValue() = %q, want staging", got)
+	}
+	if got := envValue(""); got != "" {
+		t.Fatalf("envValue(empty) = %q, want empty", got)
+	}
+
+	module := NewEnv([]string{"PTYLINE_TEST_ENV"})
+	if got := module.Interval(); got != 0 {
+		t.Fatalf("Env.Interval() = %v, want event-driven", got)
+	}
+	if got := module.Refresh(nil).Value.Text; got != "staging" {
+		t.Fatalf("Env.Refresh() = %q, want staging", got)
+	}
+}
+
+func TestFormatEnvValues(t *testing.T) {
+	lookup := func(name string) string {
+		switch name {
+		case "APP_ENV":
+			return "dev"
+		case "REGION":
+			return "eu"
+		default:
+			return ""
+		}
+	}
+	if got := formatEnvValues([]string{"APP_ENV"}, lookup); got != "dev" {
+		t.Fatalf("single env = %q, want dev", got)
+	}
+	if got := formatEnvValues([]string{"APP_ENV", "REGION", "EMPTY"}, lookup); got != "APP_ENV=dev REGION=eu" {
+		t.Fatalf("env list = %q, want APP_ENV=dev REGION=eu", got)
+	}
+}
+
 func TestFormatCommandActiveDoneIdle(t *testing.T) {
 	text, active := FormatCommand(status.ShellState{
 		ActiveCommand:  "npm test",
