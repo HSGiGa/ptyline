@@ -13,7 +13,7 @@ format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-format = "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} {time}"
+format = "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} || {time}"
 
 [theme]
 color_scheme = "default"

@@ -41,7 +41,7 @@ func TestLoadRootConfig(t *testing.T) {
 	if got, want := cfg.Bar.Rows[0].Format, " {command} || || {git} "; got != want {
 		t.Fatalf("root config top row = %q, want %q", got, want)
 	}
-	if got, want := cfg.Bar.Rows[1].Format, "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} {time}"; got != want {
+	if got, want := cfg.Bar.Rows[1].Format, "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} || {time}"; got != want {
 		t.Fatalf("root config main row = %q, want %q", got, want)
 	}
 	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} {exit} {duration}" {

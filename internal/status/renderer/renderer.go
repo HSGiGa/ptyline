@@ -98,15 +98,25 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	fillStr := string(fill)
 	border := fill != ' '
 
+	// Compute the effective inner width before arranging so block widths are
+	// allocated against the content area only (border caps are excluded).
+	caps := ""
+	target := r.engine.BarWidth()
+	if border {
+		caps = strings.Repeat(fillStr, 2)
+		target = max(0, target-2*width.String(caps))
+	}
+
 	natural := make([]int, len(blocks))
 	values := make([]string, len(blocks))
 	for i, block := range blocks {
 		values[i] = blockValue(st, block)
 		natural[i] = width.String(values[i])
 	}
-	placements := r.engine.Arrange(blocks, natural)
-	sections := map[layout.Anchor]string{}
-	plainSections := map[layout.Anchor]string{}
+	placements := r.engine.ArrangeIn(blocks, natural, target)
+	// Use per-anchor builders to avoid map allocations and string += copies.
+	var styledL, styledC, styledR strings.Builder
+	var plainL, plainC, plainR strings.Builder
 	for i, placement := range placements {
 		if !placement.Visible {
 			continue
@@ -116,56 +126,66 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		}
 		text := width.Truncate(values[i], placement.Width, placement.Block.Truncate)
 		text = width.Pad(text, placement.Width, string(placement.Block.Align))
-		plainSections[placement.Block.Anchor] += text
+		var sb, pb *strings.Builder
+		switch placement.Block.Anchor {
+		case layout.AnchorCenter:
+			sb, pb = &styledC, &plainC
+		case layout.AnchorRight:
+			sb, pb = &styledR, &plainR
+		default:
+			sb, pb = &styledL, &plainL
+		}
+		pb.WriteString(text)
 		// Each segment is styled and reset, then the base colors are re-emitted so
 		// the bar background continues across gaps and padding.
 		blockStyle := r.styleFor(placement.Block)
 		switch r.animationMode(st, placement.Block) {
 		case AnimGlint:
-			sections[placement.Block.Anchor] += r.applyGlint(text, blockStyle, st.AnimationPhase) + r.base
+			sb.WriteString(r.applyGlint(text, blockStyle, st.AnimationPhase))
+			sb.WriteString(r.base)
 		case AnimPulse:
-			sections[placement.Block.Anchor] += r.applyPulse(text, blockStyle, st.AnimationPhase) + r.base
+			sb.WriteString(r.applyPulse(text, blockStyle, st.AnimationPhase))
+			sb.WriteString(r.base)
 		case AnimBlink:
-			sections[placement.Block.Anchor] += r.applyBlink(text, blockStyle, st.AnimationPhase) + r.base
+			sb.WriteString(r.applyBlink(text, blockStyle, st.AnimationPhase))
+			sb.WriteString(r.base)
 		default:
-			sections[placement.Block.Anchor] += blockStyle.Apply(text, r.theme) + r.base
+			sb.WriteString(blockStyle.Apply(text, r.theme))
+			sb.WriteString(r.base)
 		}
 	}
 
-	// Reserve two cells on each edge for caps when bordered; the inner layout is
-	// computed against the remaining width.
-	caps := ""
-	target := r.engine.BarWidth()
-	if border {
-		caps = strings.Repeat(fillStr, 2)
-		target = max(0, target-2*width.String(caps))
-	}
-
-	left := sections[layout.AnchorLeft]
-	center := sections[layout.AnchorCenter]
-	right := sections[layout.AnchorRight]
-	plainLeft := plainSections[layout.AnchorLeft]
-	plainCenter := plainSections[layout.AnchorCenter]
-	plainRight := plainSections[layout.AnchorRight]
+	left := styledL.String()
+	center := styledC.String()
+	right := styledR.String()
+	plainLeft := plainL.String()
+	plainCenter := plainC.String()
+	plainRight := plainR.String()
 	if border {
 		left, plainLeft = emptyWhitespaceSection(left, plainLeft)
 		center, plainCenter = emptyWhitespaceSection(center, plainCenter)
 		right, plainRight = emptyWhitespaceSection(right, plainRight)
 	}
+	// Cache display widths to avoid repeating runewidth scans on the same string.
+	wLeft := width.String(plainLeft)
+	wCenter := width.String(plainCenter)
+	wRight := width.String(plainRight)
 	line := left
 	plainLine := plainLeft
+	wLine := wLeft
 	if plainCenter != "" {
-		gap := max(0, (target-width.String(plainLeft)-width.String(plainRight)-width.String(plainCenter))/2)
+		gap := max(0, (target-wLeft-wRight-wCenter)/2)
 		line += strings.Repeat(fillStr, gap) + center
 		plainLine += strings.Repeat(fillStr, gap) + plainCenter
+		wLine += gap + wCenter
 	}
-	gap := max(0, target-width.String(plainLine)-width.String(plainRight))
+	gap := max(0, target-wLine-wRight)
 	line += strings.Repeat(fillStr, gap) + right
-	plainLine += strings.Repeat(fillStr, gap) + plainRight
+	wLine += gap + wRight
 	// ANSI styles are deliberately applied after layout. All spacing decisions use
 	// the unstyled twin line, otherwise escape bytes would corrupt cell widths.
-	if width.String(plainLine) < target {
-		line += strings.Repeat(fillStr, target-width.String(plainLine))
+	if wLine < target {
+		line += strings.Repeat(fillStr, target-wLine)
 	}
 	return RenderedBar{Line: r.base + caps + line + caps}
 }
@@ -228,25 +248,8 @@ func (r *Renderer) animationMode(st status.StatusState, block layout.Block) stri
 	return anim.Mode
 }
 
-func styleAttrs(s style.Style) string {
-	var codes []string
-	if s.Bold {
-		codes = append(codes, "1")
-	}
-	if s.Dim {
-		codes = append(codes, "2")
-	}
-	if s.Italic {
-		codes = append(codes, "3")
-	}
-	if s.Underline {
-		codes = append(codes, "4")
-	}
-	if len(codes) == 0 {
-		return ""
-	}
-	return "\x1b[" + strings.Join(codes, ";") + "m"
-}
+// styleAttrs delegates to style.Style.attrs() to avoid duplicating SGR logic.
+func styleAttrs(s style.Style) string { return s.Attrs() }
 
 func blockValue(st status.StatusState, block layout.Block) string {
 	if block.IsLiteral() {

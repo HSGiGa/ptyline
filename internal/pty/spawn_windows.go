@@ -2,7 +2,13 @@
 
 package pty
 
-import "os/exec"
+import (
+	"errors"
+	"os/exec"
+)
+
+// errNotImplemented is returned on Windows until ConPTY support is built (spec §19).
+var errNotImplemented = errors.New("Windows ConPTY backend not yet implemented (post-MVP)")
 
 // start launches the child via the Windows ConPTY backend.
 //
@@ -11,13 +17,13 @@ import "os/exec"
 // post-MVP (spec §19); the Linux/WSL MVP does not exercise this path.
 func (s *Supervisor) start(size Size) error {
 	_ = size
-	return nil
+	return errNotImplemented
 }
 
 // setsize is the ConPTY resize stub (post-MVP).
 func (s *Supervisor) setsize(size Size) error {
 	_ = size
-	return nil
+	return errNotImplemented
 }
 
 // terminateGroup is the ConPTY shutdown stub (post-MVP).

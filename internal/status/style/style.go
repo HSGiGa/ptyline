@@ -49,7 +49,7 @@ func (s Style) Apply(content string, th *theme.Theme) string {
 	b.WriteString(s.LeftSeparator)
 	b.WriteString(th.FG(s.FG))
 	b.WriteString(th.BG(s.BG))
-	b.WriteString(s.attrs())
+	b.WriteString(s.Attrs())
 	b.WriteString(body)
 	b.WriteString(theme.Reset)
 	b.WriteString(s.RightSeparator)
@@ -68,23 +68,34 @@ func (s Style) pad(content string) string {
 	return b.String()
 }
 
-// attrs renders the SGR sequence for the enabled text attributes, or "" if none.
-func (s Style) attrs() string {
-	var codes []string
+// Attrs renders the SGR sequence for the enabled text attributes, or "" if none.
+func (s Style) Attrs() string {
+	var b strings.Builder
+	first := true
+	emit := func(code string) {
+		if first {
+			b.WriteString("\x1b[")
+			first = false
+		} else {
+			b.WriteByte(';')
+		}
+		b.WriteString(code)
+	}
 	if s.Bold {
-		codes = append(codes, "1")
+		emit("1")
 	}
 	if s.Dim {
-		codes = append(codes, "2")
+		emit("2")
 	}
 	if s.Italic {
-		codes = append(codes, "3")
+		emit("3")
 	}
 	if s.Underline {
-		codes = append(codes, "4")
+		emit("4")
 	}
-	if len(codes) == 0 {
+	if first {
 		return ""
 	}
-	return "\x1b[" + strings.Join(codes, ";") + "m"
+	b.WriteByte('m')
+	return b.String()
 }

@@ -11,6 +11,9 @@ import (
 	"github.com/hsgiga/ptyline/internal/diagnostics"
 )
 
+// maxDurationMS is an upper bound for shell-reported command duration (24 hours).
+const maxDurationMS = 86_400_000
+
 // StatusState is the single structured state object read by the renderer. The
 // MVP populates a small subset; the remaining fields are reserved so future
 // providers (git, agents) slot in without reshaping the type (spec §24.1).
@@ -49,12 +52,12 @@ func (s *StatusState) ApplyShellMeta(key, value string) {
 			s.Shell.LastCommandCompletedAt = time.Now()
 		}
 	case "exit_code":
-		if code, err := strconv.Atoi(value); err == nil {
+		if code, err := strconv.Atoi(value); err == nil && code >= 0 && code <= 255 {
 			s.Shell.LastExitCode = code
 		}
 	case "duration_ms":
-		if duration, err := strconv.Atoi(value); err == nil {
-			s.Shell.LastDurationMS = duration
+		if ms, err := strconv.ParseInt(value, 10, 64); err == nil && ms >= 0 && ms <= maxDurationMS {
+			s.Shell.LastDurationMS = int(ms)
 		}
 	case "ssh_start":
 		s.Shell.SSHTarget = value
@@ -97,6 +100,15 @@ type ShellState struct {
 	LastCommandCompleted   bool
 	LastCommandCompletedAt time.Time
 	SSHTarget              string // set by ssh_start wrapper, cleared by ssh_end
+}
+
+// ClearLastCommand resets all "done command" fields after the TTL expires.
+func (s *ShellState) ClearLastCommand() {
+	s.LastCommand = ""
+	s.LastExitCode = 0
+	s.LastDurationMS = 0
+	s.LastCommandCompleted = false
+	s.LastCommandCompletedAt = time.Time{}
 }
 
 // GitState is the reserved git provider value (post-MVP, spec §19).
