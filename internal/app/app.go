@@ -26,7 +26,6 @@ import (
 	"github.com/hsgiga/ptyline/internal/status/icons"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
-	"github.com/hsgiga/ptyline/internal/status/theme"
 	"github.com/hsgiga/ptyline/internal/terminal"
 )
 
@@ -173,8 +172,13 @@ func run(opts options) int {
 			bus.SendCtx(ctx, event.ModuleUpdated{ID: "git", Snapshot: snap})
 		}()
 	}
-	th := theme.Default(colorMode(profile.Capabilities.Color))
-	render := renderer.New(layout.New(int(size.Cols)), th)
+	visuals, err := bar.VisualsFromConfig(cfg, colorMode(profile.Capabilities.Color), opts.ConfigPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ptyline: theme:", err)
+		return 1
+	}
+	render := renderer.New(layout.New(int(size.Cols)), visuals.Theme)
+	render.SetStyles(visuals.Styles)
 	render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
 	var resizePending bool
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
@@ -235,7 +239,8 @@ func run(opts options) int {
 			state.Resize(cols, rows, alt)
 			top, count := bar.Geometry(area, rows, len(barRows))
 			writer.SetBarRows(top, count)
-			render = renderer.New(layout.New(int(cols)), th)
+			render = renderer.New(layout.New(int(cols)), visuals.Theme)
+			render.SetStyles(visuals.Styles)
 			render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
