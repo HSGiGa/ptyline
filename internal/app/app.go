@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -110,9 +109,9 @@ func run(opts options) int {
 	// cwdHolder is read by the git module's refresh goroutine and written by the
 	// loop goroutine on cwd shell-meta, so it must be race-free.
 	var cwdHolder atomic.Value
-	var activeCommandAnimating atomic.Bool
-	var lastActiveCommandActivity time.Time
-	// lastStdinInput marks the most recent keystroke so the active-command glint
+	var commandAnimating atomic.Bool
+	var lastCommandActivity time.Time
+	// lastStdinInput marks the most recent keystroke so the command glint
 	// can tell genuine work output from a program echoing what the user types.
 	var lastStdinInput time.Time
 	var sshAnimating bool
@@ -128,7 +127,7 @@ func run(opts options) int {
 		})
 	}
 	timeModule := modules.NewTime(cfg.Modules["time"].Format, time.Second)
-	activeCommandConfig := cfg.Modules["active_command"]
+	commandConfig := cfg.Modules["command"]
 	// Resolve the git branch icon through the icon preset: the Nerd-Font glyph
 	// (U+E0A0) when icons.preset = "nerd-font", otherwise a plain-font branch
 	// glyph (U+2387 "⎇") that renders without a Nerd Font. A true Nerd-Font check
@@ -144,7 +143,13 @@ func run(opts options) int {
 	// sshBaseSnap is the env-based SSH snapshot (inbound SSH detection); it is
 	// reused as the fallback when an outbound ssh_end event arrives.
 	sshBaseSnap := modules.NewSSH().Refresh(nil)
-	for _, module := range []status.Module{timeModule, modules.NewHostname()} {
+	for _, module := range []status.Module{
+		timeModule,
+		modules.NewHostname(),
+		modules.NewUser(),
+		modules.NewRuntime(profile),
+		modules.NewShell(argv),
+	} {
 		state.UpdateModule(module.Refresh(nil))
 	}
 	state.UpdateModule(sshBaseSnap)
@@ -263,9 +268,9 @@ func run(opts options) int {
 			// and the bar should stay quiet (it spins on work, not on typing).
 			if len(data) > 0 && state.Shell.ActiveCommand != "" &&
 				time.Since(lastStdinInput) > keystrokeEchoWindow {
-				lastActiveCommandActivity = time.Now()
+				lastCommandActivity = time.Now()
 				state.ActiveCommandAnimating = true
-				activeCommandAnimating.Store(true)
+				commandAnimating.Store(true)
 			}
 			writer.InvalidateBar()
 			// The child bytes (including any ?1049h/l) have now reached the
@@ -340,21 +345,20 @@ func run(opts options) int {
 				})
 				refreshGit(state.Shell.CWD)
 			}
-			if key == shellintegration.KeyCommand && activeCommandConfig.Enabled {
-				// SSH is shown via the ssh module; suppress it from active_command.
+			if key == shellintegration.KeyCommand {
 				cmd := state.Shell.ActiveCommand
-				if strings.HasPrefix(cmd, "ssh ") || cmd == "ssh" {
-					cmd = ""
-				}
-				activeCommandAnimating.Store(cmd != "")
 				if cmd == "" {
 					state.AnimationPhase = 0
 					state.ActiveCommandAnimating = false
+					commandAnimating.Store(modules.ShouldTickDoneCommand(state.Shell, commandDisplayPolicy(commandConfig)))
 				} else {
-					lastActiveCommandActivity = time.Now()
+					lastCommandActivity = time.Now()
 					state.ActiveCommandAnimating = true
+					commandAnimating.Store(true)
 				}
-				state.UpdateModule(activeCommandSnapshot(cmd, activeCommandConfig, state.ActiveCommandAnimating))
+			}
+			if commandConfig.Enabled && (key == shellintegration.KeyCommand || key == "exit_code" || key == "duration_ms") {
+				state.UpdateModule(commandSnapshot(state.Shell, commandConfig, state.ActiveCommandAnimating))
 			}
 		},
 		ModuleUpdated: func(_ string, snapshot any) {
@@ -375,15 +379,27 @@ func run(opts options) int {
 			}
 			if state.Shell.ActiveCommand == "" {
 				state.ActiveCommandAnimating = false
+				if modules.ShouldClearDoneCommand(state.Shell, commandDisplayPolicy(commandConfig)) {
+					clearLastCommand(&state.Shell)
+					commandAnimating.Store(false)
+					if commandConfig.Enabled {
+						state.UpdateModule(commandSnapshot(state.Shell, commandConfig, false))
+					}
+				}
 				return
 			}
-			if time.Since(lastActiveCommandActivity) > activeCommandAnimationIdleTimeout {
+			if time.Since(lastCommandActivity) > commandAnimationIdleTimeout {
 				state.ActiveCommandAnimating = false
-				activeCommandAnimating.Store(false)
+				commandAnimating.Store(false)
+				if commandConfig.Enabled {
+					state.UpdateModule(commandSnapshot(state.Shell, commandConfig, false))
+				}
 				return
 			}
 			state.ActiveCommandAnimating = true
-			state.UpdateModule(activeCommandSnapshot(state.Shell.ActiveCommand, activeCommandConfig, true))
+			if commandConfig.Enabled {
+				state.UpdateModule(commandSnapshot(state.Shell, commandConfig, true))
+			}
 		},
 		Redraw:    redraw,
 		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
@@ -400,7 +416,7 @@ func run(opts options) int {
 	startSignals(bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
 	scheduler.Start(ctx, gitModule, time.Second)
-	startAnimationTicker(ctx, bus, cfg.Modules, &activeCommandAnimating)
+	startAnimationTicker(ctx, bus, cfg.Modules, &commandAnimating)
 	// Paint git as soon as possible without blocking startup if git hangs.
 	refreshGit("")
 	redraw()
@@ -413,13 +429,30 @@ func run(opts options) int {
 	return code
 }
 
-func activeCommandSnapshot(command string, cfg config.ModuleConfig, animating bool) status.ModuleSnapshot {
+func commandSnapshot(shell status.ShellState, cfg config.ModuleConfig, animating bool) status.ModuleSnapshot {
+	text, active := modules.FormatCommand(shell, cfg.Format, cfg.MaxWidth, commandDisplayPolicy(cfg))
 	return status.ModuleSnapshot{
-		ID:                  "active_command",
-		Value:               status.Text(modules.FormatActiveCommand(command, cfg.Format, cfg.MaxWidth)),
+		ID:                  "command",
+		Value:               status.Text(text),
 		UpdatedAt:           time.Now(),
-		AnimationSuppressed: !animating,
+		AnimationSuppressed: !active || !animating,
 	}
+}
+
+func commandDisplayPolicy(cfg config.ModuleConfig) modules.CommandDisplayPolicy {
+	return modules.CommandDisplayPolicy{
+		DoneMinDuration: time.Duration(cfg.DoneMinDurationMS) * time.Millisecond,
+		DoneSuccessTTL:  time.Duration(cfg.DoneSuccessTTLMS) * time.Millisecond,
+		DoneFailureTTL:  time.Duration(cfg.DoneFailureTTLMS) * time.Millisecond,
+	}
+}
+
+func clearLastCommand(shell *status.ShellState) {
+	shell.LastCommand = ""
+	shell.LastExitCode = 0
+	shell.LastDurationMS = 0
+	shell.LastCommandCompleted = false
+	shell.LastCommandCompletedAt = time.Time{}
 }
 
 func startAnimationTicker(ctx context.Context, bus *event.Bus, modules map[string]config.ModuleConfig, active *atomic.Bool) {
@@ -452,7 +485,7 @@ func animationTickerConfig(modules map[string]config.ModuleConfig) (time.Duratio
 		if !module.Enabled || module.Animation == "" || module.Animation == "none" {
 			continue
 		}
-		if id != "active_command" {
+		if id != "command" {
 			continuous = true
 		}
 		next := time.Duration(module.AnimationIntervalMS) * time.Millisecond
@@ -473,9 +506,6 @@ func animationsFromConfig(modules map[string]config.ModuleConfig) map[string]ren
 			continue
 		}
 		animations[id] = renderer.Animation{Mode: module.Animation}
-		if id == "active_command" {
-			animations["cmd"] = renderer.Animation{Mode: module.Animation}
-		}
 	}
 	return animations
 }
@@ -505,13 +535,13 @@ const resizeCommitDelay = 50 * time.Millisecond
 // handshake + key exchange window.
 const sshConnectingAnimationTimeout = 2500 * time.Millisecond
 
-// activeCommandAnimationIdleTimeout stops the glint for interactive commands
+// commandAnimationIdleTimeout stops the glint for interactive commands
 // that remain active but stop producing output, such as an idle agent prompt.
-const activeCommandAnimationIdleTimeout = 1200 * time.Millisecond
+const commandAnimationIdleTimeout = 1200 * time.Millisecond
 
 // keystrokeEchoWindow is how long after a keystroke output is treated as the
 // program echoing the user's typing rather than doing work; within it the
-// active-command glint does not start.
+// command glint does not start.
 const keystrokeEchoWindow = 180 * time.Millisecond
 
 func startSignals(bus *event.Bus) {

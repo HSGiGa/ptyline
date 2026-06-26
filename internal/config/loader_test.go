@@ -29,13 +29,40 @@ enabled = true
 	}
 }
 
+func TestLoadRootConfig(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "ptyline.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Bar.Height != 2 || len(cfg.Bar.Rows) != 2 {
+		t.Fatalf("root config rows = height %d len %d, want 2 rows", cfg.Bar.Height, len(cfg.Bar.Rows))
+	}
+	if got, want := cfg.Bar.Rows[0].Format, " {command} || || {git} "; got != want {
+		t.Fatalf("root config top row = %q, want %q", got, want)
+	}
+	if got, want := cfg.Bar.Rows[1].Format, "{ssh} || {user}@{hostname} {cwd} || {runtime} {shell} {time}"; got != want {
+		t.Fatalf("root config main row = %q, want %q", got, want)
+	}
+	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} {exit} {duration}" {
+		t.Fatalf("root command module = %+v", module)
+	}
+	for _, id := range []string{"user", "runtime", "shell"} {
+		if module := cfg.Modules[id]; !module.Enabled {
+			t.Fatalf("root %s module = %+v, want enabled", id, module)
+		}
+	}
+}
+
 func TestDefaultTopRowSpacing(t *testing.T) {
 	cfg := Default()
 	if len(cfg.Bar.Rows) == 0 {
 		t.Fatal("Default() has no bar rows")
 	}
-	if got, want := cfg.Bar.Rows[0].Format, " {cmd} || || {git} "; got != want {
+	if got, want := cfg.Bar.Rows[0].Format, ""; got != want {
 		t.Fatalf("top row format = %q, want %q", got, want)
+	}
+	if got, want := cfg.Bar.Rows[1].Format, "|| {time}"; got != want {
+		t.Fatalf("main row format = %q, want %q", got, want)
 	}
 }
 

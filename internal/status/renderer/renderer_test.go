@@ -105,53 +105,57 @@ func TestRenderMainBarHidesEmptyModuleBlock(t *testing.T) {
 	}
 }
 
-func TestActiveCommandAlias(t *testing.T) {
+func TestCommandGlintKeepsVisibleText(t *testing.T) {
 	st := status.NewState()
 	st.Resize(40, 1, false)
-	st.Shell.ActiveCommand = "go test ./..."
-	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("go test ./...")})
-
-	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	blocks := layout.ParseFormat("{cmd}")
-
-	line := r.RenderRow(st, blocks, ' ').Line
-
-	if !strings.Contains(line, "go test ./...") {
-		t.Fatalf("active command alias did not render command: %q", line)
-	}
-}
-
-func TestActiveCommandGlintKeepsVisibleText(t *testing.T) {
-	st := status.NewState()
-	st.Resize(40, 1, false)
-	st.Shell.ActiveCommand = "sleep 30"
+	st.Shell.ActiveCommand = "npm test"
 	st.AnimationPhase = 1
 	st.ActiveCommandAnimating = true
-	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30"), AnimationSuppressed: false})
+	st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("npm test"), AnimationSuppressed: false})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
-	line := r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
+	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
 
 	if !strings.Contains(line, "\x1b[38;2;255;240;194m") {
-		t.Fatalf("glint output missing highlight color: %q", line)
+		t.Fatalf("command glint output missing highlight color: %q", line)
 	}
-	if !strings.Contains(stripANSI(line), "sleep 30") {
-		t.Fatalf("glint changed visible text: %q", line)
+	if !strings.Contains(stripANSI(line), "npm test") {
+		t.Fatalf("command glint changed visible text: %q", line)
 	}
 }
 
-func TestActiveCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
+func TestCommandDoneStopsGlint(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.Shell.LastCommand = "npm test"
+	st.Shell.LastExitCode = 2
+	st.Shell.LastDurationMS = 8420
+	st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("npm test exit 2 8.4s"), AnimationSuppressed: true})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
+
+	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
+		t.Fatalf("done command should not glint: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), "npm test exit 2 8.4s") {
+		t.Fatalf("done command missing visible text: %q", line)
+	}
+}
+
+func TestCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
 	render := func(phase int) string {
 		st := status.NewState()
 		st.Resize(40, 1, false)
 		st.Shell.ActiveCommand = "sleep 30"
 		st.AnimationPhase = phase
 		st.ActiveCommandAnimating = true
-		st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30"), AnimationSuppressed: false})
+		st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("sleep 30"), AnimationSuppressed: false})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
-		r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
-		return r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
+		r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+		return r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
 	}
 	// Only colors change between frames: the visible cells stay identical, so the
 	// display width never shifts.
@@ -168,22 +172,22 @@ func TestActiveCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
 	}
 }
 
-func TestActiveCommandGlintStopsWhenIdle(t *testing.T) {
+func TestCommandGlintStopsWhenIdle(t *testing.T) {
 	st := status.NewState()
 	st.Resize(40, 1, false)
 	st.Shell.ActiveCommand = "codex"
 	st.ActiveCommandAnimating = false
-	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("codex"), AnimationSuppressed: true})
+	st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("codex"), AnimationSuppressed: true})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
-	line := r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
+	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
 
 	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
-		t.Fatalf("idle active command should not glint: %q", line)
+		t.Fatalf("idle command should not glint: %q", line)
 	}
 	if !strings.Contains(stripANSI(line), "codex") {
-		t.Fatalf("idle active command missing visible text: %q", line)
+		t.Fatalf("idle command missing visible text: %q", line)
 	}
 }
 

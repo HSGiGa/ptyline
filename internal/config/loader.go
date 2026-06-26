@@ -133,6 +133,15 @@ func Validate(cfg *Config) error {
 		if module.MaxWidth < 0 {
 			return fmt.Errorf("module.%s.max_width must be >= 0", id)
 		}
+		if module.DoneMinDurationMS < 0 {
+			return fmt.Errorf("module.%s.done_min_duration_ms must be >= 0", id)
+		}
+		if module.DoneSuccessTTLMS < 0 {
+			return fmt.Errorf("module.%s.done_success_ttl_ms must be >= 0", id)
+		}
+		if module.DoneFailureTTLMS < 0 {
+			return fmt.Errorf("module.%s.done_failure_ttl_ms must be >= 0", id)
+		}
 	}
 	return nil
 }

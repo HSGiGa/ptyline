@@ -46,9 +46,9 @@ build-all: ## Cross-compile linux, darwin, windows binaries
 .PHONY: run
 run: build ## Build and run with fish integration (use ARGS="..." to override)
 	@if [ -n "$(ARGS)" ]; then \
-		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) $(ARGS); \
+		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) --config "$(CURDIR)/ptyline.toml" $(ARGS); \
 	else \
-		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) fish -C 'ptyline init fish | source'; \
+		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) --config "$(CURDIR)/ptyline.toml" fish -C 'ptyline init fish | source'; \
 	fi
 
 .PHONY: test

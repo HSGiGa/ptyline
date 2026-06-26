@@ -16,7 +16,7 @@ python ~/bin/current-ticket.py
 ```
 
 The command result becomes ordinary module content and can be placed in the bar
-with the same layout and style rules as `{git}`, `{time}`, `{cmd}`, and other
+with the same layout and style rules as `{git}`, `{time}`, `{command}`, and other
 blocks.
 
 ## User Model

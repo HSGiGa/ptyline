@@ -78,7 +78,7 @@ type ModuleSnapshot struct {
 	Err       error
 	// AnimationSuppressed, when true, stops the renderer from applying the
 	// configured animation even if one is set. Default false = animate normally.
-	// Set by modules that control their own animation timing (e.g. active_command
+	// Set by modules that control their own animation timing (e.g. command
 	// suppresses when no command is running).
 	AnimationSuppressed bool
 }

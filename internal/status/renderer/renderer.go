@@ -201,7 +201,7 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 		s.FG = "base.fg"
 	case "git":
 		s.FG, s.Bold = "ok", true
-	case "active_command":
+	case "command":
 		s.FG = "#f2b35d"
 	case "ssh":
 		s.FG, s.Bold = "warn", true
@@ -212,7 +212,7 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 // animationMode returns the animation mode for a block, or "" if no animation
 // should run. Checks: color support, config opt-in, and the snapshot's
 // AnimationSuppressed flag (set by modules that control their own animation
-// timing, e.g. active_command only animates while a command is running).
+// timing, e.g. command only animates while a command is running).
 func (r *Renderer) animationMode(st status.StatusState, block layout.Block) string {
 	if block.IsLiteral() || r.theme == nil || r.theme.Mode() == theme.NoColor {
 		return ""
@@ -272,9 +272,6 @@ func blockValue(st status.StatusState, block layout.Block) string {
 }
 
 func canonicalModuleID(id string) string {
-	if id == "cmd" {
-		return "active_command"
-	}
 	return id
 }
 

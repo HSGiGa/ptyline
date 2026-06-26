@@ -14,8 +14,14 @@ func TestApplyShellMeta(t *testing.T) {
 	if state.Shell.ActiveCommand != "go test ./..." || state.Shell.LastCommand != "go test ./..." {
 		t.Fatalf("command state = %+v", state.Shell)
 	}
+	if state.Shell.LastCommandCompleted || !state.Shell.LastCommandCompletedAt.IsZero() {
+		t.Fatalf("started command marked completed: %+v", state.Shell)
+	}
 	state.ApplyShellMeta("command", "")
 	if state.Shell.ActiveCommand != "" || state.Shell.LastCommand != "go test ./..." {
 		t.Fatalf("cleared command state = %+v", state.Shell)
+	}
+	if !state.Shell.LastCommandCompleted || state.Shell.LastCommandCompletedAt.IsZero() {
+		t.Fatalf("completed command missing completion metadata: %+v", state.Shell)
 	}
 }
