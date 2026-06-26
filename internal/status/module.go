@@ -76,4 +76,9 @@ type ModuleSnapshot struct {
 	UpdatedAt time.Time
 	Stale     bool
 	Err       error
+	// AnimationSuppressed, when true, stops the renderer from applying the
+	// configured animation even if one is set. Default false = animate normally.
+	// Set by modules that control their own animation timing (e.g. active_command
+	// suppresses when no command is running).
+	AnimationSuppressed bool
 }

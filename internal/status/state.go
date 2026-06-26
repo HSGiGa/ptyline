@@ -50,6 +50,10 @@ func (s *StatusState) ApplyShellMeta(key, value string) {
 		if duration, err := strconv.Atoi(value); err == nil {
 			s.Shell.LastDurationMS = duration
 		}
+	case "ssh_start":
+		s.Shell.SSHTarget = value
+	case "ssh_end":
+		s.Shell.SSHTarget = ""
 	}
 }
 
@@ -84,6 +88,7 @@ type ShellState struct {
 	LastExitCode   int
 	LastCommand    string
 	LastDurationMS int
+	SSHTarget      string // set by ssh_start wrapper, cleared by ssh_end
 }
 
 // GitState is the reserved git provider value (post-MVP, spec §19).

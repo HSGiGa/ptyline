@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -114,6 +115,8 @@ func run(opts options) int {
 	// lastStdinInput marks the most recent keystroke so the active-command glint
 	// can tell genuine work output from a program echoing what the user types.
 	var lastStdinInput time.Time
+	var sshAnimating bool
+	var lastSSHStart time.Time
 	cwdHolder.Store("")
 	if cwd, err := os.Getwd(); err == nil {
 		state.Shell.CWD = cwd
@@ -138,9 +141,13 @@ func run(opts options) int {
 	// Initial synchronous paint so the bar shows values immediately; the
 	// scheduler then refreshes interval-driven modules (e.g. time) in the
 	// background and feeds snapshots back through ModuleUpdated events.
+	// sshBaseSnap is the env-based SSH snapshot (inbound SSH detection); it is
+	// reused as the fallback when an outbound ssh_end event arrives.
+	sshBaseSnap := modules.NewSSH().Refresh(nil)
 	for _, module := range []status.Module{timeModule, modules.NewHostname()} {
 		state.UpdateModule(module.Refresh(nil))
 	}
+	state.UpdateModule(sshBaseSnap)
 	scheduler := status.NewScheduler(func(snap status.ModuleSnapshot) {
 		bus.Send(event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
 	})
@@ -311,6 +318,19 @@ func run(opts options) int {
 		},
 		ShellMeta: func(key, value string) {
 			state.ApplyShellMeta(key, value)
+			if key == shellintegration.KeySSHStart {
+				sshAnimating = true
+				lastSSHStart = time.Now()
+				state.UpdateModule(status.ModuleSnapshot{
+					ID:        "ssh",
+					Value:     status.Text(state.Shell.SSHTarget),
+					UpdatedAt: time.Now(),
+				})
+			}
+			if key == shellintegration.KeySSHEnd {
+				sshAnimating = false
+				state.UpdateModule(sshBaseSnap)
+			}
 			if key == "cwd" {
 				cwdHolder.Store(state.Shell.CWD)
 				state.UpdateModule(status.ModuleSnapshot{
@@ -321,15 +341,20 @@ func run(opts options) int {
 				refreshGit(state.Shell.CWD)
 			}
 			if key == shellintegration.KeyCommand && activeCommandConfig.Enabled {
-				activeCommandAnimating.Store(state.Shell.ActiveCommand != "")
-				if state.Shell.ActiveCommand == "" {
+				// SSH is shown via the ssh module; suppress it from active_command.
+				cmd := state.Shell.ActiveCommand
+				if strings.HasPrefix(cmd, "ssh ") || cmd == "ssh" {
+					cmd = ""
+				}
+				activeCommandAnimating.Store(cmd != "")
+				if cmd == "" {
 					state.AnimationPhase = 0
 					state.ActiveCommandAnimating = false
 				} else {
 					lastActiveCommandActivity = time.Now()
 					state.ActiveCommandAnimating = true
 				}
-				state.UpdateModule(activeCommandSnapshot(state.Shell.ActiveCommand, activeCommandConfig))
+				state.UpdateModule(activeCommandSnapshot(cmd, activeCommandConfig, state.ActiveCommandAnimating))
 			}
 		},
 		ModuleUpdated: func(_ string, snapshot any) {
@@ -339,6 +364,15 @@ func run(opts options) int {
 		},
 		Tick: func() {
 			state.AnimationPhase++
+			if sshAnimating && time.Since(lastSSHStart) > sshConnectingAnimationTimeout {
+				sshAnimating = false
+				state.UpdateModule(status.ModuleSnapshot{
+					ID:                  "ssh",
+					Value:               status.Text(state.Shell.SSHTarget),
+					UpdatedAt:           time.Now(),
+					AnimationSuppressed: true,
+				})
+			}
 			if state.Shell.ActiveCommand == "" {
 				state.ActiveCommandAnimating = false
 				return
@@ -349,7 +383,7 @@ func run(opts options) int {
 				return
 			}
 			state.ActiveCommandAnimating = true
-			state.UpdateModule(activeCommandSnapshot(state.Shell.ActiveCommand, activeCommandConfig))
+			state.UpdateModule(activeCommandSnapshot(state.Shell.ActiveCommand, activeCommandConfig, true))
 		},
 		Redraw:    redraw,
 		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
@@ -379,11 +413,12 @@ func run(opts options) int {
 	return code
 }
 
-func activeCommandSnapshot(command string, cfg config.ModuleConfig) status.ModuleSnapshot {
+func activeCommandSnapshot(command string, cfg config.ModuleConfig, animating bool) status.ModuleSnapshot {
 	return status.ModuleSnapshot{
-		ID:        "active_command",
-		Value:     status.Text(modules.FormatActiveCommand(command, cfg.Format, cfg.MaxWidth)),
-		UpdatedAt: time.Now(),
+		ID:                  "active_command",
+		Value:               status.Text(modules.FormatActiveCommand(command, cfg.Format, cfg.MaxWidth)),
+		UpdatedAt:           time.Now(),
+		AnimationSuppressed: !animating,
 	}
 }
 
@@ -464,6 +499,11 @@ func startReader(bus *event.Bus, reader io.Reader, makeEvent func([]byte) event.
 // resizeDebounce coalesces a burst of SIGWINCH events (e.g. while dragging the
 // window edge) into a single re-query + Resize (spec §12, plan 13).
 const resizeCommitDelay = 50 * time.Millisecond
+
+// sshConnectingAnimationTimeout is how long the SSH module animates after
+// ssh_start before settling into a static label. Covers the typical TCP
+// handshake + key exchange window.
+const sshConnectingAnimationTimeout = 2500 * time.Millisecond
 
 // activeCommandAnimationIdleTimeout stops the glint for interactive commands
 // that remain active but stop producing output, such as an idle agent prompt.

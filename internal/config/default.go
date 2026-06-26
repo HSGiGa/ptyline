@@ -21,9 +21,9 @@ func Default() Config {
 				// solid rule; a plain "-" looks like a dashed line. Set fill = "-" for
 				// an ASCII-only fallback.
 				{Format: " {cmd} || || {git} ", Fill: "─"},
-				{Format: "{hostname} {cwd} || {time}"},
-			},
-			Format:    "{hostname} {cwd} || {time}",
+				{Format: "{ssh} {hostname} {cwd} || {time}"},
+},
+			Format:    "{ssh} {hostname} {cwd} || {time}",
 			Separator: " | ",
 		},
 		Theme: ThemeConfig{
@@ -43,6 +43,7 @@ func Default() Config {
 			"hostname":       {Enabled: true},
 			"cwd":            {Enabled: true, Mode: "shell-integration"},
 			"active_command": {Enabled: true, Format: "{command}", MaxWidth: 40, Animation: "glint", AnimationIntervalMS: 80},
+			"ssh":            {Enabled: true, Animation: "pulse", AnimationIntervalMS: 250},
 		},
 	}
 }
