@@ -40,16 +40,19 @@ func TestLoadRootConfig(t *testing.T) {
 	if got, want := cfg.Bar.Rows[0].Format, " {command} || || {git} "; got != want {
 		t.Fatalf("root config top row = %q, want %q", got, want)
 	}
-	if got, want := cfg.Bar.Rows[1].Format, "{ssh} || {user}@{hostname} {cwd} || {runtime} {shell} {time}"; got != want {
+	if got, want := cfg.Bar.Rows[1].Format, "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} {time}"; got != want {
 		t.Fatalf("root config main row = %q, want %q", got, want)
 	}
 	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} {exit} {duration}" {
 		t.Fatalf("root command module = %+v", module)
 	}
-	for _, id := range []string{"user", "runtime", "shell"} {
+	for _, id := range []string{"user", "runtime", "shell", "env"} {
 		if module := cfg.Modules[id]; !module.Enabled {
 			t.Fatalf("root %s module = %+v, want enabled", id, module)
 		}
+	}
+	if got, want := cfg.Modules["env"].Env, "PTYLINE_ENV"; got != want {
+		t.Fatalf("root env module env = %q, want %q", got, want)
 	}
 }
 

@@ -71,6 +71,7 @@ type ModuleConfig struct {
 	Mode                string `toml:"mode"`     // e.g. "shell-integration"
 	Provider            string `toml:"provider"` // command | osc | socket (future)
 	Command             string `toml:"command"`
+	Env                 string `toml:"env"`
 	IntervalMS          int    `toml:"interval_ms"`
 	TimeoutMS           int    `toml:"timeout_ms"`
 	MaxWidth            int    `toml:"max_width"`

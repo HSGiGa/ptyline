@@ -149,6 +149,7 @@ func run(opts options) int {
 		modules.NewUser(),
 		modules.NewRuntime(profile),
 		modules.NewShell(argv),
+		modules.NewEnv(cfg.Modules["env"].Env),
 	} {
 		state.UpdateModule(module.Refresh(nil))
 	}

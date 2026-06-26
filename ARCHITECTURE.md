@@ -47,7 +47,7 @@ signal ┘                                  └───────────
 | `internal/pty` | the **child** PTY | spawn, resize, exit code; owns the child session/process-group + signals; Unix backend (ConPTY post-MVP) |
 | `internal/status` | `StatusState`, `Module` | normalized state + typed module values |
 | `internal/status/{layout,renderer,width,theme,style,icons}` | the bar UI | layout engine, display-width, theme tokens |
-| `internal/modules` | built-in modules | time, hostname, user, runtime, shell, static, cwd, ssh, git, command |
+| `internal/modules` | built-in modules | time, hostname, user, runtime, shell, env, static, cwd, ssh, git, command |
 | `internal/config` | TOML schema/loader/migrate | versioned config + nearest project `.ptyline` discovery |
 | `internal/runtimeenv` | runtime profile + capabilities | detect once; components query capabilities |
 | `internal/platform` | OS-specific detection | build-tagged; WSL = Linux runtime branch |

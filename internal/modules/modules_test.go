@@ -41,6 +41,17 @@ func TestShellLabel(t *testing.T) {
 	}
 }
 
+func TestEnvValue(t *testing.T) {
+	t.Setenv("PTYLINE_TEST_ENV", "staging")
+
+	if got := envValue("PTYLINE_TEST_ENV"); got != "staging" {
+		t.Fatalf("envValue() = %q, want staging", got)
+	}
+	if got := envValue(""); got != "" {
+		t.Fatalf("envValue(empty) = %q, want empty", got)
+	}
+}
+
 func TestFormatCommandActiveDoneIdle(t *testing.T) {
 	text, active := FormatCommand(status.ShellState{
 		ActiveCommand:  "npm test",

@@ -52,6 +52,9 @@ func Default() Config {
 			"shell": {
 				Enabled: true,
 			},
+			"env": {
+				Enabled: true,
+			},
 		},
 	}
 }
