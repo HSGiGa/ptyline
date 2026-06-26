@@ -120,11 +120,16 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		// Each segment is styled and reset, then the base colors are re-emitted so
 		// the bar background continues across gaps and padding.
 		blockStyle := r.styleFor(placement.Block)
-		if r.shouldGlint(st, placement.Block) {
+		switch r.animationMode(st, placement.Block) {
+		case AnimGlint:
 			sections[placement.Block.Anchor] += r.applyGlint(text, blockStyle, st.AnimationPhase) + r.base
-			continue
+		case AnimPulse:
+			sections[placement.Block.Anchor] += r.applyPulse(text, blockStyle, st.AnimationPhase) + r.base
+		case AnimBlink:
+			sections[placement.Block.Anchor] += r.applyBlink(text, blockStyle, st.AnimationPhase) + r.base
+		default:
+			sections[placement.Block.Anchor] += blockStyle.Apply(text, r.theme) + r.base
 		}
-		sections[placement.Block.Anchor] += blockStyle.Apply(text, r.theme) + r.base
 	}
 
 	// Reserve two cells on each edge for caps when bordered; the inner layout is
@@ -198,96 +203,29 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 		s.FG, s.Bold = "ok", true
 	case "active_command":
 		s.FG = "#f2b35d"
+	case "ssh":
+		s.FG, s.Bold = "warn", true
 	}
 	return s
 }
 
-func (r *Renderer) shouldGlint(st status.StatusState, block layout.Block) bool {
+// animationMode returns the animation mode for a block, or "" if no animation
+// should run. Checks: color support, config opt-in, and the snapshot's
+// AnimationSuppressed flag (set by modules that control their own animation
+// timing, e.g. active_command only animates while a command is running).
+func (r *Renderer) animationMode(st status.StatusState, block layout.Block) string {
 	if block.IsLiteral() || r.theme == nil || r.theme.Mode() == theme.NoColor {
-		return false
+		return ""
 	}
-	moduleID := canonicalModuleID(block.ModuleID)
-	animation, ok := r.animations[moduleID]
-	if !ok || animation.Mode != "glint" {
-		return false
+	anim, ok := r.animations[canonicalModuleID(block.ModuleID)]
+	if !ok || anim.Mode == "" || anim.Mode == "none" {
+		return ""
 	}
-	if moduleID == "active_command" {
-		return st.Shell.ActiveCommand != "" && st.ActiveCommandAnimating
+	snap, hasSnap := st.Modules[status.ModuleID(canonicalModuleID(block.ModuleID))]
+	if hasSnap && snap.AnimationSuppressed {
+		return ""
 	}
-	return true
-}
-
-// glintHighlight is the warm color the shimmer blends the base FG toward at its
-// brightest. glintHalfWidth is how many cells the glow fades out over on each
-// side of the bright center — a wide, soft falloff reads as a smooth glide.
-var glintHighlight = theme.RGB{R: 0xff, G: 0xf0, B: 0xc2}
-
-const glintHalfWidth = 3
-
-// applyGlint renders the block as a seamless shimmer: a soft brightness wave
-// glides across the text and wraps on a ring of the text length, so the glow
-// leaving the right edge re-enters from the left with no gap and no snap. The
-// per-cell color is the base FG blended toward glintHighlight by a distance
-// falloff; display width is untouched (only colors change).
-func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
-	body := strings.Repeat(" ", max(0, s.PaddingLeft)) + content + strings.Repeat(" ", max(0, s.PaddingRight))
-	if r.theme == nil || r.theme.Mode() == theme.NoColor {
-		return s.LeftSeparator + body + s.RightSeparator
-	}
-	runes := []rune(body)
-	if len(runes) == 0 {
-		return s.Apply(content, r.theme)
-	}
-	base, ok := r.theme.Resolve(s.FG)
-	var b strings.Builder
-	b.WriteString(s.LeftSeparator)
-	b.WriteString(r.theme.BG(s.BG))
-	b.WriteString(styleAttrs(s))
-	if !ok {
-		// Unknown base color: keep the static FG so the text still renders.
-		fg := r.theme.FG(s.FG)
-		for _, ch := range runes {
-			b.WriteString(fg)
-			b.WriteRune(ch)
-		}
-	} else {
-		l := len(runes)
-		if phase < 0 {
-			phase = -phase
-		}
-		center := phase % l
-		for i, ch := range runes {
-			d := circularDistance(i, center, l)
-			t := 1 - float64(d)/glintHalfWidth
-			if t < 0 {
-				t = 0
-			}
-			b.WriteString(r.theme.FGRGB(mix(base, glintHighlight, t)))
-			b.WriteRune(ch)
-		}
-	}
-	b.WriteString(theme.Reset)
-	b.WriteString(s.RightSeparator)
-	return b.String()
-}
-
-// circularDistance is the shorter distance between i and center on a ring of
-// length l, so the shimmer wraps seamlessly across the text edges.
-func circularDistance(i, center, l int) int {
-	forward := ((i - center) % l + l) % l
-	backward := ((center - i) % l + l) % l
-	if forward < backward {
-		return forward
-	}
-	return backward
-}
-
-// mix linearly interpolates each channel from a toward b by t in [0,1].
-func mix(a, b theme.RGB, t float64) theme.RGB {
-	lerp := func(x, y uint8) uint8 {
-		return uint8(float64(x) + (float64(y)-float64(x))*t + 0.5)
-	}
-	return theme.RGB{R: lerp(a.R, b.R), G: lerp(a.G, b.G), B: lerp(a.B, b.B)}
+	return anim.Mode
 }
 
 func styleAttrs(s style.Style) string {

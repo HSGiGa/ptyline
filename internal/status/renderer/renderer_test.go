@@ -127,7 +127,7 @@ func TestActiveCommandGlintKeepsVisibleText(t *testing.T) {
 	st.Shell.ActiveCommand = "sleep 30"
 	st.AnimationPhase = 1
 	st.ActiveCommandAnimating = true
-	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30"), AnimationSuppressed: false})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
 	r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
@@ -148,7 +148,7 @@ func TestActiveCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
 		st.Shell.ActiveCommand = "sleep 30"
 		st.AnimationPhase = phase
 		st.ActiveCommandAnimating = true
-		st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30")})
+		st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30"), AnimationSuppressed: false})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
 		r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
 		return r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
@@ -173,7 +173,7 @@ func TestActiveCommandGlintStopsWhenIdle(t *testing.T) {
 	st.Resize(40, 1, false)
 	st.Shell.ActiveCommand = "codex"
 	st.ActiveCommandAnimating = false
-	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("codex")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("codex"), AnimationSuppressed: true})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
 	r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
@@ -202,6 +202,70 @@ func TestAnyModuleCanGlint(t *testing.T) {
 	}
 	if !strings.Contains(stripANSI(line), "12:34") {
 		t.Fatalf("animated time block changed visible text: %q", line)
+	}
+}
+
+func TestPulseKeepsVisibleTextAndChangesColors(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.AnimationPhase = 4
+	st.UpdateModule(status.ModuleSnapshot{ID: "hostname", Value: status.Text("myhost")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"hostname": {Mode: "pulse"}})
+	line := r.RenderRow(st, layout.ParseFormat("{hostname}"), ' ').Line
+
+	if !strings.Contains(stripANSI(line), "myhost") {
+		t.Fatalf("pulse changed visible text: %q", line)
+	}
+	// pulse emits a truecolor FG escape
+	if !strings.Contains(line, "\x1b[38;2;") {
+		t.Fatalf("pulse missing truecolor FG escape: %q", line)
+	}
+}
+
+func TestPulseStableDisplayWidth(t *testing.T) {
+	render := func(phase int) string {
+		st := status.NewState()
+		st.Resize(40, 1, false)
+		st.AnimationPhase = phase
+		st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34:56")})
+		r := New(layout.New(40), theme.Default(theme.TrueColor))
+		r.SetAnimations(map[string]Animation{"time": {Mode: "pulse"}})
+		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+	}
+	base := width.String(stripANSI(render(0)))
+	for _, phase := range []int{1, 4, 8, 12, 15} {
+		if got := width.String(stripANSI(render(phase))); got != base {
+			t.Fatalf("phase %d changed display width: %d vs %d", phase, got, base)
+		}
+	}
+}
+
+func TestBlinkKeepsVisibleTextAndAlternates(t *testing.T) {
+	render := func(phase int) string {
+		st := status.NewState()
+		st.Resize(40, 1, false)
+		st.AnimationPhase = phase
+		st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
+		r := New(layout.New(40), theme.Default(theme.TrueColor))
+		r.SetAnimations(map[string]Animation{"time": {Mode: "blink"}})
+		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+	}
+	// Visible text must not change.
+	for _, phase := range []int{0, blinkPeriod, blinkPeriod * 2} {
+		if !strings.Contains(stripANSI(render(phase)), "12:34") {
+			t.Fatalf("blink phase %d lost visible text", phase)
+		}
+	}
+	// Odd half-cycles carry SGR Dim (code "2"), even half-cycles do not.
+	dimLine := render(blinkPeriod)
+	brightLine := render(0)
+	if !strings.Contains(dimLine, "\x1b[2m") {
+		t.Fatalf("blink dim phase missing SGR 2: %q", dimLine)
+	}
+	if strings.Contains(brightLine, "\x1b[2m") {
+		t.Fatalf("blink bright phase should not carry SGR 2: %q", brightLine)
 	}
 }
 

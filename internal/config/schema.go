@@ -74,7 +74,7 @@ type ModuleConfig struct {
 	IntervalMS          int    `toml:"interval_ms"`
 	TimeoutMS           int    `toml:"timeout_ms"`
 	MaxWidth            int    `toml:"max_width"`
-	Animation           string `toml:"animation"` // none | glint
+	Animation           string `toml:"animation"` // none | glint | pulse | blink
 	AnimationIntervalMS int    `toml:"animation_interval_ms"`
 	Icon                string `toml:"icon"`
 	FallbackIcon        string `toml:"fallback_icon"`
