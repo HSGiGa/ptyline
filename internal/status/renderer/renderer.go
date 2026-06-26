@@ -253,7 +253,7 @@ func styleAttrs(s style.Style) string { return s.Attrs() }
 
 func blockValue(st status.StatusState, block layout.Block) string {
 	if block.IsLiteral() {
-		return block.Text
+		return sanitizeDisplayText(block.Text)
 	}
 	snapshot, ok := st.Modules[status.ModuleID(canonicalModuleID(block.ModuleID))]
 	if !ok || snapshot.Err != nil {
@@ -261,17 +261,42 @@ func blockValue(st status.StatusState, block layout.Block) string {
 	}
 	switch snapshot.Value.Kind {
 	case status.KindText:
-		return snapshot.Value.Text
+		return sanitizeDisplayText(snapshot.Value.Text)
 	case status.KindNumber:
 		return fmt.Sprint(snapshot.Value.Number)
 	case status.KindBool:
 		return fmt.Sprint(snapshot.Value.Bool)
 	case status.KindStatus:
 		if snapshot.Value.Status != nil {
-			return snapshot.Value.Status.Text
+			return sanitizeDisplayText(snapshot.Value.Status.Text)
 		}
 	}
 	return ""
+}
+
+func sanitizeDisplayText(s string) string {
+	for _, r := range s {
+		if isTerminalControl(r) {
+			return sanitizeDisplayTextSlow(s)
+		}
+	}
+	return s
+}
+
+func sanitizeDisplayTextSlow(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if isTerminalControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func isTerminalControl(r rune) bool {
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
 }
 
 func canonicalModuleID(id string) string {

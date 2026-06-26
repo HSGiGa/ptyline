@@ -30,6 +30,25 @@ func TestRenderModuleValueNoNewline(t *testing.T) {
 	}
 }
 
+func TestRenderSanitizesTerminalControls(t *testing.T) {
+	st := status.NewState()
+	st.Resize(80, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{
+		ID:    "env",
+		Value: status.Text("ok\x1b]52;c;bad\x07\nnext\u009b31m"),
+	})
+
+	r := New(layout.New(80), nil)
+	out := r.Render(st, layout.ParseFormat("pre\x1b[31m {env}"))
+
+	if strings.ContainsAny(out.Line, "\x1b\a\n") || strings.ContainsRune(out.Line, '\u009b') {
+		t.Fatalf("rendered line contains terminal controls: %q", out.Line)
+	}
+	if !strings.Contains(out.Line, "pre[31m ok]52;c;badnext31m") {
+		t.Fatalf("sanitized visible text mismatch: %q", out.Line)
+	}
+}
+
 // Left/center/right sections render in order across the bar (spec §20.13).
 func TestRenderThreeSectionOrder(t *testing.T) {
 	st := status.NewState()
