@@ -139,15 +139,19 @@ treat the value as plain text.
 
 ## Animation
 
-The default animation is a text glint/gleam. A narrow lighter highlight sweeps
-left-to-right across the active command text. The command string itself does not
-change, move, or gain extra indicator characters; the display width remains
-stable across animation frames.
+The default animation is a seamless shimmer. A soft, wide brightness glow glides
+across the active command text and wraps on a ring of the text length, so the
+glow leaving the right edge re-enters from the left with no gap and no snap. The
+command string itself does not change, move, or gain extra indicator characters;
+the display width remains stable across animation frames (only colors change).
 
-The glint is activity-based. It starts when the command starts or writes output,
-then stops after a short idle period while leaving the command text visible. This
-keeps long-running interactive tools such as an idle agent prompt from looking
-busy when they are waiting for input or doing no visible work.
+The shimmer is activity-based, and activity means the command is *doing work*,
+not the user typing. It starts when the command starts or writes output, but
+output that closely follows a keystroke is treated as the program echoing typing
+and does not keep it spinning; it stops after a short idle period while leaving
+the command text visible. This keeps long-running interactive tools — such as an
+idle agent prompt, or one you are typing a prompt into — from looking busy when
+they are waiting for input or doing no visible work.
 
 Configuration:
 

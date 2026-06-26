@@ -141,6 +141,33 @@ func TestActiveCommandGlintKeepsVisibleText(t *testing.T) {
 	}
 }
 
+func TestActiveCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
+	render := func(phase int) string {
+		st := status.NewState()
+		st.Resize(40, 1, false)
+		st.Shell.ActiveCommand = "sleep 30"
+		st.AnimationPhase = phase
+		st.ActiveCommandAnimating = true
+		st.UpdateModule(status.ModuleSnapshot{ID: "active_command", Value: status.Text("sleep 30")})
+		r := New(layout.New(40), theme.Default(theme.TrueColor))
+		r.SetAnimations(map[string]Animation{"active_command": {Mode: "glint"}})
+		return r.RenderRow(st, layout.ParseFormat("{cmd}"), ' ').Line
+	}
+	// Only colors change between frames: the visible cells stay identical, so the
+	// display width never shifts.
+	base := stripANSI(render(0))
+	for _, phase := range []int{1, 2, 3, 4, 7, 8, 11} {
+		if got := stripANSI(render(phase)); got != base {
+			t.Fatalf("phase %d changed visible cells: %q vs %q", phase, got, base)
+		}
+	}
+	// "sleep 30" is 8 cells and the shimmer wraps on a ring of that length, so a
+	// full cycle returns an identical frame, colors included — no snap.
+	if render(2) != render(2+len("sleep 30")) {
+		t.Fatalf("shimmer is not seamless across a full cycle")
+	}
+}
+
 func TestActiveCommandGlintStopsWhenIdle(t *testing.T) {
 	st := status.NewState()
 	st.Resize(40, 1, false)

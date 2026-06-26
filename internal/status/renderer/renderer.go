@@ -217,6 +217,18 @@ func (r *Renderer) shouldGlint(st status.StatusState, block layout.Block) bool {
 	return true
 }
 
+// glintHighlight is the warm color the shimmer blends the base FG toward at its
+// brightest. glintHalfWidth is how many cells the glow fades out over on each
+// side of the bright center — a wide, soft falloff reads as a smooth glide.
+var glintHighlight = theme.RGB{R: 0xff, G: 0xf0, B: 0xc2}
+
+const glintHalfWidth = 3
+
+// applyGlint renders the block as a seamless shimmer: a soft brightness wave
+// glides across the text and wraps on a ring of the text length, so the glow
+// leaving the right edge re-enters from the left with no gap and no snap. The
+// per-cell color is the base FG blended toward glintHighlight by a distance
+// falloff; display width is untouched (only colors change).
 func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 	body := strings.Repeat(" ", max(0, s.PaddingLeft)) + content + strings.Repeat(" ", max(0, s.PaddingRight))
 	if r.theme == nil || r.theme.Mode() == theme.NoColor {
@@ -226,28 +238,56 @@ func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 	if len(runes) == 0 {
 		return s.Apply(content, r.theme)
 	}
-	if phase < 0 {
-		phase = -phase
-	}
-	center := phase % (len(runes) + 4)
+	base, ok := r.theme.Resolve(s.FG)
 	var b strings.Builder
 	b.WriteString(s.LeftSeparator)
 	b.WriteString(r.theme.BG(s.BG))
 	b.WriteString(styleAttrs(s))
-	for i, ch := range runes {
-		switch abs(i - center) {
-		case 0:
-			b.WriteString(r.theme.FG("#fff0c2"))
-		case 1:
-			b.WriteString(r.theme.FG("#ffd58a"))
-		default:
-			b.WriteString(r.theme.FG(s.FG))
+	if !ok {
+		// Unknown base color: keep the static FG so the text still renders.
+		fg := r.theme.FG(s.FG)
+		for _, ch := range runes {
+			b.WriteString(fg)
+			b.WriteRune(ch)
 		}
-		b.WriteRune(ch)
+	} else {
+		l := len(runes)
+		if phase < 0 {
+			phase = -phase
+		}
+		center := phase % l
+		for i, ch := range runes {
+			d := circularDistance(i, center, l)
+			t := 1 - float64(d)/glintHalfWidth
+			if t < 0 {
+				t = 0
+			}
+			b.WriteString(r.theme.FGRGB(mix(base, glintHighlight, t)))
+			b.WriteRune(ch)
+		}
 	}
 	b.WriteString(theme.Reset)
 	b.WriteString(s.RightSeparator)
 	return b.String()
+}
+
+// circularDistance is the shorter distance between i and center on a ring of
+// length l, so the shimmer wraps seamlessly across the text edges.
+func circularDistance(i, center, l int) int {
+	forward := ((i - center) % l + l) % l
+	backward := ((center - i) % l + l) % l
+	if forward < backward {
+		return forward
+	}
+	return backward
+}
+
+// mix linearly interpolates each channel from a toward b by t in [0,1].
+func mix(a, b theme.RGB, t float64) theme.RGB {
+	lerp := func(x, y uint8) uint8 {
+		return uint8(float64(x) + (float64(y)-float64(x))*t + 0.5)
+	}
+	return theme.RGB{R: lerp(a.R, b.R), G: lerp(a.G, b.G), B: lerp(a.B, b.B)}
 }
 
 func styleAttrs(s style.Style) string {
@@ -305,11 +345,4 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func abs(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
 }

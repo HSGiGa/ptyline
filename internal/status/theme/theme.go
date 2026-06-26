@@ -65,6 +65,20 @@ func (t *Theme) FG(ref string) string { return t.sgr(ref, 38) }
 // BG returns the SGR sequence setting the background for a color reference.
 func (t *Theme) BG(ref string) string { return t.sgr(ref, 48) }
 
+// Resolve maps a color reference (palette token, "#rrggbb" literal, or named ANSI
+// color) to its RGB value. It lets callers interpolate between concrete colors —
+// e.g. animation effects that blend a base color toward a highlight.
+func (t *Theme) Resolve(ref string) (RGB, bool) { return t.resolve(ref) }
+
+// FGRGB returns the SGR sequence setting the foreground to an arbitrary RGB,
+// degraded to the active Mode, or "" in no-color mode.
+func (t *Theme) FGRGB(c RGB) string {
+	if t.mode == NoColor {
+		return ""
+	}
+	return c.sgr(38, t.mode)
+}
+
 func (t *Theme) sgr(ref string, layer int) string {
 	if t.mode == NoColor || ref == "" {
 		return ""

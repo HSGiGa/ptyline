@@ -111,6 +111,9 @@ func run(opts options) int {
 	var cwdHolder atomic.Value
 	var activeCommandAnimating atomic.Bool
 	var lastActiveCommandActivity time.Time
+	// lastStdinInput marks the most recent keystroke so the active-command glint
+	// can tell genuine work output from a program echoing what the user types.
+	var lastStdinInput time.Time
 	cwdHolder.Store("")
 	if cwd, err := os.Getwd(); err == nil {
 		state.Shell.CWD = cwd
@@ -237,12 +240,22 @@ func run(opts options) int {
 		}
 	}()
 	loop.SetHandlers(proxy.Handlers{
-		WriteInput: func(data []byte) error { _, err := sup.PTY().Write(data); return err },
+		WriteInput: func(data []byte) error {
+			if len(data) > 0 {
+				lastStdinInput = time.Now()
+			}
+			_, err := sup.PTY().Write(data)
+			return err
+		},
 		WriteOutput: func(data []byte) error {
 			if err := writer.WriteChild(data); err != nil {
 				return err
 			}
-			if len(data) > 0 && state.Shell.ActiveCommand != "" {
+			// Only count output as the command "working" when it did not closely
+			// follow a keystroke; otherwise it is just the program echoing typing
+			// and the bar should stay quiet (it spins on work, not on typing).
+			if len(data) > 0 && state.Shell.ActiveCommand != "" &&
+				time.Since(lastStdinInput) > keystrokeEchoWindow {
 				lastActiveCommandActivity = time.Now()
 				state.ActiveCommandAnimating = true
 				activeCommandAnimating.Store(true)
@@ -455,6 +468,11 @@ const resizeCommitDelay = 50 * time.Millisecond
 // activeCommandAnimationIdleTimeout stops the glint for interactive commands
 // that remain active but stop producing output, such as an idle agent prompt.
 const activeCommandAnimationIdleTimeout = 1200 * time.Millisecond
+
+// keystrokeEchoWindow is how long after a keystroke output is treated as the
+// program echoing the user's typing rather than doing work; within it the
+// active-command glint does not start.
+const keystrokeEchoWindow = 180 * time.Millisecond
 
 func startSignals(bus *event.Bus) {
 	signals := make(chan os.Signal, 1)
