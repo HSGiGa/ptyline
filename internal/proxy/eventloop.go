@@ -62,12 +62,12 @@ func (l *Loop) Run() (exitCode int, err error) {
 			}
 		case event.PtyOutput:
 			output := l.filter.Filter(e.Data)
-			l.applyFilterMeta()
 			if l.h.WriteOutput != nil {
 				if err := l.h.WriteOutput(output); err != nil {
 					return 1, err
 				}
 			}
+			l.applyFilterMeta()
 			if l.h.Redraw != nil {
 				l.h.Redraw()
 			}
@@ -80,13 +80,6 @@ func (l *Loop) Run() (exitCode int, err error) {
 			l.filter.SetRows(e.Rows)
 			if l.h.ResizeCommit != nil {
 				l.h.ResizeCommit(e.Cols, e.Rows)
-			}
-			if l.h.Redraw != nil {
-				l.h.Redraw()
-			}
-		case event.ShellMeta:
-			if l.h.ShellMeta != nil {
-				l.h.ShellMeta(e.Key, e.Value)
 			}
 			if l.h.Redraw != nil {
 				l.h.Redraw()

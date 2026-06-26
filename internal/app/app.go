@@ -100,7 +100,7 @@ func run(opts options) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // stops module refresh tickers on every exit path
 	bus := event.NewBus(256)
-	filter := proxy.NewAnsiFilter(area, nil)
+	filter := proxy.NewAnsiFilter(area)
 	filter.SetRows(size.Rows)
 	loop := proxy.NewLoop(bus, filter)
 	writer := proxy.NewTerminalWriter(os.Stdout)
@@ -177,14 +177,13 @@ func run(opts options) int {
 	render := renderer.New(layout.New(int(size.Cols)), th)
 	render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
 	var resizePending bool
+	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
 		if resizePending {
 			return
 		}
 		writer.RequestRedraw()
-		_ = writer.FlushBarFrameLazy(func() []string {
-			return bar.Render(render, state, barRows)
-		})
+		_ = writer.FlushBarFrameLazy(renderFn)
 	}
 	// altCoord sequences the alt-screen entry/exit protocol (spec §11):
 	// the filter records the transition; WriteOutput flushes it after bytes land.

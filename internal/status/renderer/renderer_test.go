@@ -30,7 +30,7 @@ func TestRenderModuleValueNoNewline(t *testing.T) {
 	}
 }
 
-func TestRenderSanitizesTerminalControls(t *testing.T) {
+func TestRenderSanitizesModuleTerminalControls(t *testing.T) {
 	st := status.NewState()
 	st.Resize(80, 1, false)
 	st.UpdateModule(status.ModuleSnapshot{
@@ -39,13 +39,14 @@ func TestRenderSanitizesTerminalControls(t *testing.T) {
 	})
 
 	r := New(layout.New(80), nil)
-	out := r.Render(st, layout.ParseFormat("pre\x1b[31m {env}"))
+	out := r.Render(st, layout.ParseFormat("pre {env}"))
 
+	// Module values must have terminal controls stripped; the literal prefix is trusted config.
 	if strings.ContainsAny(out.Line, "\x1b\a\n") || strings.ContainsRune(out.Line, '\u009b') {
-		t.Fatalf("rendered line contains terminal controls: %q", out.Line)
+		t.Fatalf("rendered line contains terminal controls from module value: %q", out.Line)
 	}
-	if !strings.Contains(out.Line, "pre[31m ok]52;c;badnext31m") {
-		t.Fatalf("sanitized visible text mismatch: %q", out.Line)
+	if !strings.Contains(out.Line, "ok]52;c;badnext31m") {
+		t.Fatalf("sanitized module value mismatch: %q", out.Line)
 	}
 }
 

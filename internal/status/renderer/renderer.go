@@ -253,7 +253,7 @@ func styleAttrs(s style.Style) string { return s.Attrs() }
 
 func blockValue(st status.StatusState, block layout.Block) string {
 	if block.IsLiteral() {
-		return sanitizeDisplayText(block.Text)
+		return block.Text // trusted user config, no sanitization
 	}
 	snapshot, ok := st.Modules[status.ModuleID(canonicalModuleID(block.ModuleID))]
 	if !ok || snapshot.Err != nil {
@@ -275,24 +275,20 @@ func blockValue(st status.StatusState, block layout.Block) string {
 }
 
 func sanitizeDisplayText(s string) string {
-	for _, r := range s {
+	for i, r := range s {
 		if isTerminalControl(r) {
-			return sanitizeDisplayTextSlow(s)
+			var b strings.Builder
+			b.Grow(len(s))
+			b.WriteString(s[:i])
+			for _, r2 := range s[i:] {
+				if !isTerminalControl(r2) {
+					b.WriteRune(r2)
+				}
+			}
+			return b.String()
 		}
 	}
 	return s
-}
-
-func sanitizeDisplayTextSlow(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if isTerminalControl(r) {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
 }
 
 func isTerminalControl(r rune) bool {

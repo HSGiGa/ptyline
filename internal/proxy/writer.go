@@ -148,6 +148,7 @@ func (w *TerminalWriter) readyForBarFrame() bool {
 func (w *TerminalWriter) flushBarFrame(lines []string) error {
 	if equalLines(lines, w.lastBars) {
 		w.pendingFrame = false
+		w.lastBarAt = time.Now()
 		return nil
 	}
 	// Keep the last barCount lines; drop the leading (top) ones when space is tight.

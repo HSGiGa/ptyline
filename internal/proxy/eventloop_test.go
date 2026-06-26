@@ -18,7 +18,7 @@ func TestLoopForwardsCtrlD(t *testing.T) {
 
 	var written bytes.Buffer
 	terminated := false
-	loop := NewLoop(bus, NewAnsiFilter(reserved.Default(), nil))
+	loop := NewLoop(bus, NewAnsiFilter(reserved.Default()))
 	loop.SetHandlers(Handlers{
 		WriteInput: func(b []byte) error { written.Write(b); return nil },
 		Terminate:  func(string) { terminated = true },
@@ -43,7 +43,7 @@ func TestLoopAppliesFilterMetadataDuringPtyOutput(t *testing.T) {
 
 	var written bytes.Buffer
 	var gotKey, gotValue string
-	loop := NewLoop(bus, NewAnsiFilter(reserved.Default(), nil))
+	loop := NewLoop(bus, NewAnsiFilter(reserved.Default()))
 	loop.SetHandlers(Handlers{
 		WriteOutput: func(b []byte) error { written.Write(b); return nil },
 		ShellMeta:   func(key, value string) { gotKey, gotValue = key, value },
@@ -69,7 +69,7 @@ func TestLoopTerminationExitCode(t *testing.T) {
 		bus := event.NewBus(1)
 		bus.Send(event.TerminationSignal{Signal: sig})
 		var got string
-		loop := NewLoop(bus, NewAnsiFilter(reserved.Default(), nil))
+		loop := NewLoop(bus, NewAnsiFilter(reserved.Default()))
 		loop.SetHandlers(Handlers{Terminate: func(s string) { got = s }})
 		code, err := loop.Run()
 		if err != nil || code != want {

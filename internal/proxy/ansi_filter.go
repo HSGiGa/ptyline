@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hsgiga/ptyline/internal/event"
 	"github.com/hsgiga/ptyline/internal/reserved"
 )
 
@@ -27,12 +28,6 @@ const (
 // row, so the filter must NOT clamp scroll margins in that mode (spec §8.4, §11).
 type AltScreenState struct {
 	Active bool
-}
-
-// ShellMeta is a parsed shell-integration metadata update consumed from OSC 777.
-type ShellMeta struct {
-	Key   string
-	Value string
 }
 
 // AnsiFilter inspects the child→terminal byte stream. Responsibilities (spec §8.4):
@@ -54,15 +49,14 @@ type AnsiFilter struct {
 	rows   uint16 // current real-terminal rows
 	alt    AltScreenState
 	tail   []byte // buffered incomplete escape sequence
-	meta   []ShellMeta
-	onMeta func(key, value string)
+	meta   []event.ShellMeta
 	onAlt  func(active bool)
 	onDiag func(msg string)
 }
 
-// NewAnsiFilter creates a filter for the given reserved area and meta callback.
-func NewAnsiFilter(area reserved.Area, onMeta func(key, value string)) *AnsiFilter {
-	return &AnsiFilter{area: area, onMeta: onMeta}
+// NewAnsiFilter creates a filter for the given reserved area.
+func NewAnsiFilter(area reserved.Area) *AnsiFilter {
+	return &AnsiFilter{area: area}
 }
 
 // SetAltHandler registers the callback invoked when the child enters/leaves the
@@ -82,7 +76,7 @@ func (f *AnsiFilter) AltActive() bool { return f.alt.Active }
 // DrainMeta returns shell metadata consumed during Filter calls since the last
 // drain. The event loop applies these directly instead of sending them back
 // through its own bus, so metadata cannot be dropped under bus backpressure.
-func (f *AnsiFilter) DrainMeta() []ShellMeta {
+func (f *AnsiFilter) DrainMeta() []event.ShellMeta {
 	if len(f.meta) == 0 {
 		return nil
 	}
@@ -296,10 +290,7 @@ func (f *AnsiFilter) handleOSC(seq []byte, out []byte) []byte {
 		f.diag("dropped non-whitelisted or oversized OSC 777 message")
 		return out
 	}
-	f.meta = append(f.meta, ShellMeta{Key: key, Value: value})
-	if f.onMeta != nil {
-		f.onMeta(key, value)
-	}
+	f.meta = append(f.meta, event.ShellMeta{Key: key, Value: value})
 	return out
 }
 
