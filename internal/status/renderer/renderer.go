@@ -109,9 +109,14 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 
 	natural := make([]int, len(blocks))
 	values := make([]string, len(blocks))
+	styles := make([]style.Style, len(blocks))
 	for i, block := range blocks {
 		values[i] = blockValue(st, block)
-		natural[i] = width.String(values[i])
+		styles[i] = r.styleFor(block)
+		if !block.IsLiteral() && values[i] == "" {
+			continue
+		}
+		natural[i] = width.String(values[i]) + styles[i].OuterWidth()
 	}
 	placements := r.engine.ArrangeIn(blocks, natural, target)
 	// Use per-anchor builders to avoid map allocations and string += copies.
@@ -124,8 +129,10 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		if !placement.Block.IsLiteral() && values[i] == "" {
 			continue
 		}
-		text := width.Truncate(values[i], placement.Width, placement.Block.Truncate)
-		text = width.Pad(text, placement.Width, string(placement.Block.Align))
+		blockStyle := styles[i]
+		contentWidth := max(0, placement.Width-blockStyle.OuterWidth())
+		text := width.Truncate(values[i], contentWidth, placement.Block.Truncate)
+		text = width.Pad(text, contentWidth, string(placement.Block.Align))
 		var sb, pb *strings.Builder
 		switch placement.Block.Anchor {
 		case layout.AnchorCenter:
@@ -135,10 +142,9 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		default:
 			sb, pb = &styledL, &plainL
 		}
-		pb.WriteString(text)
+		pb.WriteString(blockStyle.Plain(text))
 		// Each segment is styled and reset, then the base colors are re-emitted so
 		// the bar background continues across gaps and padding.
-		blockStyle := r.styleFor(placement.Block)
 		switch r.animationMode(st, placement.Block) {
 		case AnimGlint:
 			sb.WriteString(r.applyGlint(text, blockStyle, st.AnimationPhase))

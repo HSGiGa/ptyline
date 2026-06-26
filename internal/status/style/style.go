@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hsgiga/ptyline/internal/status/theme"
+	"github.com/hsgiga/ptyline/internal/status/width"
 )
 
 // Shape is a segment rendering style.
@@ -41,9 +42,9 @@ type Style struct {
 // separators only. Only the flat shape is implemented for the MVP; powerline/
 // pill/box are post-MVP (spec §19) and currently render as flat.
 func (s Style) Apply(content string, th *theme.Theme) string {
-	body := s.pad(content)
+	body := s.Padded(content)
 	if th == nil || th.Mode() == theme.NoColor {
-		return s.LeftSeparator + body + s.RightSeparator
+		return s.Plain(content)
 	}
 	var b strings.Builder
 	b.WriteString(s.LeftSeparator)
@@ -56,7 +57,19 @@ func (s Style) Apply(content string, th *theme.Theme) string {
 	return b.String()
 }
 
-func (s Style) pad(content string) string {
+// Plain returns the visible cells produced by this style without ANSI escapes.
+func (s Style) Plain(content string) string {
+	return s.LeftSeparator + s.Padded(content) + s.RightSeparator
+}
+
+// OuterWidth returns the visible width added around content by separators and
+// padding. It intentionally excludes the content itself.
+func (s Style) OuterWidth() int {
+	return width.String(s.LeftSeparator) + max(0, s.PaddingLeft) + max(0, s.PaddingRight) + width.String(s.RightSeparator)
+}
+
+// Padded returns content with this style's inner spacing applied.
+func (s Style) Padded(content string) string {
 	var b strings.Builder
 	if s.PaddingLeft > 0 {
 		b.WriteString(strings.Repeat(" ", s.PaddingLeft))

@@ -144,6 +144,30 @@ func TestRenderUsesModuleIDStyleFallback(t *testing.T) {
 	}
 }
 
+func TestRenderAccountsForStyledRightAnchorWidth(t *testing.T) {
+	st := status.NewState()
+	st.Resize(20, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
+
+	r := New(layout.New(20), theme.Default(theme.NoColor))
+	r.SetStyles(map[string]style.Style{
+		"time": {
+			LeftSeparator:  " ",
+			RightSeparator: " ",
+			PaddingLeft:    1,
+			PaddingRight:   1,
+		},
+	})
+	line := r.RenderRow(st, layout.ParseFormat("left||{time}"), ' ').Line
+
+	if got := width.String(line); got != 20 {
+		t.Fatalf("styled right anchor width = %d, want 20: %q", got, line)
+	}
+	if want := "left       " + "  12:34  "; line != want {
+		t.Fatalf("styled right anchor = %q, want %q", line, want)
+	}
+}
+
 func TestCommandGlintKeepsVisibleText(t *testing.T) {
 	st := status.NewState()
 	st.Resize(40, 1, false)
