@@ -56,10 +56,10 @@ func TestBarGeometry(t *testing.T) {
 
 func TestAnimationTickerConfig(t *testing.T) {
 	interval, continuous := animationTickerConfig(map[string]config.ModuleConfig{
-		"active_command": {Enabled: true, Animation: "glint", AnimationIntervalMS: 80},
+		"command": {Enabled: true, Animation: "glint", AnimationIntervalMS: 80},
 	})
 	if interval != 80*time.Millisecond || continuous {
-		t.Fatalf("active_command animation = (%v, %t), want (80ms, false)", interval, continuous)
+		t.Fatalf("command animation = (%v, %t), want (80ms, false)", interval, continuous)
 	}
 
 	interval, continuous = animationTickerConfig(map[string]config.ModuleConfig{

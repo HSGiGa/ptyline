@@ -1,0 +1,58 @@
+config_version = 1
+shell = "auto"
+refresh_interval_ms = 1000
+
+[bar]
+height = 2
+mode = "single-line"
+format = "ssh: {ssh} hostname: {hostname} {cwd} || {time}"
+separator = " | "
+
+[[bar.row]]
+format = " {command} || || {git} "
+fill = "─"
+
+[[bar.row]]
+format = "{ssh} || {hostname} {cwd} || {time}"
+
+[theme]
+color_scheme = "default"
+style = "flat"
+icons = "ascii"
+fallback = "ascii"
+
+[icons]
+enabled = true
+preset = "ascii"
+emoji_width = "auto"
+fallback = true
+
+[module.time]
+enabled = true
+format = "%H:%M:%S"
+interval_ms = 1000
+
+[module.hostname]
+enabled = true
+
+[module.cwd]
+enabled = true
+mode = "shell-integration"
+
+[module.command]
+enabled = true
+format = "{active} {last} {exit} {duration}"
+max_width = 60
+done_min_duration_ms = 2000
+done_success_ttl_ms = 3000
+done_failure_ttl_ms = 0
+animation = "glint"
+animation_interval_ms = 80
+
+[module.ssh]
+enabled = true
+animation = "pulse"
+animation_interval_ms = 250
+
+[module.git]
+enabled = true

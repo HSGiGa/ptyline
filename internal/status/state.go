@@ -39,9 +39,15 @@ func (s *StatusState) ApplyShellMeta(key, value string) {
 		if value != "" {
 			s.Shell.ActiveCommand = value
 			s.Shell.LastCommand = value
+			s.Shell.LastCommandCompleted = false
+			s.Shell.LastCommandCompletedAt = time.Time{}
 			return
 		}
 		s.Shell.ActiveCommand = ""
+		if s.Shell.LastCommand != "" {
+			s.Shell.LastCommandCompleted = true
+			s.Shell.LastCommandCompletedAt = time.Now()
+		}
 	case "exit_code":
 		if code, err := strconv.Atoi(value); err == nil {
 			s.Shell.LastExitCode = code
@@ -80,15 +86,17 @@ type TerminalState struct {
 // ShellState is populated from shell-integration OSC messages (spec §9). It is
 // optional: the wrapper works with any shell or command without an adapter.
 type ShellState struct {
-	CWD            string
-	Username       string
-	Hostname       string
-	Shell          string
-	ActiveCommand  string
-	LastExitCode   int
-	LastCommand    string
-	LastDurationMS int
-	SSHTarget      string // set by ssh_start wrapper, cleared by ssh_end
+	CWD                    string
+	Username               string
+	Hostname               string
+	Shell                  string
+	ActiveCommand          string
+	LastExitCode           int
+	LastCommand            string
+	LastDurationMS         int
+	LastCommandCompleted   bool
+	LastCommandCompletedAt time.Time
+	SSHTarget              string // set by ssh_start wrapper, cleared by ssh_end
 }
 
 // GitState is the reserved git provider value (post-MVP, spec §19).

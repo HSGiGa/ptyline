@@ -12,18 +12,17 @@ func Default() Config {
 			// entries (or 1 for the single-line Format fallback). Validate derives it.
 			Height: 1,
 			Mode:   "single-line",
-			// Two-row default: a rule-like top line carrying the active command on
-			// the left and git on the right, plus the main content line. Reserved
-			// rows = len(Rows). Format stays as the single-line fallback when Rows
-			// is empty.
+			// Built-in fallback is intentionally minimal: a rule-like stripe and a
+			// clock. Rich development layouts live in ptyline.toml and are passed via
+			// --config by `make run`.
 			Rows: []RowConfig{
 				// Fill is the box-drawing horizontal "─" (U+2500), which joins into a
 				// solid rule; a plain "-" looks like a dashed line. Set fill = "-" for
 				// an ASCII-only fallback.
-				{Format: " {cmd} || || {git} ", Fill: "─"},
-				{Format: "{ssh} {hostname} {cwd} || {time}"},
-},
-			Format:    "{ssh} {hostname} {cwd} || {time}",
+				{Format: "", Fill: "─"},
+				{Format: "|| {time}"},
+			},
+			Format:    "|| {time}",
 			Separator: " | ",
 		},
 		Theme: ThemeConfig{
@@ -39,11 +38,11 @@ func Default() Config {
 			Fallback:   true,
 		},
 		Modules: map[string]ModuleConfig{
-			"time":           {Enabled: true, Format: "%H:%M:%S", IntervalMS: 1000},
-			"hostname":       {Enabled: true},
-			"cwd":            {Enabled: true, Mode: "shell-integration"},
-			"active_command": {Enabled: true, Format: "{command}", MaxWidth: 40, Animation: "glint", AnimationIntervalMS: 80},
-			"ssh":            {Enabled: true, Animation: "pulse", AnimationIntervalMS: 250},
+			"time": {
+				Enabled:    true,
+				Format:     "%H:%M:%S",
+				IntervalMS: 1000,
+			},
 		},
 	}
 }
