@@ -1,0 +1,35 @@
+name = "catppuccin"
+
+[palette]
+"base.bg" = "#1e1e2e"
+"base.fg" = "#cdd6f4"
+accent = "#89b4fa"
+ok = "#a6e3a1"
+warn = "#f9e2af"
+error = "#f38ba8"
+muted = "#9399b2"
+command = "#f2b35d"
+panel = "base.bg"
+
+[style.hostname]
+fg = "accent"
+bg = "panel"
+bold = true
+
+[style.time]
+fg = "muted"
+bg = "panel"
+
+[style.git]
+fg = "ok"
+bg = "panel"
+bold = true
+
+[style.command]
+fg = "command"
+bg = "panel"
+
+[style.ssh]
+fg = "warn"
+bg = "panel"
+bold = true
