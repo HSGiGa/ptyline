@@ -6,6 +6,7 @@ import (
 
 	"github.com/hsgiga/ptyline/internal/config"
 	"github.com/hsgiga/ptyline/internal/runtimeenv"
+	"github.com/hsgiga/ptyline/internal/status/icons"
 	"github.com/hsgiga/ptyline/internal/status/theme"
 )
 
@@ -44,4 +45,13 @@ func moduleInterval(cfg config.ModuleConfig, fallback time.Duration) time.Durati
 		return fallback
 	}
 	return time.Duration(cfg.IntervalMS) * time.Millisecond
+}
+
+// gitBranchIcon uses the Nerd Font branch glyph only when the user selected a
+// Nerd Font preset. The fallback is a normal-font branch symbol.
+func gitBranchIcon(preset string) string {
+	if icons.Preset(preset) == icons.PresetNerdFont {
+		return ""
+	}
+	return "⎇"
 }

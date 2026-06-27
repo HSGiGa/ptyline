@@ -24,7 +24,6 @@ import (
 	"github.com/hsgiga/ptyline/internal/shellintegration"
 	"github.com/hsgiga/ptyline/internal/shellintegration/shellcolors"
 	"github.com/hsgiga/ptyline/internal/status"
-	"github.com/hsgiga/ptyline/internal/status/icons"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
 	"github.com/hsgiga/ptyline/internal/status/style"
@@ -137,11 +136,7 @@ func run(opts options) int {
 	}
 	timeModule := modules.NewTime(resolvedCfg.Modules["time"].Format, moduleInterval(resolvedCfg.Modules["time"], time.Second))
 	cmdTracker := command.NewTracker(resolvedCfg.Modules["command"])
-	// Resolve the git branch icon through the icon preset: the Nerd-Font glyph
-	// (U+E0A0) when icons.preset = "nerd-font", otherwise a plain-font branch
-	// glyph (U+2387 "⎇") that renders without a Nerd Font. A true Nerd-Font check
-	// is impossible at runtime, so the preset is the switch.
-	branchIcon := icons.New(icons.Preset(resolvedCfg.Icons.Preset), resolvedCfg.Icons.Fallback).Icon("", "⎇")
+	branchIcon := gitBranchIcon(resolvedCfg.Icons.Preset)
 	gitModule := modules.NewGit(moduleInterval(resolvedCfg.Modules["git"], 2*time.Second), time.Second, branchIcon, func() string {
 		s, _ := cwdHolder.Load().(string)
 		return s
