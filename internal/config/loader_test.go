@@ -41,7 +41,7 @@ func TestLoadRootConfig(t *testing.T) {
 	if got, want := cfg.Bar.Rows[0].Format, " {command} || || {git} "; got != want {
 		t.Fatalf("root config top row = %q, want %q", got, want)
 	}
-	if got, want := cfg.Bar.Rows[1].Format, "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} || {gh} || {time}"; got != want {
+	if got, want := cfg.Bar.Rows[1].Format, "{identity} || {env} {runtime} {shell} || {gh} || {time}"; got != want {
 		t.Fatalf("root config main row = %q, want %q", got, want)
 	}
 	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} {exit} {duration}" {
@@ -78,6 +78,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 		{name: "missing version", body: "shell = \"bash\"", key: "config_version"},
 		{name: "unknown key", body: "config_version = 1\nunknown = true", key: "unknown"},
 		{name: "format and block", body: "config_version = 1\n[bar]\nformat = \"{time}\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"auto\"\ntruncate = \"right\"", key: "bar.format"},
+		{name: "bad justify", body: "config_version = 1\n[bar]\njustify = \"middle\"", key: "bar.justify"},
 		{name: "bad width", body: "config_version = 1\n[bar]\nformat = \"\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"101%\"\ntruncate = \"right\"", key: "width"},
 		{name: "bad env name", body: "config_version = 1\n[module.env]\nenabled = true\nenv = [\"BAD-NAME\"]", key: "module.env.env"},
 		{name: "bad source", body: "config_version = 1\n[module.foo]\nsource = \"socket\"\ncommand = \"echo hi\"", key: "module.foo.source"},

@@ -97,6 +97,60 @@ func TestRenderThreeSectionOrder(t *testing.T) {
 	}
 }
 
+func TestRenderJustifyModes(t *testing.T) {
+	st := status.NewState()
+	st.Resize(20, 1, false)
+	blocks := layout.ParseFormat("L||CC||RRRRRR")
+
+	tests := []struct {
+		name    string
+		justify Justify
+		want    string
+	}{
+		{name: "center", justify: JustifyCenter, want: "L     CC      RRRRRR"},
+		{name: "absolute center", justify: JustifyAbsoluteCenter, want: "L        CC   RRRRRR"},
+		{name: "left", justify: JustifyLeft, want: "LCC           RRRRRR"},
+		{name: "right", justify: JustifyRight, want: "L           CCRRRRRR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := New(layout.New(20), nil)
+			r.SetJustify(tt.justify)
+			line := r.Render(st, blocks).Line
+			if line != tt.want {
+				t.Fatalf("line = %q, want %q", line, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderAbsoluteCenterFallsBackWhenOverlapping(t *testing.T) {
+	st := status.NewState()
+	st.Resize(20, 1, false)
+
+	r := New(layout.New(20), nil)
+	r.SetJustify(JustifyAbsoluteCenter)
+	line := r.Render(st, layout.ParseFormat("LLLLLLLLLL||CC||RRRRRR")).Line
+
+	if want := "LLLLLLLLLL CC RRRRRR"; line != want {
+		t.Fatalf("line = %q, want relative-center fallback %q", line, want)
+	}
+}
+
+func TestRenderPlaceholderWidthAlign(t *testing.T) {
+	st := status.NewState()
+	st.Resize(24, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("main")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("14:32")})
+
+	r := New(layout.New(24), nil)
+	line := r.Render(st, layout.ParseFormat("{git:^10}||{time:>8}")).Line
+
+	if want := "   main            14:32"; line != want {
+		t.Fatalf("line = %q, want %q", line, want)
+	}
+}
+
 // A border row ('-' fill) fills the whole width with dashes, draws edge caps, and
 // places the block in its slot — exactly barWidth cells wide.
 func TestRenderRowBorderFill(t *testing.T) {

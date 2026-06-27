@@ -19,6 +19,7 @@ Even though the MVP config exposes a one-line `format` string, it is parsed into
 ```text
 anchor    left | center | right     (which terminal side)
 align     left | center | right     (within its area)
+justify   left | center | right | absolute_center
 width     auto | fill | N | N%      (measured in TERMINAL CELLS)
 min_width / max_width
 truncate  left | right | middle | none
@@ -28,7 +29,16 @@ style     style id
 
 The engine packs the three sections (left/center/right), resolves `fill`/percent
 widths, clamps to min/max, and assigns each visible block a `[startCol,endCol)`
-range on the bar row.
+range on the bar row. `justify` is a bar-level policy for the center section:
+`center` is relative to the free space between left/right; `absolute_center` pins
+the center section to the full row's geometric center when it does not overlap.
+`align` remains local to a block's allocated width.
+
+The one-line format parser supports a compact width/alignment suffix:
+
+```text
+{cwd:<30} || {git:^20} || {time:>8}
+```
 
 ## Display width is mandatory (spec §8.6, §8.10)
 

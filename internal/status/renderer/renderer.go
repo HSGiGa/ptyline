@@ -34,11 +34,24 @@ type RenderedBar struct {
 	ClickZones []ClickZone
 }
 
+// Justify controls how the center section is placed between the left and right
+// sections. Center matches tmux's relative centre; AbsoluteCenter pins the
+// center section to the full bar's geometric center when it fits.
+type Justify string
+
+const (
+	JustifyLeft           Justify = "left"
+	JustifyCenter         Justify = "center"
+	JustifyRight          Justify = "right"
+	JustifyAbsoluteCenter Justify = "absolute_center"
+)
+
 // Renderer draws the bar. It holds the layout engine and styling context (theme
 // + per-block styles) but no data sources.
 type Renderer struct {
-	engine *layout.Engine
-	theme  *theme.Theme
+	engine  *layout.Engine
+	theme   *theme.Theme
+	justify Justify
 	// styles overrides the default block style by StyleID (from config). Empty in
 	// the MVP format-string path; populated when structured [[bar.block]] styles
 	// are wired.
@@ -65,7 +78,7 @@ type Animation struct {
 // New creates a renderer over a layout engine and theme. A nil theme renders
 // plain (no-color) output.
 func New(engine *layout.Engine, th *theme.Theme) *Renderer {
-	r := &Renderer{engine: engine, theme: th, styles: map[string]style.Style{}, animations: map[string]Animation{}, templates: map[string]TemplateSpec{}, icons: map[string]ModuleIcon{}}
+	r := &Renderer{engine: engine, theme: th, justify: JustifyCenter, styles: map[string]style.Style{}, animations: map[string]Animation{}, templates: map[string]TemplateSpec{}, icons: map[string]ModuleIcon{}}
 	if th != nil && th.Mode() != theme.NoColor {
 		r.base = th.FG("base.fg") + th.BG("base.bg")
 	}
@@ -104,6 +117,16 @@ func (r *Renderer) SetIcons(icons map[string]ModuleIcon) {
 func (r *Renderer) SetAnimations(animations map[string]Animation) {
 	if animations != nil {
 		r.animations = animations
+	}
+}
+
+// SetJustify installs the configured center-section placement policy.
+func (r *Renderer) SetJustify(j Justify) {
+	switch j {
+	case JustifyLeft, JustifyCenter, JustifyRight, JustifyAbsoluteCenter:
+		r.justify = j
+	default:
+		r.justify = JustifyCenter
 	}
 }
 
@@ -206,24 +229,40 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	wLeft := width.String(plainLeft)
 	wCenter := width.String(plainCenter)
 	wRight := width.String(plainRight)
+	gapLC, gapCR := r.sectionGaps(target, wLeft, wCenter, wRight, plainCenter != "")
 	line := left
-	plainLine := plainLeft
 	wLine := wLeft
 	if plainCenter != "" {
-		gap := max(0, (target-wLeft-wRight-wCenter)/2)
-		line += strings.Repeat(fillStr, gap) + center
-		plainLine += strings.Repeat(fillStr, gap) + plainCenter
-		wLine += gap + wCenter
+		line += strings.Repeat(fillStr, gapLC) + center
+		wLine += gapLC + wCenter
 	}
-	gap := max(0, target-wLine-wRight)
-	line += strings.Repeat(fillStr, gap) + right
-	wLine += gap + wRight
+	line += strings.Repeat(fillStr, gapCR) + right
+	wLine += gapCR + wRight
 	// ANSI styles are deliberately applied after layout. All spacing decisions use
 	// the unstyled twin line, otherwise escape bytes would corrupt cell widths.
 	if wLine < target {
 		line += strings.Repeat(fillStr, target-wLine)
 	}
 	return RenderedBar{Line: r.base + caps + line + caps}
+}
+
+func (r *Renderer) sectionGaps(target, wLeft, wCenter, wRight int, hasCenter bool) (gapLC, gapCR int) {
+	if !hasCenter {
+		return 0, max(0, target-wLeft-wRight)
+	}
+	switch r.justify {
+	case JustifyLeft:
+		return 0, max(0, target-wLeft-wCenter-wRight)
+	case JustifyRight:
+		return max(0, target-wLeft-wCenter-wRight), 0
+	case JustifyAbsoluteCenter:
+		start := max(0, (target-wCenter)/2)
+		if start >= wLeft && start+wCenter <= target-wRight {
+			return start - wLeft, target - start - wCenter - wRight
+		}
+	}
+	gap := max(0, (target-wLeft-wRight-wCenter)/2)
+	return gap, max(0, target-wLeft-gap-wCenter-wRight)
 }
 
 func (r *Renderer) applyIcon(moduleID, value string) string {
