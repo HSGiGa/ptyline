@@ -127,9 +127,6 @@ func Validate(cfg *Config) error {
 		}
 	}
 	for id, module := range cfg.Modules {
-		if module.Command != "" && module.TimeoutMS <= 0 {
-			return fmt.Errorf("module.%s.timeout_ms is required for custom commands", id)
-		}
 		if module.Animation != "" && !oneOf(module.Animation, "none", "glint", "pulse", "blink") {
 			return fmt.Errorf("module.%s.animation has invalid value %q", id, module.Animation)
 		}
