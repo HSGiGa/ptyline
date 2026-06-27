@@ -13,6 +13,21 @@ func TestGoTimeLayout(t *testing.T) {
 	}
 }
 
+func TestDateDefaultFormat(t *testing.T) {
+	m := NewDate("", time.Minute)
+	if m.ID() != "date" {
+		t.Fatalf("Date.ID() = %q, want date", m.ID())
+	}
+	snap := m.Refresh(nil)
+	if snap.Value.Text == "" {
+		t.Fatal("Date.Refresh() returned empty value")
+	}
+	// value must look like YYYY-MM-DD
+	if len(snap.Value.Text) != 10 || snap.Value.Text[4] != '-' || snap.Value.Text[7] != '-' {
+		t.Fatalf("Date.Refresh() = %q, want YYYY-MM-DD", snap.Value.Text)
+	}
+}
+
 func TestTimeWithCustomID(t *testing.T) {
 	module := NewTimeWithID("time_local", "%H:%M", time.Second)
 	if got := module.ID(); got != "time_local" {

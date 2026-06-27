@@ -216,7 +216,7 @@ func oneOf(value string, values ...string) bool {
 }
 
 var builtinModuleIDs = map[string]bool{
-	"time": true, "hostname": true, "user": true, "runtime": true, "shell": true,
+	"time": true, "date": true, "hostname": true, "user": true, "runtime": true, "shell": true,
 	"env": true, "cwd": true, "ssh": true, "git": true, "command": true,
 }
 

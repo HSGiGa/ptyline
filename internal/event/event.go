@@ -52,15 +52,19 @@ type ChildExited struct{ Code int }
 // TerminationSignal reports SIGINT/SIGTERM/SIGHUP.
 type TerminationSignal struct{ Signal string }
 
-func (StdinInput) isAppEvent()        {}
-func (PtyOutput) isAppEvent()         {}
-func (Resize) isAppEvent()            {}
-func (ResizeCommit) isAppEvent()      {}
-func (Tick) isAppEvent()              {}
-func (ShellMeta) isAppEvent()         {}
-func (ModuleUpdated) isAppEvent()     {}
-func (ChildExited) isAppEvent()       {}
-func (TerminationSignal) isAppEvent() {}
+// ConfigReloadRequested is sent when SIGUSR1 is received.
+type ConfigReloadRequested struct{}
+
+func (StdinInput) isAppEvent()           {}
+func (PtyOutput) isAppEvent()            {}
+func (Resize) isAppEvent()               {}
+func (ResizeCommit) isAppEvent()         {}
+func (Tick) isAppEvent()                 {}
+func (ShellMeta) isAppEvent()            {}
+func (ModuleUpdated) isAppEvent()        {}
+func (ChildExited) isAppEvent()          {}
+func (TerminationSignal) isAppEvent()    {}
+func (ConfigReloadRequested) isAppEvent() {}
 
 // Bus is the fan-in channel of events. Producers send; the loop receives.
 type Bus struct {
