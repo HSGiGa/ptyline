@@ -102,17 +102,6 @@ func TestModuleSource(t *testing.T) {
 	}
 }
 
-func TestGitBranchIcon(t *testing.T) {
-	if got := gitBranchIcon("nerd-font"); got != "" {
-		t.Fatalf("nerd-font git icon = %q, want %q", got, "")
-	}
-	for _, preset := range []string{"ascii", "emoji", ""} {
-		if got := gitBranchIcon(preset); got != "⎇" {
-			t.Fatalf("%s git icon = %q, want %q", preset, got, "⎇")
-		}
-	}
-}
-
 func TestCommandMatches(t *testing.T) {
 	tests := []struct {
 		actual  string

@@ -782,12 +782,14 @@ Example module icon configuration:
 
 ```toml
 [module.git]
-icon = ""
-fallback_icon = "git"
+icon = "left"
+icon_glyph = ""
+icon_fallback = "git"
 
 [module.battery]
-icon = "🔋"
-fallback_icon = "bat"
+icon = "left"
+icon_glyph = "🔋"
+icon_fallback = "bat"
 ```
 
 Important rendering requirement:

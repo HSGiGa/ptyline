@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -15,7 +14,7 @@ import (
 // so the bar simply shows no branch.
 func TestGitOutsideRepo(t *testing.T) {
 	dir := t.TempDir()
-	m := NewGit(time.Second, time.Second, "BR", func() string { return dir })
+	m := NewGit(time.Second, time.Second, func() string { return dir })
 	snap := m.Refresh(context.Background())
 	if snap.Value.Text != "" {
 		t.Fatalf("outside a repo got %q, want empty", snap.Value.Text)
@@ -28,35 +27,19 @@ func TestGitBranchUpdatesAfterCheckout(t *testing.T) {
 	}
 	dir := initGitRepo(t)
 
-	m := NewGit(time.Second, time.Second, "BR", func() string { return dir })
+	m := NewGit(time.Second, time.Second, func() string { return dir })
 	snap := m.Refresh(context.Background())
-	if snap.Value.Text != "BR main" {
-		t.Fatalf("initial branch = %q, want %q", snap.Value.Text, "BR main")
+	if snap.Value.Text != "main" {
+		t.Fatalf("initial branch = %q, want %q", snap.Value.Text, "main")
 	}
 
 	git(t, dir, "checkout", "-b", "feature")
 	snap = m.Refresh(context.Background())
-	if snap.Value.Text != "BR feature" {
-		t.Fatalf("checked-out branch = %q, want %q", snap.Value.Text, "BR feature")
+	if snap.Value.Text != "feature" {
+		t.Fatalf("checked-out branch = %q, want %q", snap.Value.Text, "feature")
 	}
 	if snap.Stale || snap.Err != nil {
 		t.Fatalf("branch snapshot marked stale/error: %+v", snap)
-	}
-}
-
-// An empty icon yields just the branch name, no leading space.
-func TestGitNoIcon(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git unavailable")
-	}
-	dir := initGitRepo(t)
-	m := NewGit(time.Second, time.Second, "", func() string { return dir })
-	snap := m.Refresh(context.Background())
-	if snap.Value.Text != "main" {
-		t.Fatalf("value = %q, want main", snap.Value.Text)
-	}
-	if strings.HasPrefix(snap.Value.Text, " ") {
-		t.Fatalf("value %q has a leading space with no icon", snap.Value.Text)
 	}
 }
 
@@ -66,7 +49,7 @@ func TestGitTimeoutMarksStale(t *testing.T) {
 		t.Fatalf("write fake git: %v", err)
 	}
 
-	m := NewGit(time.Second, 10*time.Millisecond, "", func() string { return t.TempDir() })
+	m := NewGit(time.Second, 10*time.Millisecond, func() string { return t.TempDir() })
 	m.gitBin = fakeGit
 	snap := m.Refresh(context.Background())
 	if !snap.Stale {

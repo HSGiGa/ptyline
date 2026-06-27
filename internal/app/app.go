@@ -136,8 +136,7 @@ func run(opts options) int {
 	}
 	timeModule := modules.NewTime(resolvedCfg.Modules["time"].Format, moduleInterval(resolvedCfg.Modules["time"], time.Second))
 	cmdTracker := command.NewTracker(resolvedCfg.Modules["command"])
-	branchIcon := gitBranchIcon(resolvedCfg.Icons.Preset)
-	gitModule := modules.NewGit(moduleInterval(resolvedCfg.Modules["git"], 2*time.Second), time.Second, branchIcon, func() string {
+	gitModule := modules.NewGit(moduleInterval(resolvedCfg.Modules["git"], 2*time.Second), time.Second, func() string {
 		s, _ := cwdHolder.Load().(string)
 		return s
 	})
@@ -237,6 +236,7 @@ func run(opts options) int {
 	render.SetStyles(mergedStyles())
 	render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
 	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
+	render.SetIcons(bar.IconSpecs(resolvedCfg))
 	var resizePending bool
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
@@ -290,6 +290,7 @@ func run(opts options) int {
 		render.SetStyles(mergedStyles())
 		render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
 		render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
+		render.SetIcons(bar.IconSpecs(resolvedCfg))
 		redraw()
 	}
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -342,6 +343,7 @@ func run(opts options) int {
 			render.SetStyles(mergedStyles())
 			render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
 			render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
+			render.SetIcons(bar.IconSpecs(resolvedCfg))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()

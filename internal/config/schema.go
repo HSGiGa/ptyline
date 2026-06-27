@@ -84,8 +84,9 @@ type ModuleConfig struct {
 	DoneFailureTTLMS    int      `toml:"done_failure_ttl_ms"`
 	Animation           string   `toml:"animation"` // none | glint | pulse | blink
 	AnimationIntervalMS int      `toml:"animation_interval_ms"`
-	Icon                string   `toml:"icon"`
-	FallbackIcon        string   `toml:"fallback_icon"`
+	Icon                string   `toml:"icon"`          // left | right; empty = no icon
+	IconGlyph           string   `toml:"icon_glyph"`    // preferred Nerd Font glyph
+	IconFallback        string   `toml:"icon_fallback"` // fallback text/glyph for non-Nerd presets
 }
 
 // ThemeConfig selects color scheme, style preset, and semantic tokens (arch.md §16).

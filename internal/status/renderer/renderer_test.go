@@ -50,6 +50,39 @@ func TestRenderSanitizesModuleTerminalControls(t *testing.T) {
 	}
 }
 
+func TestRenderModuleIconLeftRight(t *testing.T) {
+	st := status.NewState()
+	st.Resize(80, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("main")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:00")})
+
+	r := New(layout.New(80), nil)
+	r.SetIcons(map[string]ModuleIcon{
+		"git":  {Position: "left", Text: "G"},
+		"time": {Position: "right", Text: "T"},
+	})
+	out := stripANSI(r.Render(st, layout.ParseFormat("{git} {time}")).Line)
+	if !strings.Contains(out, "G main") {
+		t.Fatalf("left icon missing: %q", out)
+	}
+	if !strings.Contains(out, "12:00 T") {
+		t.Fatalf("right icon missing: %q", out)
+	}
+}
+
+func TestRenderModuleIconHiddenForEmptyValue(t *testing.T) {
+	st := status.NewState()
+	st.Resize(20, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("")})
+
+	r := New(layout.New(20), nil)
+	r.SetIcons(map[string]ModuleIcon{"git": {Position: "left", Text: "G"}})
+	out := stripANSI(r.Render(st, layout.ParseFormat("{git}")).Line)
+	if strings.Contains(out, "G") {
+		t.Fatalf("empty module rendered lone icon: %q", out)
+	}
+}
+
 // Left/center/right sections render in order across the bar (spec §20.13).
 func TestRenderThreeSectionOrder(t *testing.T) {
 	st := status.NewState()

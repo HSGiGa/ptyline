@@ -84,6 +84,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 		{name: "exec source without command", body: "config_version = 1\n[module.foo]\nsource = \"exec\"", key: "module.foo.command"},
 		{name: "refresh command without command", body: "config_version = 1\n[module.foo]\nrefresh_on_command = [\"foo login\"]", key: "module.foo.command"},
 		{name: "empty refresh command", body: "config_version = 1\n[module.foo]\ncommand = \"echo hi\"\nrefresh_on_command = [\"  \"]", key: "module.foo.refresh_on_command"},
+		{name: "bad icon position", body: "config_version = 1\n[module.git]\nicon = \"top\"", key: "module.git.icon"},
 		{name: "template without format", body: "config_version = 1\n[module.identity]\nsource = \"template\"", key: "module.identity.format"},
 		{name: "template self-reference", body: "config_version = 1\n[module.identity]\nsource = \"template\"\nformat = \"{identity} foo\"", key: "module.identity"},
 		{name: "template-in-template", body: "config_version = 1\n[module.a]\nsource = \"template\"\nformat = \"{user}\"\n[module.b]\nsource = \"template\"\nformat = \"{a} bar\"", key: "module.b"},
@@ -112,6 +113,9 @@ format = "{gh} || {time_local}"
 [module.gh]
 command = "printf octo"
 refresh_on_command = ["gh auth login"]
+icon = "left"
+icon_glyph = ""
+icon_fallback = "gh"
 
 [module.time_local]
 source = "time"
@@ -132,6 +136,15 @@ format = "%H:%M"
 	}
 	if got := cfg.Modules["gh"].RefreshOnCommand; !reflect.DeepEqual(got, []string{"gh auth login"}) {
 		t.Fatalf("gh refresh_on_command = %q", got)
+	}
+	if got := cfg.Modules["gh"].Icon; got != "left" {
+		t.Fatalf("gh icon = %q, want left", got)
+	}
+	if got := cfg.Modules["gh"].IconGlyph; got != "" {
+		t.Fatalf("gh icon_glyph = %q", got)
+	}
+	if got := cfg.Modules["gh"].IconFallback; got != "gh" {
+		t.Fatalf("gh icon_fallback = %q", got)
 	}
 	if got := cfg.Modules["time_local"].Source; got != "time" {
 		t.Fatalf("time_local source = %q, want time", got)
