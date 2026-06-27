@@ -82,3 +82,37 @@ func TestAnimationsFromConfig(t *testing.T) {
 		t.Fatalf("disabled animation unexpectedly present: %+v", got)
 	}
 }
+
+func TestIconSpecsGitDefaultGlyphs(t *testing.T) {
+	cfg := config.Default()
+	cfg.Modules["git"] = config.ModuleConfig{Enabled: true, Icon: "left"}
+
+	cfg.Icons.Preset = "nerd-font"
+	got := IconSpecs(cfg)
+	if got["git"].Position != "left" || got["git"].Text != "" {
+		t.Fatalf("nerd git icon = %+v, want left ", got["git"])
+	}
+
+	cfg.Icons.Preset = "ascii"
+	got = IconSpecs(cfg)
+	if got["git"].Position != "left" || got["git"].Text != "⎇" {
+		t.Fatalf("ascii git icon = %+v, want left ⎇", got["git"])
+	}
+}
+
+func TestIconSpecsCustomExecGlyph(t *testing.T) {
+	cfg := config.Default()
+	cfg.Icons.Preset = "nerd-font"
+	cfg.Modules["gh"] = config.ModuleConfig{
+		Enabled:      true,
+		Source:       "exec",
+		Icon:         "right",
+		IconGlyph:    "",
+		IconFallback: "gh",
+	}
+
+	got := IconSpecs(cfg)
+	if got["gh"].Position != "right" || got["gh"].Text != "" {
+		t.Fatalf("custom exec icon = %+v, want right ", got["gh"])
+	}
+}

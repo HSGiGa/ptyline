@@ -279,11 +279,16 @@
         },
         "icon": {
           "type": "string",
-          "description": "Icon glyph to prepend to the module output."
+          "enum": ["left", "right"],
+          "description": "Where to render the module icon. Omit to disable the icon."
         },
-        "fallback_icon": {
+        "icon_glyph": {
           "type": "string",
-          "description": "ASCII fallback icon when Nerd Font glyphs are unavailable."
+          "description": "Preferred Nerd Font glyph for this module. Used by custom exec modules and as an override for built-ins."
+        },
+        "icon_fallback": {
+          "type": "string",
+          "description": "Fallback icon/text for non-Nerd presets."
         }
       }
     },

@@ -17,20 +17,16 @@ type Git struct {
 	interval time.Duration
 	timeout  time.Duration
 	gitBin   string
-	// icon is the (already preset-resolved) glyph shown in front of the branch:
-	// the Nerd-Font branch glyph when a Nerd Font is configured, otherwise a
-	// plain-font fallback. Empty means no icon.
-	icon string
 	// cwd reports the directory to run git in (the shell's current dir, tracked
 	// via shell-integration). It must be safe to call from the scheduler
 	// goroutine. Nil falls back to git's own process cwd.
 	cwd func() string
 }
 
-// NewGit creates a git module with refresh interval, per-refresh timeout, the
-// resolved branch icon (may be empty), and a cwd provider (may be nil).
-func NewGit(interval, timeout time.Duration, icon string, cwd func() string) *Git {
-	return &Git{interval: interval, timeout: timeout, gitBin: "git", icon: icon, cwd: cwd}
+// NewGit creates a git module with refresh interval, per-refresh timeout, and a
+// cwd provider (may be nil).
+func NewGit(interval, timeout time.Duration, cwd func() string) *Git {
+	return &Git{interval: interval, timeout: timeout, gitBin: "git", cwd: cwd}
 }
 
 func (m *Git) ID() status.ModuleID     { return "git" }
@@ -73,13 +69,9 @@ func (m *Git) Refresh(ctx context.Context) status.ModuleSnapshot {
 	if branch == "" {
 		return status.ModuleSnapshot{ID: m.ID(), Value: status.Text(""), UpdatedAt: time.Now()}
 	}
-	text := branch
-	if m.icon != "" {
-		text = m.icon + " " + branch
-	}
 	return status.ModuleSnapshot{
 		ID:        m.ID(),
-		Value:     status.Text(text),
+		Value:     status.Text(branch),
 		UpdatedAt: time.Now(),
 	}
 }

@@ -49,6 +49,9 @@ type Renderer struct {
 	// templates holds pre-parsed template module specs resolved at render time
 	// from cached snapshots (no provider calls, no goroutines).
 	templates map[string]TemplateSpec
+	// icons holds config-resolved module icons. Icons are applied to non-empty
+	// module values at render time so providers keep returning clean values.
+	icons map[string]ModuleIcon
 	// base is the SGR establishing the bar's base colors, re-emitted after every
 	// styled segment so the background spans the whole row. Empty in no-color mode.
 	base string
@@ -62,11 +65,17 @@ type Animation struct {
 // New creates a renderer over a layout engine and theme. A nil theme renders
 // plain (no-color) output.
 func New(engine *layout.Engine, th *theme.Theme) *Renderer {
-	r := &Renderer{engine: engine, theme: th, styles: map[string]style.Style{}, animations: map[string]Animation{}, templates: map[string]TemplateSpec{}}
+	r := &Renderer{engine: engine, theme: th, styles: map[string]style.Style{}, animations: map[string]Animation{}, templates: map[string]TemplateSpec{}, icons: map[string]ModuleIcon{}}
 	if th != nil && th.Mode() != theme.NoColor {
 		r.base = th.FG("base.fg") + th.BG("base.bg")
 	}
 	return r
+}
+
+// ModuleIcon is a display-only icon attached to a rendered module block.
+type ModuleIcon struct {
+	Position string // left | right
+	Text     string
 }
 
 // SetStyles installs config-resolved per-StyleID styles (post-MVP wiring).
@@ -81,6 +90,13 @@ func (r *Renderer) SetStyles(styles map[string]style.Style) {
 func (r *Renderer) SetTemplates(templates map[string]TemplateSpec) {
 	if templates != nil {
 		r.templates = templates
+	}
+}
+
+// SetIcons installs config-resolved per-module icon settings.
+func (r *Renderer) SetIcons(icons map[string]ModuleIcon) {
+	if icons != nil {
+		r.icons = icons
 	}
 }
 
@@ -123,6 +139,9 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	styles := make([]style.Style, len(blocks))
 	for i, block := range blocks {
 		values[i] = blockValue(st, block, r.templates)
+		if !block.IsLiteral() && values[i] != "" {
+			values[i] = r.applyIcon(canonicalModuleID(block.ModuleID), values[i])
+		}
 		styles[i] = r.styleFor(block)
 		if !block.IsLiteral() && values[i] == "" {
 			continue
@@ -207,6 +226,21 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	return RenderedBar{Line: r.base + caps + line + caps}
 }
 
+func (r *Renderer) applyIcon(moduleID, value string) string {
+	icon, ok := r.icons[moduleID]
+	if !ok || icon.Text == "" {
+		return value
+	}
+	switch icon.Position {
+	case "left":
+		return icon.Text + " " + value
+	case "right":
+		return value + " " + icon.Text
+	default:
+		return value
+	}
+}
+
 func emptyWhitespaceSection(styled, plain string) (string, string) {
 	if strings.TrimSpace(plain) == "" {
 		return "", ""
@@ -288,16 +322,22 @@ func blockValue(st status.StatusState, block layout.Block, templates map[string]
 	if !ok || snapshot.Err != nil {
 		return ""
 	}
-	switch snapshot.Value.Kind {
+	return snapshotText(snapshot)
+}
+
+// snapshotText converts a snapshot value to its display string. Shared by
+// blockValue and resolveTemplate so all value kinds render consistently.
+func snapshotText(snap status.ModuleSnapshot) string {
+	switch snap.Value.Kind {
 	case status.KindText:
-		return sanitizeDisplayText(snapshot.Value.Text)
+		return sanitizeDisplayText(snap.Value.Text)
 	case status.KindNumber:
-		return fmt.Sprint(snapshot.Value.Number)
+		return fmt.Sprint(snap.Value.Number)
 	case status.KindBool:
-		return fmt.Sprint(snapshot.Value.Bool)
+		return fmt.Sprint(snap.Value.Bool)
 	case status.KindStatus:
-		if snapshot.Value.Status != nil {
-			return sanitizeDisplayText(snapshot.Value.Status.Text)
+		if snap.Value.Status != nil {
+			return sanitizeDisplayText(snap.Value.Status.Text)
 		}
 	}
 	return ""

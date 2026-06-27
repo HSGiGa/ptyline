@@ -13,6 +13,7 @@ import (
 	"github.com/hsgiga/ptyline/internal/event"
 	"github.com/hsgiga/ptyline/internal/reserved"
 	"github.com/hsgiga/ptyline/internal/status"
+	"github.com/hsgiga/ptyline/internal/status/icons"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
 )
@@ -58,6 +59,69 @@ func TemplateSpecs(cfg config.Config) map[string]renderer.TemplateSpec {
 		}
 	}
 	return specs
+}
+
+// IconSpecs builds display-only module icon specs. Modules keep returning clean
+// values; renderer attaches icons only to non-empty rendered module blocks.
+func IconSpecs(cfg config.Config) map[string]renderer.ModuleIcon {
+	specs := map[string]renderer.ModuleIcon{}
+	if !cfg.Icons.Enabled {
+		return specs
+	}
+	preset := icons.Preset(cfg.Icons.Preset)
+	for id, mcfg := range cfg.Modules {
+		if mcfg.Icon == "" {
+			continue
+		}
+		glyph, fallback := moduleIconGlyphs(id, mcfg)
+		text := resolveModuleIcon(preset, cfg.Icons.Fallback, glyph, fallback)
+		if text == "" {
+			continue
+		}
+		specs[id] = renderer.ModuleIcon{Position: mcfg.Icon, Text: text}
+	}
+	return specs
+}
+
+type moduleIconDefaults struct {
+	glyph    string
+	fallback string
+}
+
+var defaultModuleIcons = map[string]moduleIconDefaults{
+	"command":  {glyph: "󰘳"},
+	"cwd":      {glyph: "󰉋"},
+	"env":      {glyph: "󰘓"},
+	"git":      {glyph: "", fallback: "⎇"},
+	"hostname": {glyph: "󰒋"},
+	"runtime":  {glyph: "󰌠"},
+	"shell":    {glyph: "󰆍"},
+	"ssh":      {glyph: "󰣀", fallback: "ssh"},
+	"time":     {glyph: "󰥔"},
+	"user":     {glyph: ""},
+}
+
+func moduleIconGlyphs(id string, cfg config.ModuleConfig) (glyph, fallback string) {
+	if defaults, ok := defaultModuleIcons[id]; ok {
+		glyph, fallback = defaults.glyph, defaults.fallback
+	}
+	if cfg.IconGlyph != "" {
+		glyph = cfg.IconGlyph
+	}
+	if cfg.IconFallback != "" {
+		fallback = cfg.IconFallback
+	}
+	return glyph, fallback
+}
+
+func resolveModuleIcon(preset icons.Preset, fallbackEnabled bool, glyph, fallback string) string {
+	if preset == icons.PresetNerdFont && glyph != "" {
+		return glyph
+	}
+	if preset == icons.PresetASCII || fallbackEnabled {
+		return fallback
+	}
+	return ""
 }
 
 // Render renders every RowSpec to a line, top to bottom.

@@ -17,7 +17,7 @@ fill = "─"
 format = "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} || {gh} || {time}"
 
 [icons]
-preset = "ascii"
+preset = "nerd-font"
 emoji_width = "auto"
 fallback = true
 
@@ -28,6 +28,9 @@ interval_ms = 1000
 [module.gh]
 source = "exec"
 command = "gh api user --jq .login"
+icon = "left"
+icon_glyph = ""
+icon_fallback = "gh"
 # interval_ms = 10000
 # timeout_ms = 1000
 # max_width = 60
@@ -36,6 +39,9 @@ refresh_on_command = ["gh auth login", "gh auth logout", "gh auth refresh"]
 
 [module.env]
 env = ["PTYLINE_ENV"]
+
+[module.git]
+icon = "left"
 
 [module.cwd]
 mode = "shell-integration"

@@ -31,7 +31,7 @@ func resolveTemplate(st status.StatusState, tmpl TemplateSpec) string {
 		snap, ok := st.Modules[status.ModuleID(b.ModuleID)]
 		v := ""
 		if ok && snap.Err == nil {
-			v = sanitizeDisplayText(snap.Value.Text)
+			v = snapshotText(snap)
 		}
 		if v != "" {
 			allEmpty = false

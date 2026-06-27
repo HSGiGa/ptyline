@@ -148,6 +148,9 @@ func Validate(cfg *Config) error {
 		if module.AnimationIntervalMS < 0 {
 			return fmt.Errorf("module.%s.animation_interval_ms must be >= 0", id)
 		}
+		if module.Icon != "" && !oneOf(module.Icon, "left", "right") {
+			return fmt.Errorf("module.%s.icon has invalid value %q", id, module.Icon)
+		}
 		if module.MaxWidth < 0 {
 			return fmt.Errorf("module.%s.max_width must be >= 0", id)
 		}
@@ -234,8 +237,10 @@ func ModuleSource(id string, module ModuleConfig) string {
 	return ""
 }
 
-var numericWidth = regexp.MustCompile(`^[1-9][0-9]*%?$`)
-var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var (
+	numericWidth = regexp.MustCompile(`^[1-9][0-9]*%?$`)
+	envName      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
 
 func validWidth(width string) bool {
 	if width == "auto" || width == "fill" {
@@ -456,6 +461,12 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	if meta.IsDefined("module", id, "enabled") {
 		base.Enabled = overlay.Enabled
 	}
+	if meta.IsDefined("module", id, "collapse_whitespace") {
+		base.CollapseWhitespace = overlay.CollapseWhitespace
+	}
+	if meta.IsDefined("module", id, "hide_when_empty") {
+		base.HideWhenEmpty = overlay.HideWhenEmpty
+	}
 	if overlay.Format != "" {
 		base.Format = overlay.Format
 	}
@@ -483,11 +494,14 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	if overlay.AnimationIntervalMS != 0 {
 		base.AnimationIntervalMS = overlay.AnimationIntervalMS
 	}
-	if overlay.Icon != "" {
+	if meta.IsDefined("module", id, "icon") {
 		base.Icon = overlay.Icon
 	}
-	if overlay.FallbackIcon != "" {
-		base.FallbackIcon = overlay.FallbackIcon
+	if meta.IsDefined("module", id, "icon_glyph") {
+		base.IconGlyph = overlay.IconGlyph
+	}
+	if meta.IsDefined("module", id, "icon_fallback") {
+		base.IconFallback = overlay.IconFallback
 	}
 	return base
 }
