@@ -83,3 +83,18 @@ func TestAnimationsFromConfig(t *testing.T) {
 		t.Fatalf("disabled animation unexpectedly present: %+v", got)
 	}
 }
+
+func TestCustomModuleSource(t *testing.T) {
+	if got := customModuleSource("gh", config.ModuleConfig{}); got != "exec" {
+		t.Fatalf("unknown module source = %q, want exec", got)
+	}
+	if got := customModuleSource("time", config.ModuleConfig{}); got != "" {
+		t.Fatalf("builtin time source = %q, want builtin empty source", got)
+	}
+	if got := customModuleSource("time_local", config.ModuleConfig{Source: "time"}); got != "time" {
+		t.Fatalf("explicit source = %q, want time", got)
+	}
+	if got := customModuleSource("kube", config.ModuleConfig{Provider: "command"}); got != "exec" {
+		t.Fatalf("provider command source = %q, want exec", got)
+	}
+}

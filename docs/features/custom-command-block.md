@@ -1,6 +1,6 @@
 # Custom Command Block
 
-Status: proposed
+Status: implemented
 
 ## Goal
 
@@ -29,7 +29,7 @@ format = "{hostname} {cwd} {kube} || {time}"
 
 [module.kube]
 enabled = true
-provider = "command"
+source = "exec"
 command = "kubectl config current-context"
 interval_ms = 10000
 timeout_ms = 200
@@ -55,7 +55,8 @@ style = "kube"
 
 ## Naming
 
-Use `provider = "command"` on a normal `[module.<id>]`.
+Use `source = "exec"` on a normal `[module.<id>]`. For non-built-in module IDs,
+`source` may be omitted; ptyline defaults them to `exec`.
 
 Do not require a special `[module.custom.<id>]` namespace in the final model. A
 module ID such as `kube`, `aws`, or `ticket` is shorter in `{kube}` placeholders
@@ -72,8 +73,10 @@ the preferred form is:
 
 ```toml
 [module.kube]
-provider = "command"
+source = "exec"
 ```
+
+The older `provider = "command"` spelling is accepted as a compatibility alias.
 
 ## Execution Model
 
@@ -194,11 +197,11 @@ These are not required for the first implementation.
 
 Config validation should reject:
 
-- `provider = "command"` without `command`;
+- `source = "exec"` without `command`;
 - `command` with `timeout_ms <= 0`;
 - `interval_ms <= 0`;
 - command modules referenced by `bar.block` while disabled;
-- unknown provider values.
+- unknown source values.
 
 Errors should include the module ID and offending key.
 

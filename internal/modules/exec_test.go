@@ -57,7 +57,7 @@ func TestExecSanitizeControlChars(t *testing.T) {
 
 func TestExecTruncatesLargeOutput(t *testing.T) {
 	// Generate well over 4096 bytes of output.
-	m := NewExec("exec", "dd if=/dev/zero bs=8192 count=1 2>/dev/null | tr '\\0' 'a'", time.Second, 5*time.Second, "{stdout}", 0)
+	m := NewExec("exec", "i=0; while [ $i -lt 5000 ]; do printf a; i=$((i+1)); done", time.Second, 5*time.Second, "{stdout}", 0)
 	snap := m.Refresh(context.Background())
 	if len(snap.Value.Text) > execStdoutLimit {
 		t.Fatalf("output not truncated: len=%d", len(snap.Value.Text))

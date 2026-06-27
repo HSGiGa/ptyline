@@ -13,6 +13,16 @@ func TestGoTimeLayout(t *testing.T) {
 	}
 }
 
+func TestTimeWithCustomID(t *testing.T) {
+	module := NewTimeWithID("time_local", "%H:%M", time.Second)
+	if got := module.ID(); got != "time_local" {
+		t.Fatalf("Time.ID() = %q, want time_local", got)
+	}
+	if module.Refresh(nil).ID != "time_local" {
+		t.Fatalf("custom time refresh used wrong module id")
+	}
+}
+
 func TestAbbreviateHome(t *testing.T) {
 	if got := AbbreviateHome("/home/user/project", "/home/user"); got != "~/project" {
 		t.Fatalf("AbbreviateHome() = %q", got)

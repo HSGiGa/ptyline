@@ -150,15 +150,27 @@ Theme files use the same `[palette]` and `[style.<id>]` shape; see
 ## Custom command module (spec §8.7, §17)
 
 ```toml
-[module.custom.kube]
-enabled = false
+[bar]
+format = "{hostname} {cwd} {kube} || {time}"
+
+[module.kube]
+source = "exec" # optional for non-built-in module IDs; unknown IDs default to exec
 command = "kubectl config current-context"
 interval_ms = 10000
 timeout_ms = 200
+format = "{stdout}"
 ```
 
 Custom commands run **locally** with a timeout; config is trusted user input but
 commands must always be time-bounded (spec §16, §17).
+
+`source = "time"` can reuse a built-in provider under a custom placeholder:
+
+```toml
+[module.time_utc]
+source = "time"
+format = "%H:%M UTC"
+```
 
 ## Field map
 

@@ -47,6 +47,9 @@ func TestLoadRootConfig(t *testing.T) {
 	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} {exit} {duration}" {
 		t.Fatalf("root command module = %+v", module)
 	}
+	if module := cfg.Modules["gh"]; module.Source != "exec" || module.Command == "" {
+		t.Fatalf("root gh module = %+v, want source=exec with command", module)
+	}
 
 	if got, want := cfg.Modules["env"].Env, []string{"PTYLINE_ENV"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("root env module env = %q, want %q", got, want)
@@ -77,6 +80,8 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 		{name: "format and block", body: "config_version = 1\n[bar]\nformat = \"{time}\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"auto\"\ntruncate = \"right\"", key: "bar.format"},
 		{name: "bad width", body: "config_version = 1\n[bar]\nformat = \"\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"101%\"\ntruncate = \"right\"", key: "width"},
 		{name: "bad env name", body: "config_version = 1\n[module.env]\nenabled = true\nenv = [\"BAD-NAME\"]", key: "module.env.env"},
+		{name: "bad source", body: "config_version = 1\n[module.foo]\nsource = \"socket\"\ncommand = \"echo hi\"", key: "module.foo.source"},
+		{name: "exec source without command", body: "config_version = 1\n[module.foo]\nsource = \"exec\"", key: "module.foo.command"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -89,6 +94,38 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 				t.Fatalf("Load() error = %v, want key %q", err, test.key)
 			}
 		})
+	}
+}
+
+func TestLoadCustomModuleSource(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := `config_version = 1
+
+[bar]
+format = "{gh} || {time_local}"
+
+[module.gh]
+command = "printf octo"
+
+[module.time_local]
+source = "time"
+format = "%H:%M"
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Modules["gh"].Source; got != "" {
+		t.Fatalf("gh source = %q, want empty config value so app defaults unknown IDs to exec", got)
+	}
+	if got := cfg.Modules["gh"].Command; got != "printf octo" {
+		t.Fatalf("gh command = %q", got)
+	}
+	if got := cfg.Modules["time_local"].Source; got != "time" {
+		t.Fatalf("time_local source = %q, want time", got)
 	}
 }
 

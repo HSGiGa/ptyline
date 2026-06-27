@@ -67,10 +67,12 @@ type BlockConfig struct {
 // ModuleConfig is the per-module configuration (spec §8.7).
 type ModuleConfig struct {
 	Enabled             bool     `toml:"enabled"`
+	Source              string   `toml:"source"` // time | exec (custom modules); empty = builtin or exec for unknown IDs
 	Format              string   `toml:"format"`
 	Mode                string   `toml:"mode"`     // e.g. "shell-integration"
 	Provider            string   `toml:"provider"` // command | osc | socket (future)
 	Command             string   `toml:"command"`
+	RefreshOnCommand    []string `toml:"refresh_on_command"`
 	Env                 []string `toml:"env"`
 	IntervalMS          int      `toml:"interval_ms"`
 	TimeoutMS           int      `toml:"timeout_ms"`

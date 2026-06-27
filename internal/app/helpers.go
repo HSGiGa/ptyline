@@ -45,3 +45,24 @@ func moduleInterval(cfg config.ModuleConfig, fallback time.Duration) time.Durati
 	}
 	return time.Duration(cfg.IntervalMS) * time.Millisecond
 }
+
+var builtinModuleIDs = map[string]bool{
+	"time": true, "hostname": true, "user": true, "runtime": true, "shell": true,
+	"env": true, "cwd": true, "ssh": true, "git": true, "command": true,
+}
+
+func customModuleSource(id string, cfg config.ModuleConfig) string {
+	if cfg.Source != "" {
+		return cfg.Source
+	}
+	if cfg.Provider == "command" {
+		return "exec"
+	}
+	if cfg.Provider != "" {
+		return cfg.Provider
+	}
+	if !builtinModuleIDs[id] {
+		return "exec"
+	}
+	return ""
+}

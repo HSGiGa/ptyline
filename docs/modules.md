@@ -16,3 +16,4 @@ not run work during redraw.
 | `{ssh}` | SSH environment / integration | static + event | Shows inbound SSH env or outbound `ssh_start`/`ssh_end` metadata. |
 | `{git}` | git provider | interval + cwd event | Refreshes against the current shell cwd and hides outside a git repo. |
 | `{command}` | shell integration | event | Shows active or recently completed foreground command state. |
+| `{custom_id}` | `[module.custom_id]` | interval | Unknown module IDs default to `source = "exec"`; set `source = "time"` to reuse the time provider under a custom placeholder. |
