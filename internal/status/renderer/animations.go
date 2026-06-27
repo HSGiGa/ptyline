@@ -128,8 +128,8 @@ func (r *Renderer) applyBlink(content string, s style.Style, phase int) string {
 // circularDistance is the shorter distance between i and center on a ring of
 // length l, so the shimmer wraps seamlessly across the text edges.
 func circularDistance(i, center, l int) int {
-	forward := ((i - center) % l + l) % l
-	backward := ((center - i) % l + l) % l
+	forward := ((i-center)%l + l) % l
+	backward := ((center-i)%l + l) % l
 	if forward < backward {
 		return forward
 	}

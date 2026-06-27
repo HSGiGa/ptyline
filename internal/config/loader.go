@@ -234,8 +234,10 @@ func ModuleSource(id string, module ModuleConfig) string {
 	return ""
 }
 
-var numericWidth = regexp.MustCompile(`^[1-9][0-9]*%?$`)
-var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var (
+	numericWidth = regexp.MustCompile(`^[1-9][0-9]*%?$`)
+	envName      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
 
 func validWidth(width string) bool {
 	if width == "auto" || width == "fill" {
@@ -455,6 +457,12 @@ func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
 func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string) ModuleConfig {
 	if meta.IsDefined("module", id, "enabled") {
 		base.Enabled = overlay.Enabled
+	}
+	if meta.IsDefined("module", id, "collapse_whitespace") {
+		base.CollapseWhitespace = overlay.CollapseWhitespace
+	}
+	if meta.IsDefined("module", id, "hide_when_empty") {
+		base.HideWhenEmpty = overlay.HideWhenEmpty
 	}
 	if overlay.Format != "" {
 		base.Format = overlay.Format

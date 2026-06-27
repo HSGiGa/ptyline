@@ -294,7 +294,7 @@ func run(opts options) int {
 		render = renderer.New(layout.New(int(state.Terminal.Cols)), visuals.Theme)
 		render.SetStyles(mergedStyles())
 		render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
-	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
+		render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 		redraw()
 	}
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -346,7 +346,7 @@ func run(opts options) int {
 			render = renderer.New(layout.New(int(cols)), visuals.Theme)
 			render.SetStyles(mergedStyles())
 			render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
-	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
+			render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()

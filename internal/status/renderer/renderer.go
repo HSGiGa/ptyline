@@ -288,16 +288,22 @@ func blockValue(st status.StatusState, block layout.Block, templates map[string]
 	if !ok || snapshot.Err != nil {
 		return ""
 	}
-	switch snapshot.Value.Kind {
+	return snapshotText(snapshot)
+}
+
+// snapshotText converts a snapshot value to its display string. Shared by
+// blockValue and resolveTemplate so all value kinds render consistently.
+func snapshotText(snap status.ModuleSnapshot) string {
+	switch snap.Value.Kind {
 	case status.KindText:
-		return sanitizeDisplayText(snapshot.Value.Text)
+		return sanitizeDisplayText(snap.Value.Text)
 	case status.KindNumber:
-		return fmt.Sprint(snapshot.Value.Number)
+		return fmt.Sprint(snap.Value.Number)
 	case status.KindBool:
-		return fmt.Sprint(snapshot.Value.Bool)
+		return fmt.Sprint(snap.Value.Bool)
 	case status.KindStatus:
-		if snapshot.Value.Status != nil {
-			return sanitizeDisplayText(snapshot.Value.Status.Text)
+		if snap.Value.Status != nil {
+			return sanitizeDisplayText(snap.Value.Status.Text)
 		}
 	}
 	return ""

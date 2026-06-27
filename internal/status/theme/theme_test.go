@@ -19,7 +19,7 @@ func TestNoColorEmitsNothing(t *testing.T) {
 func TestTrueColorResolution(t *testing.T) {
 	th := Default(TrueColor)
 	cases := []struct{ ref, want string }{
-		{"base.bg", ""},                    // not in terminal-native palette → no bg emitted
+		{"base.bg", ""},                   // not in terminal-native palette → no bg emitted
 		{"#ff0000", "\x1b[48;2;255;0;0m"}, // BG layer
 		{"bogus", ""},
 		{"", ""},
