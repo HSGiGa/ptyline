@@ -3,6 +3,11 @@ config_version = 1
 shell = "auto"
 refresh_interval_ms = 1000
 
+[icons]
+preset = "nerd-font"
+emoji_width = "auto"
+fallback = true
+
 [bar]
 height = 2
 mode = "single-line"
@@ -14,12 +19,11 @@ format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-format = "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} || {gh} || {time}"
+format = "{identity} || {env} {runtime} {shell} || {gh} || {time}"
 
-[icons]
-preset = "nerd-font"
-emoji_width = "auto"
-fallback = true
+[module.identity]
+source = "template"
+format = "{user}@{hostname} {cwd}"
 
 [module.time]
 format = "%H:%M:%S"

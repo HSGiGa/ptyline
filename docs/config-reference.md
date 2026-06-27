@@ -52,7 +52,8 @@ shell = "auto"            # auto uses $SHELL or platform default; a command/path
 refresh_interval_ms = 1000
 
 [bar]
-format = "{hostname} {cwd} || {time}"   # left = before "||", right = after; no centre
+format = "{hostname} {cwd} || {time}"   # left = before "||", right = after
+justify = "center"
 separator = " | "
 
 [module.time]
@@ -76,13 +77,37 @@ enabled = true
   loaded → migrated → validated → applied; invalid config is never silently
   reinterpreted.
 - `bar.format` and `[[bar.block]]` are **mutually exclusive**: if blocks are
-  present, `format` is rejected; otherwise `format` splits on `||` into a left and
-  a right section (no centre block).
+  present, `format` is rejected; otherwise `format` splits on `||` into sections:
+  one section is left, two are left/right, three are left/center/right.
+- `bar.justify` controls center-section placement: `center` places it in the
+  free space between left/right; `absolute_center` uses the full bar center when
+  it fits; `left` and `right` pin it next to the corresponding side section.
 - `bar.height` must be `1` in the normal screen; alternate-screen behavior is fixed
   (bar hidden) and not configurable in the MVP.
 - Module IDs are unique; a block references an enabled module by ID. Defaults are
   applied only for omitted values. An unavailable optional provider renders its
   fallback and emits a diagnostic — it never blocks terminal I/O.
+
+## Format placeholders
+
+Placeholders may carry a small width/alignment suffix:
+
+```toml
+[bar]
+format = "{cwd:<30} || {git:^20} || {time:>8}"
+justify = "absolute_center"
+```
+
+The supported suffixes are intentionally small:
+
+```text
+{name}      auto width, left aligned
+{name:<30}  30 terminal cells, left aligned
+{name:^20}  20 terminal cells, centered
+{name:>8}   8 terminal cells, right aligned
+```
+
+Widths are terminal display cells, not bytes.
 
 ## Structured block layout (spec §8.8)
 

@@ -23,6 +23,7 @@ func Default() Config {
 				{Format: "|| {time}"},
 			},
 			Format:    "|| {time}",
+			Justify:   "center",
 			Separator: " | ",
 		},
 		Theme: ThemeConfig{
