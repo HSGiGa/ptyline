@@ -1,6 +1,6 @@
 # Custom Command Block
 
-Status: proposed
+Status: implemented
 
 ## Goal
 
@@ -29,11 +29,12 @@ format = "{hostname} {cwd} {kube} || {time}"
 
 [module.kube]
 enabled = true
-provider = "command"
+source = "exec"
 command = "kubectl config current-context"
 interval_ms = 10000
 timeout_ms = 200
 format = "{stdout}"
+refresh_on_command = ["kubectl config use-context"]
 
 [style.kube]
 fg = "base.fg"
@@ -55,7 +56,8 @@ style = "kube"
 
 ## Naming
 
-Use `provider = "command"` on a normal `[module.<id>]`.
+Use `source = "exec"` on a normal `[module.<id>]`. For non-built-in module IDs,
+`source` may be omitted; ptyline defaults them to `exec`.
 
 Do not require a special `[module.custom.<id>]` namespace in the final model. A
 module ID such as `kube`, `aws`, or `ticket` is shorter in `{kube}` placeholders
@@ -72,8 +74,10 @@ the preferred form is:
 
 ```toml
 [module.kube]
-provider = "command"
+source = "exec"
 ```
+
+The older `provider = "command"` spelling is accepted as a compatibility alias.
 
 ## Execution Model
 
@@ -97,6 +101,12 @@ timeout_ms  = 200
 Commands run locally as trusted user configuration. OSC, socket input, child
 terminal output, theme files, and project metadata must never trigger command
 execution.
+
+`refresh_on_command` is a shell-integration trigger for exec modules. When an
+`exit_code` event arrives, ptyline compares the last foreground command against
+each pattern and refreshes matching modules immediately. Whitespace is
+canonicalized with `strings.Fields`, then matching is exact or prefix-with-space:
+`gh auth login` matches `gh auth login --web` but not `gh auth login2`.
 
 ## Command Parsing
 
@@ -166,6 +176,7 @@ Required safeguards:
 - no per-render execution;
 - no command execution from OSC or socket events;
 - no raw ANSI passthrough;
+- `refresh_on_command` may only trigger the module's existing configured command;
 - diagnostics for timeout, non-zero exit, and output truncation.
 
 Project-local config should not gain command execution automatically unless the
@@ -194,11 +205,11 @@ These are not required for the first implementation.
 
 Config validation should reject:
 
-- `provider = "command"` without `command`;
+- `source = "exec"` without `command`;
 - `command` with `timeout_ms <= 0`;
 - `interval_ms <= 0`;
 - command modules referenced by `bar.block` while disabled;
-- unknown provider values.
+- unknown source values.
 
 Errors should include the module ID and offending key.
 

@@ -1,12 +1,15 @@
 package app
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/app/bar"
 	"github.com/hsgiga/ptyline/internal/config"
+	"github.com/hsgiga/ptyline/internal/event"
 	"github.com/hsgiga/ptyline/internal/reserved"
+	"github.com/hsgiga/ptyline/internal/status"
 )
 
 func TestBarGeometry(t *testing.T) {
@@ -81,5 +84,139 @@ func TestAnimationsFromConfig(t *testing.T) {
 	}
 	if _, ok := got["git"]; ok {
 		t.Fatalf("disabled animation unexpectedly present: %+v", got)
+	}
+}
+
+func TestModuleSource(t *testing.T) {
+	if got := config.ModuleSource("gh", config.ModuleConfig{}); got != "exec" {
+		t.Fatalf("unknown module source = %q, want exec", got)
+	}
+	if got := config.ModuleSource("time", config.ModuleConfig{}); got != "" {
+		t.Fatalf("builtin time source = %q, want builtin empty source", got)
+	}
+	if got := config.ModuleSource("time_local", config.ModuleConfig{Source: "time"}); got != "time" {
+		t.Fatalf("explicit source = %q, want time", got)
+	}
+	if got := config.ModuleSource("kube", config.ModuleConfig{Provider: "command"}); got != "exec" {
+		t.Fatalf("provider command source = %q, want exec", got)
+	}
+}
+
+func TestCommandMatches(t *testing.T) {
+	tests := []struct {
+		actual  string
+		pattern string
+		want    bool
+	}{
+		{actual: "gh auth login", pattern: "gh auth login", want: true},
+		{actual: " gh  auth   login --web ", pattern: "gh auth login", want: true},
+		{actual: "gh auth login2", pattern: "gh auth login", want: false},
+		{actual: "gh auth logout", pattern: "gh auth login", want: false},
+		{actual: "", pattern: "gh auth login", want: false},
+		{actual: "gh auth login", pattern: " ", want: false},
+	}
+	for _, tc := range tests {
+		if got := commandMatches(tc.actual, tc.pattern); got != tc.want {
+			t.Fatalf("commandMatches(%q, %q) = %t, want %t", tc.actual, tc.pattern, got, tc.want)
+		}
+	}
+}
+
+func TestExecModuleRuntimeRefreshAfterCommand(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus := event.NewBus(4)
+	module := newExecModuleRuntime("gh", config.ModuleConfig{
+		Command:          "printf ok",
+		RefreshOnCommand: []string{"gh auth login"},
+		TimeoutMS:        1000,
+	})
+
+	module.refreshAfterCommand(ctx, bus, " gh auth login --web ")
+
+	select {
+	case got := <-bus.Events():
+		update, ok := got.(event.ModuleUpdated)
+		if !ok {
+			t.Fatalf("event = %T, want ModuleUpdated", got)
+		}
+		snap, ok := update.Snapshot.(status.ModuleSnapshot)
+		if !ok || snap.ID != "gh" || snap.Value.Text != "ok" {
+			t.Fatalf("snapshot = %#v, want gh=ok", update.Snapshot)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("refresh_on_command did not emit ModuleUpdated")
+	}
+}
+
+func TestExecModuleRuntimeRefreshAfterCommandNoMatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus := event.NewBus(4)
+	module := newExecModuleRuntime("gh", config.ModuleConfig{
+		Command:          "printf ok",
+		RefreshOnCommand: []string{"gh auth login"},
+		TimeoutMS:        1000,
+	})
+
+	module.refreshAfterCommand(ctx, bus, "gh pr list")
+
+	select {
+	case got := <-bus.Events():
+		t.Fatalf("unexpected event: %#v", got)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestExecModuleRuntimeRefreshCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	bus := event.NewBus(4)
+	module := newExecModuleRuntime("gh", config.ModuleConfig{
+		Command:          "printf ok",
+		RefreshOnCommand: []string{"gh auth login"},
+		TimeoutMS:        1000,
+	})
+
+	module.refreshAfterCommand(ctx, bus, "gh auth login")
+
+	select {
+	case got := <-bus.Events():
+		t.Fatalf("unexpected event: %#v", got)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestExitCodeSuccess(t *testing.T) {
+	if !exitCodeSuccess("0") {
+		t.Fatal("exitCodeSuccess(0) = false, want true")
+	}
+	for _, value := range []string{"1", "2", "", "not-a-code"} {
+		if exitCodeSuccess(value) {
+			t.Fatalf("exitCodeSuccess(%q) = true, want false", value)
+		}
+	}
+}
+
+func TestShouldRefreshAfterExit(t *testing.T) {
+	if !shouldRefreshAfterExit("0", "gh auth login", "gh auth login") {
+		t.Fatal("matching successful command should refresh")
+	}
+	tests := []struct {
+		name           string
+		exitCode       string
+		pendingCommand string
+		lastCommand    string
+	}{
+		{name: "nonzero", exitCode: "1", pendingCommand: "gh auth login", lastCommand: "gh auth login"},
+		{name: "stale last command", exitCode: "0", pendingCommand: "", lastCommand: "gh auth login"},
+		{name: "different command", exitCode: "0", pendingCommand: "gh auth logout", lastCommand: "gh auth login"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if shouldRefreshAfterExit(tc.exitCode, tc.pendingCommand, tc.lastCommand) {
+				t.Fatal("shouldRefreshAfterExit returned true, want false")
+			}
+		})
 	}
 }

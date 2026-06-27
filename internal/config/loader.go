@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/hsgiga/ptyline/internal/status/layout"
 )
 
 // Load reads, migrates, and parses the config. The flow is:
@@ -127,6 +128,20 @@ func Validate(cfg *Config) error {
 		}
 	}
 	for id, module := range cfg.Modules {
+		source := ModuleSource(id, module)
+		if module.Source != "" && !oneOf(module.Source, "time", "exec", "template") {
+			return fmt.Errorf("module.%s.source has invalid value %q", id, module.Source)
+		}
+		if source == "template" && module.Format == "" {
+			return fmt.Errorf("module.%s.format is required for source \"template\"", id)
+		}
+		if module.Provider != "" && !oneOf(module.Provider, "command", "exec") {
+			return fmt.Errorf("module.%s.provider has invalid value %q", id, module.Provider)
+		}
+		if source == "exec" && module.Command == "" &&
+			(module.Enabled || module.Source != "" || module.Provider != "" || len(module.RefreshOnCommand) > 0) {
+			return fmt.Errorf("module.%s.command is required for source %q", id, source)
+		}
 		if module.Animation != "" && !oneOf(module.Animation, "none", "glint", "pulse", "blink") {
 			return fmt.Errorf("module.%s.animation has invalid value %q", id, module.Animation)
 		}
@@ -150,6 +165,34 @@ func Validate(cfg *Config) error {
 				return fmt.Errorf("module.%s.env has invalid value %q", id, name)
 			}
 		}
+		for _, pattern := range module.RefreshOnCommand {
+			if strings.Join(strings.Fields(pattern), " ") == "" {
+				return fmt.Errorf("module.%s.refresh_on_command has an empty pattern", id)
+			}
+		}
+	}
+	// Cross-module check: template modules must not reference other templates or themselves.
+	templateIDs := map[string]bool{}
+	for id, module := range cfg.Modules {
+		if ModuleSource(id, module) == "template" {
+			templateIDs[id] = true
+		}
+	}
+	for id, module := range cfg.Modules {
+		if !templateIDs[id] {
+			continue
+		}
+		for _, b := range layout.ParseFormat(module.Format) {
+			if b.IsLiteral() {
+				continue
+			}
+			if b.ModuleID == id {
+				return fmt.Errorf("module.%s: template cannot reference itself", id)
+			}
+			if templateIDs[b.ModuleID] {
+				return fmt.Errorf("module.%s: template cannot reference another template module %q", id, b.ModuleID)
+			}
+		}
 	}
 	return nil
 }
@@ -161,6 +204,34 @@ func oneOf(value string, values ...string) bool {
 		}
 	}
 	return false
+}
+
+var builtinModuleIDs = map[string]bool{
+	"time": true, "hostname": true, "user": true, "runtime": true, "shell": true,
+	"env": true, "cwd": true, "ssh": true, "git": true, "command": true,
+}
+
+// IsBuiltinModuleID reports whether id is provided by ptyline itself.
+func IsBuiltinModuleID(id string) bool {
+	return builtinModuleIDs[id]
+}
+
+// ModuleSource resolves the effective source for a module. Unknown module IDs
+// default to exec unless an explicit source/provider is configured.
+func ModuleSource(id string, module ModuleConfig) string {
+	if module.Source != "" {
+		return module.Source
+	}
+	if module.Provider == "command" {
+		return "exec"
+	}
+	if module.Provider != "" {
+		return module.Provider
+	}
+	if !IsBuiltinModuleID(id) {
+		return "exec"
+	}
+	return ""
 }
 
 var numericWidth = regexp.MustCompile(`^[1-9][0-9]*%?$`)
@@ -265,6 +336,12 @@ func ValidateOverlayScope(overlay Config, meta toml.MetaData) error {
 		}
 		if meta.IsDefined("module", id, "timeout_ms") {
 			return fmt.Errorf("overlay must not set module.%s.timeout_ms", id)
+		}
+		if meta.IsDefined("module", id, "refresh_on_command") {
+			return fmt.Errorf("overlay must not set module.%s.refresh_on_command", id)
+		}
+		if meta.IsDefined("module", id, "source") {
+			return fmt.Errorf("overlay must not set module.%s.source", id)
 		}
 		if meta.IsDefined("module", id, "provider") && mod.Provider == "command" {
 			return fmt.Errorf("overlay must not set module.%s.provider = \"command\"", id)
@@ -381,6 +458,9 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	}
 	if overlay.Format != "" {
 		base.Format = overlay.Format
+	}
+	if overlay.Source != "" {
+		base.Source = overlay.Source
 	}
 	if overlay.Mode != "" {
 		base.Mode = overlay.Mode

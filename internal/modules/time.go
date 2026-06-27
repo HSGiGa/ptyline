@@ -13,16 +13,25 @@ import (
 
 // Time renders the current time. MVP module (spec §18).
 type Time struct {
+	id       status.ModuleID
 	Format   string // strftime-style, e.g. "%H:%M:%S"
 	interval time.Duration
 }
 
 // NewTime creates a time module.
 func NewTime(format string, interval time.Duration) *Time {
-	return &Time{Format: format, interval: interval}
+	return NewTimeWithID("time", format, interval)
 }
 
-func (m *Time) ID() status.ModuleID     { return "time" }
+// NewTimeWithID creates a time-backed module with a custom placeholder ID.
+func NewTimeWithID(id string, format string, interval time.Duration) *Time {
+	if format == "" {
+		format = "%H:%M:%S"
+	}
+	return &Time{id: status.ModuleID(id), Format: format, interval: interval}
+}
+
+func (m *Time) ID() status.ModuleID     { return m.id }
 func (m *Time) Interval() time.Duration { return m.interval }
 
 // Refresh returns the formatted current time.

@@ -1,3 +1,4 @@
+#:schema ./ptyline.schema.json
 config_version = 1
 shell = "auto"
 refresh_interval_ms = 1000
@@ -25,11 +26,13 @@ format = "%H:%M:%S"
 interval_ms = 1000
 
 [module.gh]
+source = "exec"
 command = "gh api user --jq .login"
 # interval_ms = 10000
 # timeout_ms = 1000
 # max_width = 60
 # format = "{stdout}"
+refresh_on_command = ["gh auth login", "gh auth logout", "gh auth refresh"]
 
 [module.env]
 env = ["PTYLINE_ENV"]

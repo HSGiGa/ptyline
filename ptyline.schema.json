@@ -1,0 +1,411 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ptyline config",
+  "description": "Configuration for ptyline — a PTY wrapper with a persistent status bar.",
+  "type": "object",
+  "required": ["config_version"],
+  "additionalProperties": false,
+  "properties": {
+    "config_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Must be 1."
+    },
+    "shell": {
+      "type": "string",
+      "description": "Shell to run inside the PTY. \"auto\" detects from $SHELL.",
+      "default": "auto",
+      "examples": ["auto", "fish", "bash", "zsh"]
+    },
+    "refresh_interval_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Global bar refresh interval in milliseconds.",
+      "default": 1000
+    },
+    "bar": {
+      "$ref": "#/definitions/BarConfig"
+    },
+    "theme": {
+      "$ref": "#/definitions/ThemeConfig"
+    },
+    "icons": {
+      "$ref": "#/definitions/IconsConfig"
+    },
+    "module": {
+      "type": "object",
+      "description": "Per-module configuration keyed by module ID.",
+      "properties": {
+        "time":    { "$ref": "#/definitions/ModuleConfig" },
+        "hostname":{ "$ref": "#/definitions/ModuleConfig" },
+        "user":    { "$ref": "#/definitions/ModuleConfig" },
+        "cwd":     { "$ref": "#/definitions/ModuleConfig" },
+        "git":     { "$ref": "#/definitions/ModuleConfig" },
+        "env":     { "$ref": "#/definitions/ModuleConfig" },
+        "shell":   { "$ref": "#/definitions/ModuleConfig" },
+        "runtime": { "$ref": "#/definitions/ModuleConfig" },
+        "ssh":     { "$ref": "#/definitions/ModuleConfig" },
+        "command": { "$ref": "#/definitions/ModuleConfig" }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/ModuleConfig",
+        "description": "User-defined command module. Set command = \"...\" to activate as {<id>} in the bar."
+      }
+    },
+    "style": {
+      "type": "object",
+      "description": "Per-block visual styles keyed by style ID.",
+      "additionalProperties": {
+        "$ref": "#/definitions/StyleConfig"
+      }
+    }
+  },
+  "definitions": {
+    "BarConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Controls the reserved status bar area and layout.",
+      "properties": {
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of reserved rows. Must be 1 in the MVP.",
+          "default": 1
+        },
+        "max_height": {
+          "type": "integer",
+          "description": "Reserved for future multi-line bar support."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["single-line"],
+          "description": "Bar rendering mode.",
+          "default": "single-line"
+        },
+        "format": {
+          "type": "string",
+          "description": "Placeholder template, e.g. \"{hostname} {cwd} || {time}\". Mutually exclusive with [[bar.block]].",
+          "examples": ["{hostname} {cwd} || {time}"]
+        },
+        "row": {
+          "type": "array",
+          "description": "Multi-row bar layout. Each [[bar.row]] is one line. Takes precedence over format.",
+          "items": { "$ref": "#/definitions/RowConfig" }
+        },
+        "separator": {
+          "type": "string",
+          "description": "Separator drawn between blocks.",
+          "default": " | "
+        },
+        "padding": {
+          "type": "integer",
+          "description": "Global block padding in cells."
+        },
+        "block": {
+          "type": "array",
+          "description": "Structured block layout. Mutually exclusive with format.",
+          "items": { "$ref": "#/definitions/BlockConfig" }
+        },
+        "show_in_alternate_screen": {
+          "type": "boolean",
+          "description": "Reserved for post-MVP: show bar while alternate screen is active.",
+          "default": false
+        }
+      }
+    },
+    "RowConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One row of a multi-line bar.",
+      "properties": {
+        "format": {
+          "type": "string",
+          "description": "Placeholder template for this row. Use || to split into left/center/right."
+        },
+        "fill": {
+          "type": "string",
+          "description": "Character drawn in gaps between blocks.",
+          "default": " ",
+          "examples": [" ", "─", "-"]
+        }
+      }
+    },
+    "BlockConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module"],
+      "description": "One layout block in the structured bar.",
+      "properties": {
+        "module": {
+          "type": "string",
+          "description": "Module ID to render in this block."
+        },
+        "anchor": {
+          "type": "string",
+          "enum": ["left", "center", "right"],
+          "description": "Which side of the bar this block is anchored to.",
+          "default": "left"
+        },
+        "align": {
+          "type": "string",
+          "enum": ["left", "center", "right"],
+          "description": "Text alignment within the block.",
+          "default": "left"
+        },
+        "width": {
+          "$ref": "#/definitions/WidthValue",
+          "description": "Block width: auto, fill, N cells, or N%."
+        },
+        "min_width": {
+          "$ref": "#/definitions/WidthValue"
+        },
+        "max_width": {
+          "$ref": "#/definitions/WidthValue"
+        },
+        "truncate": {
+          "type": "string",
+          "enum": ["left", "right", "middle", "none"],
+          "description": "Truncation side when content exceeds width.",
+          "default": "right"
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Drop priority when bar is too narrow (lower = dropped first)."
+        },
+        "style": {
+          "type": "string",
+          "description": "Style ID referencing a [style.<id>] entry."
+        }
+      }
+    },
+    "ModuleConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable this module. For command modules, presence of command = \"...\" is sufficient.",
+          "default": true
+        },
+        "source": {
+          "type": "string",
+          "enum": ["time", "exec", "template"],
+          "description": "Provider source. \"exec\" runs a shell command; \"time\" clones the time module under a new ID; \"template\" composes other module values into one block."
+        },
+        "format": {
+          "type": "string",
+          "description": "Output format. For exec: {stdout}/{stderr}/{exit_code}. For time: strftime pattern. For template: {module_id} placeholders.",
+          "examples": ["%H:%M:%S", "{stdout}", "{user}@{hostname} {cwd}", "{active} {last} {exit} {duration}"]
+        },
+        "collapse_whitespace": {
+          "type": "boolean",
+          "description": "Collapse consecutive whitespace in the assembled template value to a single space.",
+          "default": false
+        },
+        "hide_when_empty": {
+          "type": "boolean",
+          "description": "Return an empty value (hiding the block) when all referenced modules expand to empty. Literal separators do not keep the template alive.",
+          "default": false
+        },
+        "mode": {
+          "type": "string",
+          "description": "Module mode override, e.g. \"shell-integration\" for cwd.",
+          "examples": ["shell-integration"]
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["command", "exec"],
+          "description": "Compatibility alias. provider = \"command\" maps to source = \"exec\"."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command to run (activates this module as a user-defined command provider).",
+          "examples": ["gh api user --jq .login", "kubectl config current-context"]
+        },
+        "refresh_on_command": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Foreground command prefixes that trigger an immediate refresh after exit_code is reported.",
+          "examples": [["gh auth login", "gh auth logout"]]
+        },
+        "env": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Environment variable names to display (env module).",
+          "examples": [["PTYLINE_ENV", "NODE_ENV"]]
+        },
+        "interval_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Refresh interval in milliseconds.",
+          "examples": [1000, 10000]
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Per-refresh timeout in milliseconds. Defaults to 1000 for command modules.",
+          "default": 1000
+        },
+        "max_width": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum output width in terminal cells. Defaults to 60 for command modules.",
+          "default": 60
+        },
+        "done_min_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Minimum command duration to show in the bar (command module)."
+        },
+        "done_success_ttl_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long to show a successful command result (command module)."
+        },
+        "done_failure_ttl_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long to show a failed command result (command module). 0 = keep until next command."
+        },
+        "animation": {
+          "type": "string",
+          "enum": ["none", "glint", "pulse", "blink"],
+          "description": "Animation effect for this module."
+        },
+        "animation_interval_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Animation tick interval in milliseconds."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Icon glyph to prepend to the module output."
+        },
+        "fallback_icon": {
+          "type": "string",
+          "description": "ASCII fallback icon when Nerd Font glyphs are unavailable."
+        }
+      }
+    },
+    "StyleConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Visual style for a bar block.",
+      "properties": {
+        "fg": {
+          "type": "string",
+          "description": "Foreground color — theme token (e.g. \"base.fg\") or hex (#rrggbb).",
+          "examples": ["base.fg", "accent", "#ff8800"]
+        },
+        "bg": {
+          "type": "string",
+          "description": "Background color — theme token or hex.",
+          "examples": ["base.bg", "surface", "#1d2021"]
+        },
+        "bold":      { "type": "boolean" },
+        "dim":       { "type": "boolean" },
+        "italic":    { "type": "boolean" },
+        "underline": { "type": "boolean" },
+        "shape": {
+          "type": "string",
+          "description": "Block shape preset (e.g. \"powerline\", \"round\", \"flat\").",
+          "examples": ["flat", "powerline", "round"]
+        },
+        "left_separator": {
+          "type": "string",
+          "description": "Custom left separator glyph."
+        },
+        "right_separator": {
+          "type": "string",
+          "description": "Custom right separator glyph."
+        },
+        "padding_left": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Left padding in cells."
+        },
+        "padding_right": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Right padding in cells."
+        }
+      }
+    },
+    "ThemeConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Color scheme and style preset selection.",
+      "properties": {
+        "color_scheme": {
+          "type": "string",
+          "description": "Named color scheme.",
+          "examples": ["gruvbox-dark", "gruvbox-light", "catppuccin-mocha", "nord", "terminal-native"]
+        },
+        "style": {
+          "type": "string",
+          "description": "Visual style preset.",
+          "examples": ["flat", "powerline", "round", "diamond"]
+        },
+        "icons": {
+          "type": "string",
+          "enum": ["nerd-font", "emoji", "ascii"],
+          "description": "Icon set."
+        },
+        "fallback": {
+          "type": "string",
+          "description": "Fallback icon set when primary is unavailable.",
+          "examples": ["ascii"]
+        },
+        "palette": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Custom color overrides keyed by token name."
+        },
+        "status": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Status level color overrides (ok, warn, error)."
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Agent state color overrides."
+        }
+      }
+    },
+    "IconsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Icon rendering settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "preset": {
+          "type": "string",
+          "enum": ["nerd-font", "emoji", "ascii"],
+          "description": "Icon preset.",
+          "default": "ascii"
+        },
+        "emoji_width": {
+          "type": "string",
+          "enum": ["auto", "1", "2"],
+          "description": "Cell width assumed for emoji glyphs.",
+          "default": "auto"
+        },
+        "fallback": {
+          "type": "boolean",
+          "description": "Fall back to ASCII icons when preset glyphs are unavailable.",
+          "default": true
+        }
+      }
+    },
+    "WidthValue": {
+      "type": "string",
+      "description": "Block width: \"auto\", \"fill\", a number of cells (\"20\"), or a percentage (\"30%\").",
+      "pattern": "^(auto|fill|[1-9][0-9]*|[1-9][0-9]?%|100%)$",
+      "examples": ["auto", "fill", "20", "30%"]
+    }
+  }
+}

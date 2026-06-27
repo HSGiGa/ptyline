@@ -41,6 +41,25 @@ func BuildRows(cfg config.Config) []RowSpec {
 	return []RowSpec{{Blocks: layout.ParseFormat(cfg.Bar.Format), Fill: ' '}}
 }
 
+// TemplateSpecs builds the map of pre-parsed template module specs from config.
+// The map is passed to the renderer so template values are resolved at render
+// time from cached snapshots without any provider calls.
+func TemplateSpecs(cfg config.Config) map[string]renderer.TemplateSpec {
+	specs := map[string]renderer.TemplateSpec{}
+	for id, mcfg := range cfg.Modules {
+		if config.ModuleSource(id, mcfg) != "template" {
+			continue
+		}
+		specs[id] = renderer.TemplateSpec{
+			Blocks:             layout.ParseFormat(mcfg.Format),
+			HideWhenEmpty:      mcfg.HideWhenEmpty,
+			CollapseWhitespace: mcfg.CollapseWhitespace,
+			MaxWidth:           mcfg.MaxWidth,
+		}
+	}
+	return specs
+}
+
 // Render renders every RowSpec to a line, top to bottom.
 func Render(r *renderer.Renderer, st status.StatusState, rows []RowSpec) []string {
 	lines := make([]string, len(rows))

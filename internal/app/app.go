@@ -147,24 +147,26 @@ func run(opts options) int {
 		return s
 	})
 	envModule := modules.NewEnv(resolvedCfg.Modules["env"].Env)
-	// Build command-driven modules from any [module.X] entry with command != "".
-	var execModules []*modules.Exec
+	// Build user-defined modules. For known built-in IDs, an empty source keeps
+	// the built-in behavior; for unknown IDs, empty source defaults to exec.
+	var execModules []*execModuleRuntime
+	var customTimeModules []status.Module
 	for id, mcfg := range resolvedCfg.Modules {
-		if mcfg.Command == "" {
-			continue
+		switch config.ModuleSource(id, mcfg) {
+		case "exec":
+			if mcfg.Command == "" {
+				continue
+			}
+			execModules = append(execModules, newExecModuleRuntime(id, mcfg))
+		case "time":
+			customTimeModules = append(customTimeModules, modules.NewTimeWithID(
+				id,
+				mcfg.Format,
+				moduleInterval(mcfg, time.Second),
+			))
+		case "template":
+			// resolved in renderer from cached snapshots; no runtime needed
 		}
-		timeout := time.Duration(mcfg.TimeoutMS) * time.Millisecond
-		if timeout <= 0 {
-			timeout = time.Second
-		}
-		execModules = append(execModules, modules.NewExec(
-			id,
-			mcfg.Command,
-			moduleInterval(mcfg, 10*time.Second),
-			timeout,
-			mcfg.Format,
-			mcfg.MaxWidth,
-		))
 	}
 	// Initial synchronous paint so the bar shows values immediately; the
 	// scheduler then refreshes interval-driven modules (e.g. time) in the
@@ -181,8 +183,9 @@ func run(opts options) int {
 		envModule,
 	}
 	for _, m := range execModules {
-		builtins = append(builtins, m)
+		builtins = append(builtins, m.module)
 	}
+	builtins = append(builtins, customTimeModules...)
 	for _, module := range builtins {
 		state.UpdateModule(module.Refresh(nil))
 	}
@@ -238,6 +241,7 @@ func run(opts options) int {
 	render := renderer.New(layout.New(int(size.Cols)), visuals.Theme)
 	render.SetStyles(mergedStyles())
 	render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 	var resizePending bool
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
@@ -290,10 +294,12 @@ func run(opts options) int {
 		render = renderer.New(layout.New(int(state.Terminal.Cols)), visuals.Theme)
 		render.SetStyles(mergedStyles())
 		render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 		redraw()
 	}
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
 	resizeDebouncer.Start(ctx, bus)
+	var pendingRefreshCommand string
 	loop.SetHandlers(proxy.Handlers{
 		WriteInput: func(data []byte) error {
 			if len(data) > 0 {
@@ -340,6 +346,7 @@ func run(opts options) int {
 			render = renderer.New(layout.New(int(cols)), visuals.Theme)
 			render.SetStyles(mergedStyles())
 			render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
@@ -352,6 +359,9 @@ func run(opts options) int {
 		},
 		ShellMeta: func(key, value string) {
 			state.ApplyShellMeta(key, value)
+			if key == shellintegration.KeyCommand && value != "" {
+				pendingRefreshCommand = state.Shell.LastCommand
+			}
 			if key == shellintegration.KeyColors {
 				shellStyles = shellcolors.ParseToStyles(value)
 				render.SetStyles(mergedStyles())
@@ -372,17 +382,25 @@ func run(opts options) int {
 					UpdatedAt: time.Now(),
 				})
 				refreshGit(state.Shell.CWD)
-					if !opts.NoProjectPtyline {
-						newPath, _ := config.FindProjectConfig(state.Shell.CWD)
-						reloadOverlay(newPath)
-					}
+				if !opts.NoProjectPtyline {
+					newPath, _ := config.FindProjectConfig(state.Shell.CWD)
+					reloadOverlay(newPath)
 				}
+			}
 			if key == shellintegration.KeyEnv {
 				state.UpdateModule(status.ModuleSnapshot{
 					ID:        "env",
 					Value:     status.Text(value),
 					UpdatedAt: time.Now(),
 				})
+			}
+			if key == shellintegration.KeyExitCode {
+				if shouldRefreshAfterExit(value, pendingRefreshCommand, state.Shell.LastCommand) {
+					for _, m := range execModules {
+						m.refreshAfterCommand(ctx, bus, pendingRefreshCommand)
+					}
+				}
+				pendingRefreshCommand = ""
 			}
 			if snap := cmdTracker.ApplyShellMeta(key, &state); snap != nil {
 				state.UpdateModule(*snap)
@@ -412,8 +430,11 @@ func run(opts options) int {
 	proxy.StartSignals(ctx, bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
 	scheduler.Start(ctx, gitModule, time.Second)
+	for _, m := range customTimeModules {
+		scheduler.Start(ctx, m, 2*time.Second)
+	}
 	for _, m := range execModules {
-		scheduler.Start(ctx, m, m.Timeout())
+		m.start(ctx, bus)
 	}
 	bar.StartTicker(ctx, bus, resolvedCfg.Modules, cmdTracker.Animating())
 	// Paint git as soon as possible without blocking startup if git hangs.
