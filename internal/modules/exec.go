@@ -1,0 +1,148 @@
+package modules
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/hsgiga/ptyline/internal/status"
+	"github.com/hsgiga/ptyline/internal/status/width"
+)
+
+const (
+	execStdoutLimit = 4096
+	execStderrLimit = 4096
+)
+
+const defaultExecMaxWidth = 60
+
+// Exec runs a shell command on a configurable interval and publishes the
+// captured stdout as a module snapshot. It is the canonical "user-defined"
+// provider: expensive work happens on its own goroutine with a timeout; the
+// renderer reads only the cached snapshot (spec §8.7, §17).
+type Exec struct {
+	id       status.ModuleID
+	command  string
+	interval time.Duration
+	timeout  time.Duration
+	format   string
+	maxWidth int
+}
+
+// NewExec creates an Exec module. id is the bar placeholder name (e.g. "gh").
+// format uses {stdout}, {stderr}, {exit_code} placeholders; an empty format
+// defaults to "{stdout}". maxWidth <= 0 applies a default cap so a misbehaving
+// command cannot overflow the status bar.
+func NewExec(id, command string, interval, timeout time.Duration, format string, maxWidth int) *Exec {
+	if format == "" {
+		format = "{stdout}"
+	}
+	if maxWidth <= 0 {
+		maxWidth = defaultExecMaxWidth
+	}
+	return &Exec{id: status.ModuleID(id), command: command, interval: interval, timeout: timeout, format: format, maxWidth: maxWidth}
+}
+
+func (m *Exec) ID() status.ModuleID     { return m.id }
+func (m *Exec) Interval() time.Duration { return m.interval }
+func (m *Exec) Timeout() time.Duration  { return m.timeout }
+
+// Refresh executes the configured shell command under ctx's deadline, sanitizes
+// stdout, and returns a snapshot. Timeouts yield Stale; non-zero exits set Err
+// but still populate Value so the renderer can show the last formatted output.
+func (m *Exec) Refresh(ctx context.Context) status.ModuleSnapshot {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if m.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, m.timeout)
+		defer cancel()
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", m.command)
+	cmd.Stdin = nil
+	cmd.Stdout = io.Writer(&limitWriter{buf: &stdoutBuf, limit: execStdoutLimit})
+	cmd.Stderr = io.Writer(&limitWriter{buf: &stderrBuf, limit: execStderrLimit})
+
+	runErr := cmd.Run()
+
+	if ctx.Err() != nil {
+		return status.ModuleSnapshot{
+			ID:        m.ID(),
+			Value:     status.Text(""),
+			Stale:     true,
+			Err:       ctx.Err(),
+			UpdatedAt: time.Now(),
+		}
+	}
+
+	exitCode := 0
+	if runErr != nil {
+		if ee, ok := runErr.(*exec.ExitError); ok {
+			exitCode = ee.ExitCode()
+		}
+	}
+
+	stdout := sanitizeExecOutput(stdoutBuf.String())
+	stderr := sanitizeExecOutput(stderrBuf.String())
+	text := m.format
+	text = strings.ReplaceAll(text, "{stdout}", stdout)
+	text = strings.ReplaceAll(text, "{stderr}", stderr)
+	text = strings.ReplaceAll(text, "{exit_code}", fmt.Sprintf("%d", exitCode))
+	text = width.Truncate(text, m.maxWidth, "right")
+
+	snap := status.ModuleSnapshot{
+		ID:        m.ID(),
+		Value:     status.Text(text),
+		UpdatedAt: time.Now(),
+	}
+	if runErr != nil {
+		snap.Err = runErr
+	}
+	return snap
+}
+
+// sanitizeExecOutput trims trailing whitespace and replaces control characters
+// (including newlines) with spaces so command output is safe to embed in a
+// single-line status bar.
+func sanitizeExecOutput(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\n' || c == '\r':
+			b.WriteByte(' ')
+		case c == '\t':
+			b.WriteByte(' ')
+		case c < 0x20 || c == 0x7f:
+			// strip other control characters
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// limitWriter is an io.Writer that stops accepting bytes after limit is reached.
+type limitWriter struct {
+	buf   *bytes.Buffer
+	limit int
+}
+
+func (w *limitWriter) Write(p []byte) (int, error) {
+	remaining := w.limit - w.buf.Len()
+	if remaining <= 0 {
+		return len(p), nil // silently discard
+	}
+	if len(p) > remaining {
+		p = p[:remaining]
+	}
+	return w.buf.Write(p)
+}

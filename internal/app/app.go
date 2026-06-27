@@ -147,20 +147,43 @@ func run(opts options) int {
 		return s
 	})
 	envModule := modules.NewEnv(resolvedCfg.Modules["env"].Env)
+	// Build command-driven modules from any [module.X] entry with command != "".
+	var execModules []*modules.Exec
+	for id, mcfg := range resolvedCfg.Modules {
+		if mcfg.Command == "" {
+			continue
+		}
+		timeout := time.Duration(mcfg.TimeoutMS) * time.Millisecond
+		if timeout <= 0 {
+			timeout = time.Second
+		}
+		execModules = append(execModules, modules.NewExec(
+			id,
+			mcfg.Command,
+			moduleInterval(mcfg, 10*time.Second),
+			timeout,
+			mcfg.Format,
+			mcfg.MaxWidth,
+		))
+	}
 	// Initial synchronous paint so the bar shows values immediately; the
 	// scheduler then refreshes interval-driven modules (e.g. time) in the
 	// background and feeds snapshots back through ModuleUpdated events.
 	// sshBaseSnap is the env-based SSH snapshot (inbound SSH detection); it is
 	// reused as the fallback when an outbound ssh_end event arrives.
 	sshBaseSnap := modules.NewSSH().Refresh(nil)
-	for _, module := range []status.Module{
+	builtins := []status.Module{
 		timeModule,
 		modules.NewHostname(),
 		modules.NewUser(),
 		modules.NewRuntime(profile),
 		modules.NewShell(argv),
 		envModule,
-	} {
+	}
+	for _, m := range execModules {
+		builtins = append(builtins, m)
+	}
+	for _, module := range builtins {
 		state.UpdateModule(module.Refresh(nil))
 	}
 	state.UpdateModule(sshBaseSnap)
@@ -389,6 +412,9 @@ func run(opts options) int {
 	proxy.StartSignals(ctx, bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
 	scheduler.Start(ctx, gitModule, time.Second)
+	for _, m := range execModules {
+		scheduler.Start(ctx, m, m.Timeout())
+	}
 	bar.StartTicker(ctx, bus, resolvedCfg.Modules, cmdTracker.Animating())
 	// Paint git as soon as possible without blocking startup if git hangs.
 	refreshGit("")

@@ -13,43 +13,28 @@ format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-format = "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} || {time}"
-
-[theme]
-color_scheme = "default"
-style = "flat"
-icons = "ascii"
-fallback = "ascii"
+format = "{ssh} || {user}@{hostname} {cwd} || {env} {runtime} {shell} || {gh} || {time}"
 
 [icons]
-enabled = true
 preset = "ascii"
 emoji_width = "auto"
 fallback = true
 
 [module.time]
-enabled = true
 format = "%H:%M:%S"
 interval_ms = 1000
 
-[module.hostname]
-enabled = true
-
-[module.user]
-enabled = true
-
-[module.runtime]
-enabled = true
-
-[module.shell]
-enabled = true
+[module.gh]
+command = "gh api user --jq .login"
+# interval_ms = 10000
+# timeout_ms = 1000
+# max_width = 60
+# format = "{stdout}"
 
 [module.env]
-enabled = true
 env = ["PTYLINE_ENV"]
 
 [module.cwd]
-enabled = true
 mode = "shell-integration"
 
 [module.command]
@@ -66,6 +51,3 @@ animation_interval_ms = 80
 enabled = true
 animation = "pulse"
 animation_interval_ms = 250
-
-[module.git]
-enabled = true
