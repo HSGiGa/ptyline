@@ -143,7 +143,7 @@ func (e *Engine) arrange(blocks []Block, natural []int) []Placement {
 	for _, idx := range order {
 		w := placements[idx].Width
 		isFill := blocks[idx].Width.Kind == WidthFill
-		tooNarrow := e.minBlockWidth > 0 && !isFill && w < e.minBlockWidth
+		tooNarrow := e.minBlockWidth > 0 && !isFill && !blocks[idx].IsLiteral() && w < e.minBlockWidth
 		if w <= remaining && !tooNarrow {
 			placements[idx].Visible = true
 			remaining -= w

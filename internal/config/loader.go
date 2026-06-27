@@ -390,7 +390,7 @@ func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
 	if overlay.Bar.Justify != "" {
 		result.Bar.Justify = overlay.Bar.Justify
 	}
-	if overlay.Bar.MinBlockWidth != 0 {
+	if meta.IsDefined("bar", "min_block_width") {
 		result.Bar.MinBlockWidth = overlay.Bar.MinBlockWidth
 	}
 
