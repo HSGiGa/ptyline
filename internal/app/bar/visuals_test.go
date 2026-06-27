@@ -20,7 +20,7 @@ func TestVisualsFromConfigAppliesInlinePaletteAndStyles(t *testing.T) {
 	cfg.Styles = map[string]config.StyleConfig{
 		"time": {
 			FG:           "brand",
-			BG:           "base.bg",
+			BG:           "muted", // muted=brightblack is in the default palette
 			Bold:         true,
 			PaddingLeft:  1,
 			PaddingRight: 1,
@@ -38,7 +38,7 @@ func TestVisualsFromConfigAppliesInlinePaletteAndStyles(t *testing.T) {
 		t.Fatalf("ok fg = %q, want %q", got, want)
 	}
 	got := visuals.Styles["time"]
-	if got.FG != "brand" || got.BG != "base.bg" || !got.Bold || got.PaddingLeft != 1 || got.PaddingRight != 1 {
+	if got.FG != "brand" || got.BG != "muted" || !got.Bold || got.PaddingLeft != 1 || got.PaddingRight != 1 {
 		t.Fatalf("time style = %+v", got)
 	}
 }
@@ -57,7 +57,7 @@ accent = "#abcdef"
 panel = "accent"
 
 [style.time]
-fg = "base.bg"
+fg = "muted"
 bg = "panel"
 bold = true
 padding_left = 1
@@ -75,7 +75,7 @@ padding_right = 1
 	if got, want := visuals.Theme.BG("panel"), "\x1b[48;2;171;205;239m"; got != want {
 		t.Fatalf("panel bg = %q, want %q", got, want)
 	}
-	if got := visuals.Styles["time"]; got.FG != "base.bg" || got.BG != "panel" || !got.Bold {
+	if got := visuals.Styles["time"]; got.FG != "muted" || got.BG != "panel" || !got.Bold {
 		t.Fatalf("file time style = %+v", got)
 	}
 }

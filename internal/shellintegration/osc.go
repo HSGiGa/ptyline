@@ -29,10 +29,11 @@ const (
 	KeyEnv        = "env"
 	KeySSHStart   = "ssh_start" // emitted by the ssh shell wrapper before connecting
 	KeySSHEnd     = "ssh_end"   // emitted by the ssh shell wrapper after disconnecting
+	KeyColors     = "colors"    // shell color variables emitted once at integration startup
 )
 
 // Keys is the OSC 777 metadata whitelist, in canonical order.
-var Keys = []string{KeyCWD, KeyExitCode, KeyDurationMS, KeyCommand, KeyEnv, KeySSHStart, KeySSHEnd}
+var Keys = []string{KeyCWD, KeyExitCode, KeyDurationMS, KeyCommand, KeyEnv, KeySSHStart, KeySSHEnd, KeyColors}
 
 // AllowedSet returns the whitelist as a lookup set for the proxy filter.
 func AllowedSet() map[string]bool {

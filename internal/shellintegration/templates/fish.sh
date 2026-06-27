@@ -12,6 +12,18 @@ function __ptyline_emit
     printf '\e]777;%s=%s\e\\' $argv[1] $argv[2]
 end
 
+function __ptyline_emit_colors
+    set -l pairs \
+        "cwd=$fish_color_cwd" \
+        "host=$fish_color_host" \
+        "host_remote=$fish_color_host_remote" \
+        "user=$fish_color_user" \
+        "error=$fish_color_error" \
+        "status=$fish_color_status" \
+        "command=$fish_color_command"
+    __ptyline_emit colors (string join ";" $pairs)
+end
+
 function __ptyline_emit_env
     if test -z "$PTYLINE_ENV_NAMES"
         return
@@ -83,5 +95,6 @@ function ssh
     return $_code
 end
 
+__ptyline_emit_colors
 __ptyline_emit_cwd
 __ptyline_emit_env

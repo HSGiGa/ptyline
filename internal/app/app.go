@@ -22,10 +22,12 @@ import (
 	"github.com/hsgiga/ptyline/internal/reserved"
 	"github.com/hsgiga/ptyline/internal/runtimeenv"
 	"github.com/hsgiga/ptyline/internal/shellintegration"
+	"github.com/hsgiga/ptyline/internal/shellintegration/shellcolors"
 	"github.com/hsgiga/ptyline/internal/status"
 	"github.com/hsgiga/ptyline/internal/status/icons"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
+	"github.com/hsgiga/ptyline/internal/status/style"
 	"github.com/hsgiga/ptyline/internal/terminal"
 )
 
@@ -68,9 +70,22 @@ func run(opts options) int {
 		return 1
 	}
 
-	barRows := bar.BuildRows(cfg)
+	cliOverlay := config.ResolveOverlayPath(opts.OverlayPath)
+	var initProjectOverlay string
+	if !opts.NoProjectPtyline {
+		if cwd, err := os.Getwd(); err == nil {
+			initProjectOverlay, _ = config.FindProjectConfig(cwd)
+		}
+	}
+	resolvedCfg, err := config.ApplyOverlays(cfg, cliOverlay, initProjectOverlay)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ptyline: overlay:", err)
+		return 1
+	}
+
+	barRows := bar.BuildRows(resolvedCfg)
 	area := reserved.Area{Edge: reserved.Bottom, Rows: uint16(len(barRows))}
-	argv := resolveChild(opts.Child, cfg, profile)
+	argv := resolveChild(opts.Child, resolvedCfg, profile)
 
 	// --- Terminal: enter raw mode; ALWAYS restore on the way out (spec §15). ---
 	ctrl := terminal.New(os.Stdin, os.Stdout)
@@ -89,7 +104,7 @@ func run(opts options) int {
 
 	// --- Child PTY sized to rows-minus-reserved (spec §8.2). ---
 	sup := pty.New(argv, area)
-	sup.SetEnv("PTYLINE_ENV_NAMES", strings.Join(cfg.Modules["env"].Env, ","))
+	sup.SetEnv("PTYLINE_ENV_NAMES", strings.Join(resolvedCfg.Modules["env"].Env, ","))
 	if err := sup.Start(pty.Size{Cols: size.Cols, Rows: size.Rows}); err != nil {
 		fmt.Fprintln(os.Stderr, "ptyline: pty:", err)
 		return 1
@@ -120,18 +135,18 @@ func run(opts options) int {
 			UpdatedAt: time.Now(),
 		})
 	}
-	timeModule := modules.NewTime(cfg.Modules["time"].Format, moduleInterval(cfg.Modules["time"], time.Second))
-	cmdTracker := command.NewTracker(cfg.Modules["command"])
+	timeModule := modules.NewTime(resolvedCfg.Modules["time"].Format, moduleInterval(resolvedCfg.Modules["time"], time.Second))
+	cmdTracker := command.NewTracker(resolvedCfg.Modules["command"])
 	// Resolve the git branch icon through the icon preset: the Nerd-Font glyph
 	// (U+E0A0) when icons.preset = "nerd-font", otherwise a plain-font branch
 	// glyph (U+2387 "⎇") that renders without a Nerd Font. A true Nerd-Font check
 	// is impossible at runtime, so the preset is the switch.
-	branchIcon := icons.New(icons.Preset(cfg.Icons.Preset), cfg.Icons.Fallback).Icon("", "⎇")
-	gitModule := modules.NewGit(moduleInterval(cfg.Modules["git"], 2*time.Second), time.Second, branchIcon, func() string {
+	branchIcon := icons.New(icons.Preset(resolvedCfg.Icons.Preset), resolvedCfg.Icons.Fallback).Icon("", "⎇")
+	gitModule := modules.NewGit(moduleInterval(resolvedCfg.Modules["git"], 2*time.Second), time.Second, branchIcon, func() string {
 		s, _ := cwdHolder.Load().(string)
 		return s
 	})
-	envModule := modules.NewEnv(cfg.Modules["env"].Env)
+	envModule := modules.NewEnv(resolvedCfg.Modules["env"].Env)
 	// Initial synchronous paint so the bar shows values immediately; the
 	// scheduler then refreshes interval-driven modules (e.g. time) in the
 	// background and feeds snapshots back through ModuleUpdated events.
@@ -172,14 +187,34 @@ func run(opts options) int {
 			bus.SendCtx(ctx, event.ModuleUpdated{ID: "git", Snapshot: snap})
 		}()
 	}
-	visuals, err := bar.VisualsFromConfig(cfg, colorMode(profile.Capabilities.Color), opts.ConfigPath)
+	visuals, err := bar.VisualsFromConfig(resolvedCfg, colorMode(profile.Capabilities.Color), opts.ConfigPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ptyline: theme:", err)
 		return 1
 	}
+	// shellStyles holds module-style overrides received from the shell via the
+	// OSC 777 "colors" key. They are the lowest-priority override: config and
+	// theme file styles always win (see mergedStyles).
+	var shellStyles map[string]style.Style
+	// mergedStyles merges shellStyles (shell auto-detected) with visuals.Styles
+	// (theme file + config inline). visuals.Styles always takes priority so that
+	// an explicit user theme is never overridden by shell color sync.
+	mergedStyles := func() map[string]style.Style {
+		if len(shellStyles) == 0 {
+			return visuals.Styles
+		}
+		merged := make(map[string]style.Style, len(shellStyles)+len(visuals.Styles))
+		for k, v := range shellStyles {
+			merged[k] = v
+		}
+		for k, v := range visuals.Styles {
+			merged[k] = v // config/theme always wins
+		}
+		return merged
+	}
 	render := renderer.New(layout.New(int(size.Cols)), visuals.Theme)
-	render.SetStyles(visuals.Styles)
-	render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
+	render.SetStyles(mergedStyles())
+	render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
 	var resizePending bool
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
@@ -192,7 +227,47 @@ func run(opts options) int {
 	// altCoord sequences the alt-screen entry/exit protocol (spec §11):
 	// the filter records the transition; WriteOutput flushes it after bytes land.
 	altCoord := &altScreenCoordinator{
-		ctrl: ctrl, sup: sup, writer: writer, state: &state, area: area, redraw: redraw,
+		ctrl: ctrl, sup: sup, writer: writer, state: &state, area: &area, redraw: redraw,
+	}
+	// projectOverlayPath tracks the currently active project .ptyline path so we
+	// can skip the rebuild when cwd changes but the nearest .ptyline stays the same.
+	var projectOverlayPath atomic.Value
+	projectOverlayPath.Store(initProjectOverlay)
+	// reloadOverlay rebuilds the resolved config and bar when the project overlay
+	// path changes. Called from the ShellMeta "cwd" handler (event loop goroutine),
+	// so no locking is needed for the closure-captured variables.
+	reloadOverlay := func(newProjectPath string) {
+		old, _ := projectOverlayPath.Load().(string)
+		if old == newProjectPath {
+			return
+		}
+		projectOverlayPath.Store(newProjectPath)
+		newCfg, err := config.ApplyOverlays(cfg, cliOverlay, newProjectPath)
+		if err != nil {
+			return // keep running with old config on parse error
+		}
+		resolvedCfg = newCfg
+		newBarRows := bar.BuildRows(resolvedCfg)
+		newArea := reserved.Area{Edge: reserved.Bottom, Rows: uint16(len(newBarRows))}
+		if newArea.Rows != area.Rows {
+			curSize := terminal.Size{Cols: state.Terminal.Cols, Rows: state.Terminal.Rows}
+			_ = writer.ClearBar()
+			area = newArea
+			filter.SetArea(area)
+			sup.SetArea(area)
+			top, count := bar.Geometry(area, curSize.Rows, len(newBarRows))
+			writer.SetBarRows(top, count)
+			_ = sup.Resize(pty.Size{Cols: curSize.Cols, Rows: curSize.Rows})
+			ctrl.ApplyScrollRegion(curSize, area)
+		}
+		barRows = newBarRows
+		if newVisuals, err := bar.VisualsFromConfig(resolvedCfg, colorMode(profile.Capabilities.Color), opts.ConfigPath); err == nil {
+			visuals = newVisuals
+		}
+		render = renderer.New(layout.New(int(state.Terminal.Cols)), visuals.Theme)
+		render.SetStyles(mergedStyles())
+		render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+		redraw()
 	}
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
 	resizeDebouncer.Start(ctx, bus)
@@ -240,8 +315,8 @@ func run(opts options) int {
 			top, count := bar.Geometry(area, rows, len(barRows))
 			writer.SetBarRows(top, count)
 			render = renderer.New(layout.New(int(cols)), visuals.Theme)
-			render.SetStyles(visuals.Styles)
-			render.SetAnimations(bar.AnimationsFromConfig(cfg.Modules))
+			render.SetStyles(mergedStyles())
+			render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
@@ -254,6 +329,12 @@ func run(opts options) int {
 		},
 		ShellMeta: func(key, value string) {
 			state.ApplyShellMeta(key, value)
+			if key == shellintegration.KeyColors {
+				shellStyles = shellcolors.ParseToStyles(value)
+				render.SetStyles(mergedStyles())
+				redraw()
+				return
+			}
 			if key == shellintegration.KeySSHStart {
 				state.UpdateModule(sshAnim.OnSSHStart(state.Shell.SSHTarget))
 			}
@@ -268,7 +349,11 @@ func run(opts options) int {
 					UpdatedAt: time.Now(),
 				})
 				refreshGit(state.Shell.CWD)
-			}
+					if !opts.NoProjectPtyline {
+						newPath, _ := config.FindProjectConfig(state.Shell.CWD)
+						reloadOverlay(newPath)
+					}
+				}
 			if key == shellintegration.KeyEnv {
 				state.UpdateModule(status.ModuleSnapshot{
 					ID:        "env",
@@ -304,7 +389,7 @@ func run(opts options) int {
 	proxy.StartSignals(ctx, bus)
 	scheduler.Start(ctx, timeModule, 2*time.Second)
 	scheduler.Start(ctx, gitModule, time.Second)
-	bar.StartTicker(ctx, bus, cfg.Modules, cmdTracker.Animating())
+	bar.StartTicker(ctx, bus, resolvedCfg.Modules, cmdTracker.Animating())
 	// Paint git as soon as possible without blocking startup if git hangs.
 	refreshGit("")
 	redraw()

@@ -109,9 +109,14 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 
 	natural := make([]int, len(blocks))
 	values := make([]string, len(blocks))
+	styles := make([]style.Style, len(blocks))
 	for i, block := range blocks {
 		values[i] = blockValue(st, block)
-		natural[i] = width.String(values[i])
+		styles[i] = r.styleFor(block)
+		if !block.IsLiteral() && values[i] == "" {
+			continue
+		}
+		natural[i] = width.String(values[i]) + styles[i].OuterWidth()
 	}
 	placements := r.engine.ArrangeIn(blocks, natural, target)
 	// Use per-anchor builders to avoid map allocations and string += copies.
@@ -124,8 +129,10 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		if !placement.Block.IsLiteral() && values[i] == "" {
 			continue
 		}
-		text := width.Truncate(values[i], placement.Width, placement.Block.Truncate)
-		text = width.Pad(text, placement.Width, string(placement.Block.Align))
+		blockStyle := styles[i]
+		contentWidth := max(0, placement.Width-blockStyle.OuterWidth())
+		text := width.Truncate(values[i], contentWidth, placement.Block.Truncate)
+		text = width.Pad(text, contentWidth, string(placement.Block.Align))
 		var sb, pb *strings.Builder
 		switch placement.Block.Anchor {
 		case layout.AnchorCenter:
@@ -135,10 +142,9 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		default:
 			sb, pb = &styledL, &plainL
 		}
-		pb.WriteString(text)
+		pb.WriteString(blockStyle.Plain(text))
 		// Each segment is styled and reset, then the base colors are re-emitted so
 		// the bar background continues across gaps and padding.
-		blockStyle := r.styleFor(placement.Block)
 		switch r.animationMode(st, placement.Block) {
 		case AnimGlint:
 			sb.WriteString(r.applyGlint(text, blockStyle, st.AnimationPhase))
@@ -208,21 +214,29 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 			return s
 		}
 	}
-	s := style.Style{FG: "base.fg", BG: "base.bg"}
+	if moduleID != "" {
+		if s, ok := r.styles[moduleID]; ok {
+			return s
+		}
+	}
+	s := style.Style{} // no explicit fg/bg: terminal defaults
 	if block.IsLiteral() {
+		s.FG = "muted" // separators and frame chrome in bright black (8)
 		return s
 	}
 	switch moduleID {
 	case "hostname":
-		s.FG, s.Bold = "accent", true
-	case "time":
-		s.FG = "muted"
+		s.FG, s.Bold = "ok", true // brightgreen 10 — matches user@host convention in bash/zsh/fish
 	case "cwd":
-		s.FG = "base.fg"
+		s.FG, s.Bold = "blue", true // 4 bold — matches bash \w (\e[01;34m)
+	case "time":
+		s.FG = "warn" // brightyellow 11
 	case "git":
-		s.FG, s.Bold = "ok", true
+		s.FG, s.Bold = "ok", true // brightgreen 10; error/warn states are post-MVP
 	case "command":
-		s.FG = "#f2b35d"
+		// terminal default fg — command text blends with the frame line
+	case "exit_code":
+		s.FG = "error" // brightred 9
 	case "ssh":
 		s.FG, s.Bold = "warn", true
 	}

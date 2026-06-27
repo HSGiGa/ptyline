@@ -1,0 +1,61 @@
+name = "gruvbox-box"
+
+[palette]
+"base.bg" = "#282828"
+"base.fg" = "#ebdbb2"
+accent = "#83a598"
+ok = "#b8bb26"
+warn = "#fabd2f"
+error = "#fb4934"
+muted = "#928374"
+command = "#fe8019"
+panel = "base.bg"
+
+[style.hostname]
+fg = "accent"
+bg = "panel"
+bold = true
+shape = "box"
+left_separator = "["
+right_separator = "]"
+padding_left = 1
+padding_right = 1
+
+[style.time]
+fg = "muted"
+bg = "panel"
+shape = "box"
+left_separator = "["
+right_separator = "]"
+padding_left = 1
+padding_right = 1
+
+[style.git]
+fg = "ok"
+bg = "panel"
+bold = true
+shape = "box"
+left_separator = "["
+right_separator = "]"
+padding_left = 1
+padding_right = 1
+
+[style.command]
+fg = "command"
+bg = "panel"
+shape = "box"
+left_separator = "["
+right_separator = "]"
+padding_left = 1
+padding_right = 1
+
+[style.ssh]
+fg = "warn"
+bg = "panel"
+bold = true
+shape = "box"
+left_separator = "["
+right_separator = "]"
+padding_left = 1
+padding_right = 1
+
