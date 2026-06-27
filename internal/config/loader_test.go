@@ -381,6 +381,30 @@ enabled = false
 	}
 }
 
+// min_block_width = 0 in an overlay must disable a non-zero base value.
+// Uses meta.IsDefined so that explicitly writing 0 is treated as a reset.
+func TestMergeOverlay_MinBlockWidthReset(t *testing.T) {
+	dir := t.TempDir()
+	overlayPath := filepath.Join(dir, "reset.ptyline")
+	overlayBody := `config_version = 1
+
+[bar]
+min_block_width = 0
+`
+	if err := os.WriteFile(overlayPath, []byte(overlayBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := Default()
+	base.Bar.MinBlockWidth = 10
+	result, err := ApplyOverlays(base, overlayPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Bar.MinBlockWidth != 0 {
+		t.Errorf("min_block_width = %d after overlay reset, want 0", result.Bar.MinBlockWidth)
+	}
+}
+
 func TestInferActiveModules(t *testing.T) {
 	dir := t.TempDir()
 	overlayPath := filepath.Join(dir, "overlay.ptyline")

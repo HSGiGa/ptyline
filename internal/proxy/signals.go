@@ -16,7 +16,7 @@ import (
 // SIGHUP, and SIGTERM to the bus as AppEvent values.
 func StartSignals(ctx context.Context, bus *event.Bus) {
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGWINCH, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(signals, syscall.SIGWINCH, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR1)
 	go func() {
 		defer signal.Stop(signals)
 		for {
@@ -36,6 +36,8 @@ func StartSignals(ctx context.Context, bus *event.Bus) {
 					bus.SendCtx(ctx, event.TerminationSignal{Signal: "SIGINT"})
 				case syscall.SIGHUP:
 					bus.SendCtx(ctx, event.TerminationSignal{Signal: "SIGHUP"})
+				case syscall.SIGUSR1:
+					bus.SendCtx(ctx, event.ConfigReloadRequested{})
 				default: // SIGTERM
 					bus.SendCtx(ctx, event.TerminationSignal{Signal: "SIGTERM"})
 				}

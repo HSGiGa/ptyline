@@ -82,6 +82,11 @@ enabled = true
 - `bar.justify` controls center-section placement: `center` places it in the
   free space between left/right; `absolute_center` uses the full bar center when
   it fits; `left` and `right` pin it next to the corresponding side section.
+- `bar.min_block_width` (default `0` = disabled): a module block whose allocated
+  cell width falls below this threshold is hidden entirely instead of being
+  truncated to a tiny sliver. Literal blocks (separators, spacing) are never
+  hidden by this rule. Set e.g. `min_block_width = 5` to keep the bar readable on
+  narrow terminals.
 - `bar.height` must be `1` in the normal screen; alternate-screen behavior is fixed
   (bar hidden) and not configurable in the MVP.
 - Module IDs are unique; a block references an enabled module by ID. Defaults are

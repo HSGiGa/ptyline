@@ -18,6 +18,7 @@ Flags:
   --ptyline <path>         apply a visual overlay (.ptyline file or short name)
   --ptyline=<path>         same, equals form
   --no-project-ptyline     disable automatic project .ptyline discovery
+  --reload                 reload config in the running ptyline (uses $PTYLINE_PID)
   --version                print version and exit
   --help                   show this help
 
@@ -27,6 +28,7 @@ Examples:
   ptyline -- zsh                run zsh inside the wrapper
   ptyline -- ssh host.example   run any command (everything after -- is the child)
   ptyline init bash             print the bash shell-integration script
+  ptyline --reload              reload config without restarting ptyline
 `
 
 // options is the parsed CLI invocation.
@@ -34,6 +36,7 @@ type options struct {
 	ConfigPath       string
 	OverlayPath      string // --ptyline (short name or path)
 	NoProjectPtyline bool   // --no-project-ptyline
+	Reload           bool   // --reload: send SIGUSR1 to $PTYLINE_PID
 	Child            []string
 	InitShell        string
 	ShowVersion      bool
@@ -70,6 +73,8 @@ func parseArgs(args []string) (options, error) {
 			o.OverlayPath = args[i]
 		case "--no-project-ptyline":
 			o.NoProjectPtyline = true
+		case "--reload":
+			o.Reload = true
 		case "init":
 			if i+1 >= len(args) {
 				return o, errors.New("init requires a shell name")

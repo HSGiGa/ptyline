@@ -16,6 +16,7 @@ type Handlers struct {
 	Tick          func()
 	Redraw        func()
 	Terminate     func(signal string)
+	ConfigReload  func()
 }
 
 // Loop is the single select-driven event loop. It multiplexes every input source
@@ -94,6 +95,13 @@ func (l *Loop) Run() (exitCode int, err error) {
 		case event.Tick:
 			if l.h.Tick != nil {
 				l.h.Tick()
+			}
+			if l.h.Redraw != nil {
+				l.h.Redraw()
+			}
+		case event.ConfigReloadRequested:
+			if l.h.ConfigReload != nil {
+				l.h.ConfigReload()
 			}
 			if l.h.Redraw != nil {
 				l.h.Redraw()

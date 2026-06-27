@@ -23,6 +23,14 @@ func NewTime(format string, interval time.Duration) *Time {
 	return NewTimeWithID("time", format, interval)
 }
 
+// NewDate creates a date module with default format %Y-%m-%d.
+func NewDate(format string, interval time.Duration) *Time {
+	if format == "" {
+		format = "%Y-%m-%d"
+	}
+	return NewTimeWithID("date", format, interval)
+}
+
 // NewTimeWithID creates a time-backed module with a custom placeholder ID.
 func NewTimeWithID(id string, format string, interval time.Duration) *Time {
 	if format == "" {

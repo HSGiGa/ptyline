@@ -216,7 +216,7 @@ func oneOf(value string, values ...string) bool {
 }
 
 var builtinModuleIDs = map[string]bool{
-	"time": true, "hostname": true, "user": true, "runtime": true, "shell": true,
+	"time": true, "date": true, "hostname": true, "user": true, "runtime": true, "shell": true,
 	"env": true, "cwd": true, "ssh": true, "git": true, "command": true,
 }
 
@@ -390,7 +390,7 @@ func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
 	if overlay.Bar.Justify != "" {
 		result.Bar.Justify = overlay.Bar.Justify
 	}
-	if overlay.Bar.MinBlockWidth != 0 {
+	if meta.IsDefined("bar", "min_block_width") {
 		result.Bar.MinBlockWidth = overlay.Bar.MinBlockWidth
 	}
 
