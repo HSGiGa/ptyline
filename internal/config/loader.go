@@ -100,6 +100,12 @@ func Validate(cfg *Config) error {
 	if !oneOf(cfg.Bar.Mode, "single-line", "agent-panel") {
 		return fmt.Errorf("bar.mode has invalid value %q", cfg.Bar.Mode)
 	}
+	if !oneOf(cfg.Bar.Justify, "left", "center", "right", "absolute_center") {
+		return fmt.Errorf("bar.justify has invalid value %q", cfg.Bar.Justify)
+	}
+	if cfg.Bar.MinBlockWidth < 0 {
+		return fmt.Errorf("bar.min_block_width must be >= 0")
+	}
 	if !oneOf(cfg.Icons.Preset, "nerd-font", "emoji", "ascii") {
 		return fmt.Errorf("icons.preset has invalid value %q", cfg.Icons.Preset)
 	}
@@ -381,6 +387,12 @@ func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
 	if overlay.Bar.Mode != "" {
 		result.Bar.Mode = overlay.Bar.Mode
 	}
+	if overlay.Bar.Justify != "" {
+		result.Bar.Justify = overlay.Bar.Justify
+	}
+	if overlay.Bar.MinBlockWidth != 0 {
+		result.Bar.MinBlockWidth = overlay.Bar.MinBlockWidth
+	}
 
 	// Theme scalar fields
 	if overlay.Theme.ColorScheme != "" {
@@ -543,7 +555,7 @@ func mergeStyleConfig(base, overlay StyleConfig) StyleConfig {
 	return base
 }
 
-var moduleRefRE = regexp.MustCompile(`\{([a-z][a-z0-9_]*)\}`)
+var moduleRefRE = regexp.MustCompile(`\{([a-z][a-z0-9_]*)(?::[^}]*)?\}`)
 
 // inferActiveModules enables any module referenced in the bar layout unless it
 // was explicitly disabled via enabled=false in an overlay (tracked by the caller).

@@ -84,8 +84,14 @@
         },
         "format": {
           "type": "string",
-          "description": "Placeholder template, e.g. \"{hostname} {cwd} || {time}\". Mutually exclusive with [[bar.block]].",
-          "examples": ["{hostname} {cwd} || {time}"]
+          "description": "Placeholder template, e.g. \"{hostname:<20} {cwd} || {git:^20} || {time:>8}\". Mutually exclusive with [[bar.block]].",
+          "examples": ["{hostname} {cwd} || {time}", "{cwd:<30} || {git:^20} || {time:>8}"]
+        },
+        "justify": {
+          "type": "string",
+          "enum": ["left", "center", "right", "absolute_center"],
+          "description": "Placement of the center section. center is relative to free space between left/right; absolute_center uses the full bar center when it fits.",
+          "default": "center"
         },
         "row": {
           "type": "array",
@@ -105,6 +111,12 @@
           "type": "array",
           "description": "Structured block layout. Mutually exclusive with format.",
           "items": { "$ref": "#/definitions/BlockConfig" }
+        },
+        "min_block_width": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Minimum allocated width in cells for a block to be shown. Blocks narrower than this threshold are hidden completely instead of being truncated. 0 = disabled.",
+          "default": 0
         },
         "show_in_alternate_screen": {
           "type": "boolean",

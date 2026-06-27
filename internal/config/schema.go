@@ -29,14 +29,16 @@ type Config struct {
 // configurable in the MVP — `ShowInAlternateScreen` is reserved for post-MVP
 // (spec §19 "optional visible bar in alternate screen").
 type BarConfig struct {
-	Height    uint16        `toml:"height"`
-	MaxHeight uint16        `toml:"max_height"` // reserved (multi-line, post-MVP)
-	Mode      string        `toml:"mode"`       // single-line | agent-panel (future)
-	Format    string        `toml:"format"`
-	Rows      []RowConfig   `toml:"row"` // multi-line: one row per [[bar.row]] (takes precedence over Format)
-	Separator string        `toml:"separator"`
-	Padding   int           `toml:"padding"`
-	Blocks    []BlockConfig `toml:"block"`
+	Height        uint16        `toml:"height"`
+	MaxHeight     uint16        `toml:"max_height"` // reserved (multi-line, post-MVP)
+	Mode          string        `toml:"mode"`       // single-line | agent-panel (future)
+	Format        string        `toml:"format"`
+	Justify       string        `toml:"justify"`         // left | center | right | absolute_center
+	MinBlockWidth int           `toml:"min_block_width"` // hide blocks narrower than this; 0 = disabled
+	Rows          []RowConfig   `toml:"row"`             // multi-line: one row per [[bar.row]] (takes precedence over Format)
+	Separator     string        `toml:"separator"`
+	Padding       int           `toml:"padding"`
+	Blocks        []BlockConfig `toml:"block"`
 
 	ShowInAlternateScreen bool `toml:"show_in_alternate_screen"` // reserved; post-MVP
 }

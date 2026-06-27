@@ -232,11 +232,18 @@ func run(opts options) int {
 		}
 		return merged
 	}
-	render := renderer.New(layout.New(int(size.Cols)), visuals.Theme)
-	render.SetStyles(mergedStyles())
-	render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
-	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
-	render.SetIcons(bar.IconSpecs(resolvedCfg))
+	newEngine := func(cols int) *layout.Engine {
+		return layout.NewWithMinBlock(cols, resolvedCfg.Bar.MinBlockWidth)
+	}
+	configureRenderer := func(r *renderer.Renderer) {
+		r.SetJustify(renderer.Justify(resolvedCfg.Bar.Justify))
+		r.SetStyles(mergedStyles())
+		r.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+		r.SetTemplates(bar.TemplateSpecs(resolvedCfg))
+		r.SetIcons(bar.IconSpecs(resolvedCfg))
+	}
+	render := renderer.New(newEngine(int(size.Cols)), visuals.Theme)
+	configureRenderer(render)
 	var resizePending bool
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
@@ -286,11 +293,8 @@ func run(opts options) int {
 		if newVisuals, err := bar.VisualsFromConfig(resolvedCfg, colorMode(profile.Capabilities.Color), opts.ConfigPath); err == nil {
 			visuals = newVisuals
 		}
-		render = renderer.New(layout.New(int(state.Terminal.Cols)), visuals.Theme)
-		render.SetStyles(mergedStyles())
-		render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
-		render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
-		render.SetIcons(bar.IconSpecs(resolvedCfg))
+		render = renderer.New(newEngine(int(state.Terminal.Cols)), visuals.Theme)
+		configureRenderer(render)
 		redraw()
 	}
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -339,11 +343,8 @@ func run(opts options) int {
 			state.Resize(cols, rows, alt)
 			top, count := bar.Geometry(area, rows, len(barRows))
 			writer.SetBarRows(top, count)
-			render = renderer.New(layout.New(int(cols)), visuals.Theme)
-			render.SetStyles(mergedStyles())
-			render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
-			render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
-			render.SetIcons(bar.IconSpecs(resolvedCfg))
+			render = renderer.New(newEngine(int(cols)), visuals.Theme)
+			configureRenderer(render)
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()

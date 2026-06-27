@@ -6,6 +6,7 @@ package layout
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -65,11 +66,19 @@ func (b Block) IsLiteral() bool { return b.ModuleID == "" }
 
 // Engine assigns each block a cell range given the total bar width.
 type Engine struct {
-	barWidth int
+	barWidth      int
+	minBlockWidth int // 0 = disabled; hide blocks narrower than this threshold
 }
 
 // New creates a layout engine for a bar of the given cell width.
 func New(barWidth int) *Engine { return &Engine{barWidth: barWidth} }
+
+// NewWithMinBlock creates a layout engine that hides any block allocated fewer
+// than minBlockWidth cells. Use this to prevent tiny truncated blocks when the
+// terminal is narrow.
+func NewWithMinBlock(barWidth, minBlockWidth int) *Engine {
+	return &Engine{barWidth: barWidth, minBlockWidth: minBlockWidth}
+}
 
 // SetBarWidth updates the bar width (after a resize).
 func (e *Engine) SetBarWidth(w int) { e.barWidth = w }
@@ -119,14 +128,23 @@ func (e *Engine) arrange(blocks []Block, natural []int) []Placement {
 	for i := range order {
 		order[i] = i
 	}
+	// Sort highest-priority first. Within the same priority, left-anchored blocks
+	// are kept before center, and center before right — so right-anchored blocks
+	// are the first to be dropped when the bar is narrow.
 	sort.SliceStable(order, func(a, b int) bool {
-		return blocks[order[a]].Priority > blocks[order[b]].Priority
+		pa, pb := blocks[order[a]].Priority, blocks[order[b]].Priority
+		if pa != pb {
+			return pa > pb
+		}
+		return anchorDropOrder(blocks[order[a]].Anchor) > anchorDropOrder(blocks[order[b]].Anchor)
 	})
 
 	remaining := e.barWidth
 	for _, idx := range order {
 		w := placements[idx].Width
-		if w <= remaining {
+		isFill := blocks[idx].Width.Kind == WidthFill
+		tooNarrow := e.minBlockWidth > 0 && !isFill && w < e.minBlockWidth
+		if w <= remaining && !tooNarrow {
 			placements[idx].Visible = true
 			remaining -= w
 		}
@@ -247,17 +265,40 @@ func parseSection(section string, anchor Anchor) []Block {
 			break
 		}
 		close += open
-		name := section[open+1 : close]
-		blocks = append(blocks, Block{
-			ModuleID: name,
-			Anchor:   anchor,
-			Align:    AlignLeft,
-			Width:    Width{Kind: WidthAuto},
-			Truncate: "right",
-		})
+		blocks = append(blocks, placeholderBlock(section[open+1:close], anchor))
 		i = close + 1
 	}
 	return blocks
+}
+
+func placeholderBlock(expr string, anchor Anchor) Block {
+	name, spec, hasSpec := strings.Cut(expr, ":")
+	block := Block{
+		ModuleID: name,
+		Anchor:   anchor,
+		Align:    AlignLeft,
+		Width:    Width{Kind: WidthAuto},
+		Truncate: "right",
+	}
+	if !hasSpec || len(spec) < 2 {
+		return block
+	}
+	cells, err := strconv.Atoi(spec[1:])
+	if err != nil || cells <= 0 {
+		return block
+	}
+	switch spec[0] {
+	case '<':
+		block.Align = AlignLeft
+	case '^':
+		block.Align = AlignCenter
+	case '>':
+		block.Align = AlignRight
+	default:
+		return block
+	}
+	block.Width = Width{Kind: WidthCells, Value: cells}
+	return block
 }
 
 func literalBlock(text string, anchor Anchor) Block {
@@ -269,5 +310,19 @@ func literalBlock(text string, anchor Anchor) Block {
 		Truncate: "none",
 		// Literals (separators, spacing) are kept ahead of modules under pressure.
 		Priority: 1,
+	}
+}
+
+// anchorDropOrder returns a tiebreaker value used in arrange's sort: higher =
+// kept earlier when width runs out. Right-anchored blocks are dropped first
+// (value 0), then center (1), then left (2).
+func anchorDropOrder(a Anchor) int {
+	switch a {
+	case AnchorLeft:
+		return 2
+	case AnchorCenter:
+		return 1
+	default: // AnchorRight
+		return 0
 	}
 }
