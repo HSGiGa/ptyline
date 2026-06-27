@@ -187,6 +187,11 @@
           "description": "Enable this module. For command modules, presence of command = \"...\" is sufficient.",
           "default": true
         },
+        "source": {
+          "type": "string",
+          "enum": ["time", "exec"],
+          "description": "Provider source for custom modules. Unknown module IDs default to exec when omitted."
+        },
         "format": {
           "type": "string",
           "description": "Output format template. Supports {stdout}, {stderr}, {exit_code} for command modules, or strftime patterns for time.",
@@ -197,10 +202,21 @@
           "description": "Module mode override, e.g. \"shell-integration\" for cwd.",
           "examples": ["shell-integration"]
         },
+        "provider": {
+          "type": "string",
+          "enum": ["command", "exec"],
+          "description": "Compatibility alias. provider = \"command\" maps to source = \"exec\"."
+        },
         "command": {
           "type": "string",
           "description": "Shell command to run (activates this module as a user-defined command provider).",
           "examples": ["gh api user --jq .login", "kubectl config current-context"]
+        },
+        "refresh_on_command": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Foreground command prefixes that trigger an immediate refresh after exit_code is reported.",
+          "examples": [["gh auth login", "gh auth logout"]]
         },
         "env": {
           "type": "array",

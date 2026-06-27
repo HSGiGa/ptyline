@@ -159,10 +159,14 @@ command = "kubectl config current-context"
 interval_ms = 10000
 timeout_ms = 200
 format = "{stdout}"
+refresh_on_command = ["kubectl config use-context"]
 ```
 
 Custom commands run **locally** with a timeout; config is trusted user input but
 commands must always be time-bounded (spec §16, §17).
+`refresh_on_command` triggers an immediate refresh after a matching foreground
+command exits. Matching normalizes whitespace and accepts exact or prefix matches
+with a space boundary, so `"gh auth login"` also matches `"gh auth login --web"`.
 
 `source = "time"` can reuse a built-in provider under a custom placeholder:
 

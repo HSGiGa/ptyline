@@ -32,6 +32,7 @@ command = "gh api user --jq .login"
 # timeout_ms = 1000
 # max_width = 60
 # format = "{stdout}"
+refresh_on_command = ["gh auth login", "gh auth logout", "gh auth refresh"]
 
 [module.env]
 env = ["PTYLINE_ENV"]

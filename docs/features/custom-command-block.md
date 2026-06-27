@@ -34,6 +34,7 @@ command = "kubectl config current-context"
 interval_ms = 10000
 timeout_ms = 200
 format = "{stdout}"
+refresh_on_command = ["kubectl config use-context"]
 
 [style.kube]
 fg = "base.fg"
@@ -100,6 +101,12 @@ timeout_ms  = 200
 Commands run locally as trusted user configuration. OSC, socket input, child
 terminal output, theme files, and project metadata must never trigger command
 execution.
+
+`refresh_on_command` is a shell-integration trigger for exec modules. When an
+`exit_code` event arrives, ptyline compares the last foreground command against
+each pattern and refreshes matching modules immediately. Whitespace is
+canonicalized with `strings.Fields`, then matching is exact or prefix-with-space:
+`gh auth login` matches `gh auth login --web` but not `gh auth login2`.
 
 ## Command Parsing
 
@@ -169,6 +176,7 @@ Required safeguards:
 - no per-render execution;
 - no command execution from OSC or socket events;
 - no raw ANSI passthrough;
+- `refresh_on_command` may only trigger the module's existing configured command;
 - diagnostics for timeout, non-zero exit, and output truncation.
 
 Project-local config should not gain command execution automatically unless the

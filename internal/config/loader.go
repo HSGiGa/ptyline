@@ -134,7 +134,8 @@ func Validate(cfg *Config) error {
 		if module.Provider != "" && !oneOf(module.Provider, "command", "exec") {
 			return fmt.Errorf("module.%s.provider has invalid value %q", id, module.Provider)
 		}
-		if source == "exec" && module.Command == "" && (module.Enabled || module.Source != "" || module.Provider != "") {
+		if source == "exec" && module.Command == "" &&
+			(module.Enabled || module.Source != "" || module.Provider != "" || len(module.RefreshOnCommand) > 0) {
 			return fmt.Errorf("module.%s.command is required for source %q", id, source)
 		}
 		if module.Animation != "" && !oneOf(module.Animation, "none", "glint", "pulse", "blink") {

@@ -82,6 +82,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 		{name: "bad env name", body: "config_version = 1\n[module.env]\nenabled = true\nenv = [\"BAD-NAME\"]", key: "module.env.env"},
 		{name: "bad source", body: "config_version = 1\n[module.foo]\nsource = \"socket\"\ncommand = \"echo hi\"", key: "module.foo.source"},
 		{name: "exec source without command", body: "config_version = 1\n[module.foo]\nsource = \"exec\"", key: "module.foo.command"},
+		{name: "empty refresh command", body: "config_version = 1\n[module.foo]\ncommand = \"echo hi\"\nrefresh_on_command = [\"  \"]", key: "module.foo.refresh_on_command"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -106,6 +107,7 @@ format = "{gh} || {time_local}"
 
 [module.gh]
 command = "printf octo"
+refresh_on_command = ["gh auth login"]
 
 [module.time_local]
 source = "time"
@@ -123,6 +125,9 @@ format = "%H:%M"
 	}
 	if got := cfg.Modules["gh"].Command; got != "printf octo" {
 		t.Fatalf("gh command = %q", got)
+	}
+	if got := cfg.Modules["gh"].RefreshOnCommand; !reflect.DeepEqual(got, []string{"gh auth login"}) {
+		t.Fatalf("gh refresh_on_command = %q", got)
 	}
 	if got := cfg.Modules["time_local"].Source; got != "time" {
 		t.Fatalf("time_local source = %q, want time", got)
@@ -209,6 +214,11 @@ func TestValidateOverlayScope_ForbiddenFields(t *testing.T) {
 			name: "module timeout_ms forbidden",
 			body: "config_version = 1\n[module.kube]\ntimeout_ms = 200\n",
 			want: "module.kube.timeout_ms",
+		},
+		{
+			name: "module refresh_on_command forbidden",
+			body: "config_version = 1\n[module.kube]\nrefresh_on_command = [\"kubectl config use-context\"]\n",
+			want: "module.kube.refresh_on_command",
 		},
 		{
 			name: "module provider=command forbidden",
