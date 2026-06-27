@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -54,6 +55,9 @@ func (r *execModuleRuntime) start(ctx context.Context, bus *event.Bus) {
 }
 
 func (r *execModuleRuntime) refresh(ctx context.Context, bus *event.Bus) {
+	if ctx.Err() != nil {
+		return
+	}
 	if !r.refreshing.CompareAndSwap(false, true) {
 		return
 	}
@@ -86,4 +90,13 @@ func commandMatches(actual, pattern string) bool {
 
 func normalizeCommand(command string) string {
 	return strings.Join(strings.Fields(command), " ")
+}
+
+func exitCodeSuccess(value string) bool {
+	code, err := strconv.Atoi(value)
+	return err == nil && code == 0
+}
+
+func shouldRefreshAfterExit(exitCode, pendingCommand, lastCommand string) bool {
+	return exitCodeSuccess(exitCode) && pendingCommand != "" && pendingCommand == lastCommand
 }

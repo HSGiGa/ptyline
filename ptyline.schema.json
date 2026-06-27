@@ -394,7 +394,7 @@
     "WidthValue": {
       "type": "string",
       "description": "Block width: \"auto\", \"fill\", a number of cells (\"20\"), or a percentage (\"30%\").",
-      "pattern": "^(auto|fill|[1-9][0-9]*%?)$",
+      "pattern": "^(auto|fill|[1-9][0-9]*|[1-9][0-9]?%|100%)$",
       "examples": ["auto", "fill", "20", "30%"]
     }
   }

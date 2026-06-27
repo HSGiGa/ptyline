@@ -82,6 +82,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 		{name: "bad env name", body: "config_version = 1\n[module.env]\nenabled = true\nenv = [\"BAD-NAME\"]", key: "module.env.env"},
 		{name: "bad source", body: "config_version = 1\n[module.foo]\nsource = \"socket\"\ncommand = \"echo hi\"", key: "module.foo.source"},
 		{name: "exec source without command", body: "config_version = 1\n[module.foo]\nsource = \"exec\"", key: "module.foo.command"},
+		{name: "refresh command without command", body: "config_version = 1\n[module.foo]\nrefresh_on_command = [\"foo login\"]", key: "module.foo.command"},
 		{name: "empty refresh command", body: "config_version = 1\n[module.foo]\ncommand = \"echo hi\"\nrefresh_on_command = [\"  \"]", key: "module.foo.refresh_on_command"},
 	}
 	for _, test := range tests {
@@ -219,6 +220,11 @@ func TestValidateOverlayScope_ForbiddenFields(t *testing.T) {
 			name: "module refresh_on_command forbidden",
 			body: "config_version = 1\n[module.kube]\nrefresh_on_command = [\"kubectl config use-context\"]\n",
 			want: "module.kube.refresh_on_command",
+		},
+		{
+			name: "module source forbidden",
+			body: "config_version = 1\n[module.kube]\nsource = \"time\"\n",
+			want: "module.kube.source",
 		},
 		{
 			name: "module provider=command forbidden",

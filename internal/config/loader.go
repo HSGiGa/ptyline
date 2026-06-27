@@ -127,7 +127,7 @@ func Validate(cfg *Config) error {
 		}
 	}
 	for id, module := range cfg.Modules {
-		source := moduleSource(id, module)
+		source := ModuleSource(id, module)
 		if module.Source != "" && !oneOf(module.Source, "time", "exec") {
 			return fmt.Errorf("module.%s.source has invalid value %q", id, module.Source)
 		}
@@ -184,7 +184,14 @@ var builtinModuleIDs = map[string]bool{
 	"env": true, "cwd": true, "ssh": true, "git": true, "command": true,
 }
 
-func moduleSource(id string, module ModuleConfig) string {
+// IsBuiltinModuleID reports whether id is provided by ptyline itself.
+func IsBuiltinModuleID(id string) bool {
+	return builtinModuleIDs[id]
+}
+
+// ModuleSource resolves the effective source for a module. Unknown module IDs
+// default to exec unless an explicit source/provider is configured.
+func ModuleSource(id string, module ModuleConfig) string {
 	if module.Source != "" {
 		return module.Source
 	}
@@ -194,7 +201,7 @@ func moduleSource(id string, module ModuleConfig) string {
 	if module.Provider != "" {
 		return module.Provider
 	}
-	if !builtinModuleIDs[id] {
+	if !IsBuiltinModuleID(id) {
 		return "exec"
 	}
 	return ""
@@ -306,8 +313,8 @@ func ValidateOverlayScope(overlay Config, meta toml.MetaData) error {
 		if meta.IsDefined("module", id, "refresh_on_command") {
 			return fmt.Errorf("overlay must not set module.%s.refresh_on_command", id)
 		}
-		if meta.IsDefined("module", id, "source") && mod.Source == "exec" {
-			return fmt.Errorf("overlay must not set module.%s.source = \"exec\"", id)
+		if meta.IsDefined("module", id, "source") {
+			return fmt.Errorf("overlay must not set module.%s.source", id)
 		}
 		if meta.IsDefined("module", id, "provider") && mod.Provider == "command" {
 			return fmt.Errorf("overlay must not set module.%s.provider = \"command\"", id)

@@ -152,7 +152,7 @@ func run(opts options) int {
 	var execModules []*execModuleRuntime
 	var customTimeModules []status.Module
 	for id, mcfg := range resolvedCfg.Modules {
-		switch customModuleSource(id, mcfg) {
+		switch config.ModuleSource(id, mcfg) {
 		case "exec":
 			if mcfg.Command == "" {
 				continue
@@ -295,6 +295,7 @@ func run(opts options) int {
 	}
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
 	resizeDebouncer.Start(ctx, bus)
+	var pendingRefreshCommand string
 	loop.SetHandlers(proxy.Handlers{
 		WriteInput: func(data []byte) error {
 			if len(data) > 0 {
@@ -353,6 +354,9 @@ func run(opts options) int {
 		},
 		ShellMeta: func(key, value string) {
 			state.ApplyShellMeta(key, value)
+			if key == shellintegration.KeyCommand && value != "" {
+				pendingRefreshCommand = state.Shell.LastCommand
+			}
 			if key == shellintegration.KeyColors {
 				shellStyles = shellcolors.ParseToStyles(value)
 				render.SetStyles(mergedStyles())
@@ -386,9 +390,12 @@ func run(opts options) int {
 				})
 			}
 			if key == shellintegration.KeyExitCode {
-				for _, m := range execModules {
-					m.refreshAfterCommand(ctx, bus, state.Shell.LastCommand)
+				if shouldRefreshAfterExit(value, pendingRefreshCommand, state.Shell.LastCommand) {
+					for _, m := range execModules {
+						m.refreshAfterCommand(ctx, bus, pendingRefreshCommand)
+					}
 				}
+				pendingRefreshCommand = ""
 			}
 			if snap := cmdTracker.ApplyShellMeta(key, &state); snap != nil {
 				state.UpdateModule(*snap)
