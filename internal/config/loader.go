@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/hsgiga/ptyline/internal/status/layout"
 )
 
 // Load reads, migrates, and parses the config. The flow is:
@@ -128,8 +129,11 @@ func Validate(cfg *Config) error {
 	}
 	for id, module := range cfg.Modules {
 		source := ModuleSource(id, module)
-		if module.Source != "" && !oneOf(module.Source, "time", "exec") {
+		if module.Source != "" && !oneOf(module.Source, "time", "exec", "template") {
 			return fmt.Errorf("module.%s.source has invalid value %q", id, module.Source)
+		}
+		if source == "template" && module.Format == "" {
+			return fmt.Errorf("module.%s.format is required for source \"template\"", id)
 		}
 		if module.Provider != "" && !oneOf(module.Provider, "command", "exec") {
 			return fmt.Errorf("module.%s.provider has invalid value %q", id, module.Provider)
@@ -164,6 +168,29 @@ func Validate(cfg *Config) error {
 		for _, pattern := range module.RefreshOnCommand {
 			if strings.Join(strings.Fields(pattern), " ") == "" {
 				return fmt.Errorf("module.%s.refresh_on_command has an empty pattern", id)
+			}
+		}
+	}
+	// Cross-module check: template modules must not reference other templates or themselves.
+	templateIDs := map[string]bool{}
+	for id, module := range cfg.Modules {
+		if ModuleSource(id, module) == "template" {
+			templateIDs[id] = true
+		}
+	}
+	for id, module := range cfg.Modules {
+		if !templateIDs[id] {
+			continue
+		}
+		for _, b := range layout.ParseFormat(module.Format) {
+			if b.IsLiteral() {
+				continue
+			}
+			if b.ModuleID == id {
+				return fmt.Errorf("module.%s: template cannot reference itself", id)
+			}
+			if templateIDs[b.ModuleID] {
+				return fmt.Errorf("module.%s: template cannot reference another template module %q", id, b.ModuleID)
 			}
 		}
 	}

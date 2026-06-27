@@ -46,6 +46,9 @@ type Renderer struct {
 	// animations enables visual effects by module ID. Effects are applied after
 	// layout so ANSI bytes never affect display-width calculations.
 	animations map[string]Animation
+	// templates holds pre-parsed template module specs resolved at render time
+	// from cached snapshots (no provider calls, no goroutines).
+	templates map[string]TemplateSpec
 	// base is the SGR establishing the bar's base colors, re-emitted after every
 	// styled segment so the background spans the whole row. Empty in no-color mode.
 	base string
@@ -59,7 +62,7 @@ type Animation struct {
 // New creates a renderer over a layout engine and theme. A nil theme renders
 // plain (no-color) output.
 func New(engine *layout.Engine, th *theme.Theme) *Renderer {
-	r := &Renderer{engine: engine, theme: th, styles: map[string]style.Style{}, animations: map[string]Animation{}}
+	r := &Renderer{engine: engine, theme: th, styles: map[string]style.Style{}, animations: map[string]Animation{}, templates: map[string]TemplateSpec{}}
 	if th != nil && th.Mode() != theme.NoColor {
 		r.base = th.FG("base.fg") + th.BG("base.bg")
 	}
@@ -70,6 +73,14 @@ func New(engine *layout.Engine, th *theme.Theme) *Renderer {
 func (r *Renderer) SetStyles(styles map[string]style.Style) {
 	if styles != nil {
 		r.styles = styles
+	}
+}
+
+// SetTemplates installs pre-parsed template module specs. Called once after
+// config load; template values are resolved from cached snapshots at render time.
+func (r *Renderer) SetTemplates(templates map[string]TemplateSpec) {
+	if templates != nil {
+		r.templates = templates
 	}
 }
 
@@ -111,7 +122,7 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	values := make([]string, len(blocks))
 	styles := make([]style.Style, len(blocks))
 	for i, block := range blocks {
-		values[i] = blockValue(st, block)
+		values[i] = blockValue(st, block, r.templates)
 		styles[i] = r.styleFor(block)
 		if !block.IsLiteral() && values[i] == "" {
 			continue
@@ -265,11 +276,15 @@ func (r *Renderer) animationMode(st status.StatusState, block layout.Block) stri
 // styleAttrs delegates to style.Style.attrs() to avoid duplicating SGR logic.
 func styleAttrs(s style.Style) string { return s.Attrs() }
 
-func blockValue(st status.StatusState, block layout.Block) string {
+func blockValue(st status.StatusState, block layout.Block, templates map[string]TemplateSpec) string {
 	if block.IsLiteral() {
 		return block.Text // trusted user config, no sanitization
 	}
-	snapshot, ok := st.Modules[status.ModuleID(canonicalModuleID(block.ModuleID))]
+	id := canonicalModuleID(block.ModuleID)
+	if tmpl, ok := templates[id]; ok {
+		return resolveTemplate(st, tmpl)
+	}
+	snapshot, ok := st.Modules[status.ModuleID(id)]
 	if !ok || snapshot.Err != nil {
 		return ""
 	}

@@ -164,6 +164,8 @@ func run(opts options) int {
 				mcfg.Format,
 				moduleInterval(mcfg, time.Second),
 			))
+		case "template":
+			// resolved in renderer from cached snapshots; no runtime needed
 		}
 	}
 	// Initial synchronous paint so the bar shows values immediately; the
@@ -239,6 +241,7 @@ func run(opts options) int {
 	render := renderer.New(layout.New(int(size.Cols)), visuals.Theme)
 	render.SetStyles(mergedStyles())
 	render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 	var resizePending bool
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
@@ -291,6 +294,7 @@ func run(opts options) int {
 		render = renderer.New(layout.New(int(state.Terminal.Cols)), visuals.Theme)
 		render.SetStyles(mergedStyles())
 		render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 		redraw()
 	}
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -342,6 +346,7 @@ func run(opts options) int {
 			render = renderer.New(layout.New(int(cols)), visuals.Theme)
 			render.SetStyles(mergedStyles())
 			render.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
+	render.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()

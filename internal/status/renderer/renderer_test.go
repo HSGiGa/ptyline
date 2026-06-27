@@ -342,3 +342,90 @@ var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 func stripANSI(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
 }
+
+// --- Template module tests ---
+
+func newStateWithModules(cols int, kvs map[string]string) status.StatusState {
+	st := status.NewState()
+	st.Resize(uint16(cols), 1, false)
+	for id, val := range kvs {
+		st.UpdateModule(status.ModuleSnapshot{ID: status.ModuleID(id), Value: status.Text(val)})
+	}
+	return st
+}
+
+func TestTemplateBasicExpand(t *testing.T) {
+	st := newStateWithModules(80, map[string]string{"user": "alice", "hostname": "myhost"})
+	r := New(layout.New(80), nil)
+	r.SetTemplates(map[string]TemplateSpec{
+		"identity": {Blocks: layout.ParseFormat("{user}@{hostname}")},
+	})
+	out := stripANSI(r.Render(st, layout.ParseFormat("{identity}")).Line)
+	if !strings.Contains(out, "alice@myhost") {
+		t.Fatalf("template expand = %q, want alice@myhost", out)
+	}
+}
+
+func TestTemplateHideWhenEmptyAllEmpty(t *testing.T) {
+	st := newStateWithModules(80, map[string]string{"user": "", "hostname": ""})
+	r := New(layout.New(80), nil)
+	r.SetTemplates(map[string]TemplateSpec{
+		"identity": {
+			Blocks:        layout.ParseFormat("{user}@{hostname}"),
+			HideWhenEmpty: true,
+		},
+	})
+	out := stripANSI(r.Render(st, layout.ParseFormat("{identity}")).Line)
+	if strings.Contains(out, "@") {
+		t.Fatalf("should be hidden when all modules empty, got %q", out)
+	}
+}
+
+func TestTemplateHideWhenEmptyOneNonEmpty(t *testing.T) {
+	st := newStateWithModules(80, map[string]string{"user": "alice", "hostname": ""})
+	r := New(layout.New(80), nil)
+	r.SetTemplates(map[string]TemplateSpec{
+		"identity": {
+			Blocks:        layout.ParseFormat("{user}@{hostname}"),
+			HideWhenEmpty: true,
+		},
+	})
+	out := stripANSI(r.Render(st, layout.ParseFormat("{identity}")).Line)
+	if !strings.Contains(out, "alice") {
+		t.Fatalf("should show when at least one module non-empty, got %q", out)
+	}
+	if !strings.Contains(out, "@") {
+		t.Fatalf("literal should be kept when at least one module non-empty, got %q", out)
+	}
+}
+
+func TestTemplateCollapseWhitespace(t *testing.T) {
+	st := newStateWithModules(80, map[string]string{"a": "foo", "b": "bar"})
+	r := New(layout.New(80), nil)
+	r.SetTemplates(map[string]TemplateSpec{
+		"combo": {
+			Blocks:             layout.ParseFormat("{a}  {b}"),
+			CollapseWhitespace: true,
+		},
+	})
+	out := strings.TrimSpace(stripANSI(r.Render(st, layout.ParseFormat("{combo}")).Line))
+	if strings.Contains(out, "  ") {
+		t.Fatalf("double space not collapsed: %q", out)
+	}
+	if out != "foo bar" {
+		t.Fatalf("collapse result = %q, want %q", out, "foo bar")
+	}
+}
+
+func TestTemplateMaxWidth(t *testing.T) {
+	st := newStateWithModules(80, map[string]string{"msg": "hello world"})
+	r := New(layout.New(80), nil)
+	r.SetTemplates(map[string]TemplateSpec{
+		"short": {Blocks: layout.ParseFormat("{msg}"), MaxWidth: 5},
+	})
+	out := stripANSI(r.Render(st, layout.ParseFormat("{short}")).Line)
+	trimmed := strings.TrimSpace(out)
+	if width.String(trimmed) > 5 {
+		t.Fatalf("template max_width not applied: %q", trimmed)
+	}
+}

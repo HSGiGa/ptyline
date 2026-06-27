@@ -189,13 +189,23 @@
         },
         "source": {
           "type": "string",
-          "enum": ["time", "exec"],
-          "description": "Provider source for custom modules. Unknown module IDs default to exec when omitted."
+          "enum": ["time", "exec", "template"],
+          "description": "Provider source. \"exec\" runs a shell command; \"time\" clones the time module under a new ID; \"template\" composes other module values into one block."
         },
         "format": {
           "type": "string",
-          "description": "Output format template. Supports {stdout}, {stderr}, {exit_code} for command modules, or strftime patterns for time.",
-          "examples": ["%H:%M:%S", "{stdout}", "{active} {last} {exit} {duration}"]
+          "description": "Output format. For exec: {stdout}/{stderr}/{exit_code}. For time: strftime pattern. For template: {module_id} placeholders.",
+          "examples": ["%H:%M:%S", "{stdout}", "{user}@{hostname} {cwd}", "{active} {last} {exit} {duration}"]
+        },
+        "collapse_whitespace": {
+          "type": "boolean",
+          "description": "Collapse consecutive whitespace in the assembled template value to a single space.",
+          "default": false
+        },
+        "hide_when_empty": {
+          "type": "boolean",
+          "description": "Return an empty value (hiding the block) when all referenced modules expand to empty. Literal separators do not keep the template alive.",
+          "default": false
         },
         "mode": {
           "type": "string",
