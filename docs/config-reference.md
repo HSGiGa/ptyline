@@ -15,18 +15,23 @@ built-in `config.Default()` is used (spec §13).
 ## Project-local `.ptyline`
 
 After a shell reports a `cwd` change, ptyline searches that directory and its
-parents for the nearest `.ptyline` TOML file. Its validated `bar.format` is used
-for the active directory tree; leaving the tree restores the base bar format.
-
-Use the normal `config_version = 1` header. At runtime this file changes only bar
-presentation; it must not be used to choose child commands or execute commands.
+parents for the nearest `.ptyline` TOML file. Project config is a visual/profile
+overlay on top of the main config and the optional CLI-selected overlay: it may
+adjust presentation, but it must not choose child commands or define custom
+command modules.
 
 ```toml
 config_version = 1
 
 [bar]
-format = "{hostname} {cwd} || {time}"
+format = "{cwd} || {git} || {time}"
+
+[module.env]
+env = ["APP_ENV", "REGION"]
 ```
+
+See `docs/features/project-bar-overlays.md` for the planned `--ptyline` overlay
+and project `.ptyline` contract.
 
 ## Format & versioning
 
