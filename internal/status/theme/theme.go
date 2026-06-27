@@ -41,20 +41,23 @@ func New(mode Mode, palette map[string]RGB) *Theme {
 	return &Theme{mode: mode, palette: palette}
 }
 
-// DefaultPalette returns a copy of the built-in readable dark palette.
+// DefaultPalette returns the built-in terminal-native palette. It uses only the
+// 16 ANSI system colors that every terminal theme remaps, with no explicit
+// background, so the bar inherits the terminal emulator's own color scheme.
 func DefaultPalette() map[string]RGB {
 	return map[string]RGB{
-		"base.bg": {30, 30, 46},
-		"base.fg": {205, 214, 244},
-		"accent":  {137, 180, 250},
-		"ok":      {166, 227, 161},
-		"warn":    {249, 226, 175},
-		"error":   {243, 139, 168},
-		"muted":   {147, 153, 178},
+		// No base.bg / base.fg: terminal default colors are used as-is.
+		// Standard ANSI 0-7 colors match shell prompt conventions (bash/zsh/fish use
+		// bold + standard color, not bright variants, for user@host / cwd / errors).
+		"accent": namedColors["brightcyan"],  // 14 — accent highlights, SSH
+		"ok":     namedColors["green"],       // 2  — git clean, hostname (matches bash \u@\h bold green)
+		"warn":   namedColors["yellow"],      // 3  — git modified, time
+		"error":  namedColors["red"],         // 1  — exit code, git conflict
+		"muted":  namedColors["brightblack"], // 8  — separators, frame chrome (needs gray, not black)
 	}
 }
 
-// Default returns the built-in readable dark palette (Catppuccin-Mocha-derived).
+// Default returns the built-in terminal-native palette.
 // It is legible without Nerd Fonts or emoji (spec §20.15).
 func Default(mode Mode) *Theme {
 	return New(mode, DefaultPalette())

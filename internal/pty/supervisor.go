@@ -115,6 +115,9 @@ func (s *Supervisor) Wait() (int, error) {
 	return s.waitCode, s.waitErr
 }
 
+// SetArea updates the reserved area (after a bar-height change from an overlay).
+func (s *Supervisor) SetArea(area reserved.Area) { s.area = area }
+
 // Resize updates the child PTY size to terminal rows minus reserved rows. Called
 // (debounced) on every real-terminal resize (spec §8.2, §12).
 func (s *Supervisor) Resize(terminal Size) error {

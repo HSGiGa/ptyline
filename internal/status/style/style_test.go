@@ -23,8 +23,9 @@ func TestApplyNoColorPlain(t *testing.T) {
 // Truecolor mode emits fg, bg, attributes, padded content, then a reset.
 func TestApplyTrueColorGolden(t *testing.T) {
 	th := theme.Default(theme.TrueColor)
-	s := Style{FG: "accent", BG: "base.bg", Bold: true, PaddingLeft: 1, PaddingRight: 1}
-	want := "\x1b[38;2;137;180;250m" + "\x1b[48;2;30;30;46m" + "\x1b[1m" + " host " + theme.Reset
+	// accent=brightcyan RGB{0,255,255}; error=standard red RGB{205,0,0}
+	s := Style{FG: "accent", BG: "error", Bold: true, PaddingLeft: 1, PaddingRight: 1}
+	want := "\x1b[38;2;0;255;255m" + "\x1b[48;2;205;0;0m" + "\x1b[1m" + " host " + theme.Reset
 	if got := s.Apply("host", th); got != want {
 		t.Fatalf("Apply truecolor =\n %q\nwant\n %q", got, want)
 	}

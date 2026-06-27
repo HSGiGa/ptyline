@@ -70,6 +70,9 @@ func (f *AnsiFilter) SetDiagHandler(fn func(msg string)) { f.onDiag = fn }
 // the right bottom row.
 func (f *AnsiFilter) SetRows(rows uint16) { f.rows = rows }
 
+// SetArea updates the reserved area (after a bar-height change).
+func (f *AnsiFilter) SetArea(area reserved.Area) { f.area = area }
+
 // AltActive reports whether the child is currently in the alternate screen.
 func (f *AnsiFilter) AltActive() bool { return f.alt.Active }
 

@@ -20,7 +20,7 @@ type altScreenCoordinator struct {
 	sup    *pty.Supervisor
 	writer *proxy.TerminalWriter
 	state  *status.StatusState
-	area   reserved.Area
+	area   *reserved.Area
 	redraw func()
 
 	pendingVal bool
@@ -56,6 +56,6 @@ func (c *altScreenCoordinator) Apply(active bool) {
 	// Leaving alt: terminal has just restored the normal screen and the pre-alt
 	// cursor; re-establish the child size and the protected region, then repaint.
 	_ = c.sup.Resize(pty.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows})
-	c.ctrl.ApplyScrollRegion(terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}, c.area)
+	c.ctrl.ApplyScrollRegion(terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}, *c.area)
 	c.redraw()
 }

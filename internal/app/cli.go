@@ -13,13 +13,17 @@ Usage:
   ptyline init <shell>
 
 Flags:
-  --config <path>   use a specific config file
-  --config=<path>   use a specific config file
-  --version         print version and exit
-  --help            show this help
+  --config <path>          use a specific config file
+  --config=<path>          use a specific config file
+  --ptyline <path>         apply a visual overlay (.ptyline file or short name)
+  --ptyline=<path>         same, equals form
+  --no-project-ptyline     disable automatic project .ptyline discovery
+  --version                print version and exit
+  --help                   show this help
 
 Examples:
   ptyline                       run the configured shell or $SHELL
+  ptyline --ptyline compact     apply ~/.config/ptyline/compact.ptyline overlay
   ptyline -- zsh                run zsh inside the wrapper
   ptyline -- ssh host.example   run any command (everything after -- is the child)
   ptyline init bash             print the bash shell-integration script
@@ -27,11 +31,13 @@ Examples:
 
 // options is the parsed CLI invocation.
 type options struct {
-	ConfigPath  string
-	Child       []string
-	InitShell   string
-	ShowVersion bool
-	ShowHelp    bool
+	ConfigPath       string
+	OverlayPath      string // --ptyline (short name or path)
+	NoProjectPtyline bool   // --no-project-ptyline
+	Child            []string
+	InitShell        string
+	ShowVersion      bool
+	ShowHelp         bool
 }
 
 // parseArgs is a minimal hand-rolled parser. Flags precede the child command;
@@ -56,6 +62,14 @@ func parseArgs(args []string) (options, error) {
 			}
 			i++
 			o.ConfigPath = args[i]
+		case "--ptyline":
+			if i+1 >= len(args) {
+				return o, errors.New("--ptyline requires a path or short name")
+			}
+			i++
+			o.OverlayPath = args[i]
+		case "--no-project-ptyline":
+			o.NoProjectPtyline = true
 		case "init":
 			if i+1 >= len(args) {
 				return o, errors.New("init requires a shell name")
@@ -68,6 +82,13 @@ func parseArgs(args []string) (options, error) {
 					return o, errors.New("--config requires a path")
 				}
 				o.ConfigPath = path
+				continue
+			}
+			if path, ok := strings.CutPrefix(a, "--ptyline="); ok {
+				if path == "" {
+					return o, errors.New("--ptyline requires a path or short name")
+				}
+				o.OverlayPath = path
 				continue
 			}
 			if strings.HasPrefix(a, "-") {

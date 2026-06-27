@@ -122,3 +122,206 @@ func TestFindProjectConfig(t *testing.T) {
 		t.Fatalf("FindProjectConfig() = (%q, %t), want (%q, true)", got, ok, configPath)
 	}
 }
+
+func TestResolveOverlayPath(t *testing.T) {
+	// Full path returned as-is.
+	if got := ResolveOverlayPath("/tmp/my.ptyline"); got != "/tmp/my.ptyline" {
+		t.Errorf("ResolveOverlayPath(/tmp/my.ptyline) = %q, want as-is", got)
+	}
+	// Relative path with separator returned as-is.
+	if got := ResolveOverlayPath("./compact.ptyline"); got != "./compact.ptyline" {
+		t.Errorf("ResolveOverlayPath(./compact.ptyline) = %q, want as-is", got)
+	}
+	// Empty string returns empty.
+	if got := ResolveOverlayPath(""); got != "" {
+		t.Errorf("ResolveOverlayPath() = %q, want empty", got)
+	}
+	// Short name resolves to config dir.
+	got := ResolveOverlayPath("compact")
+	if !strings.HasSuffix(got, filepath.Join("ptyline", "compact.ptyline")) {
+		t.Errorf("ResolveOverlayPath(compact) = %q, want ...ptyline/compact.ptyline", got)
+	}
+}
+
+func TestValidateOverlayScope_ForbiddenFields(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	tests := []struct {
+		name string
+		body string
+		want string // substring expected in error
+	}{
+		{
+			name: "shell forbidden",
+			body: "config_version = 1\nshell = \"zsh\"\n",
+			want: "shell",
+		},
+		{
+			name: "refresh_interval_ms forbidden",
+			body: "config_version = 1\nrefresh_interval_ms = 500\n",
+			want: "refresh_interval_ms",
+		},
+		{
+			name: "module command forbidden",
+			body: "config_version = 1\n[module.kube]\ncommand = \"kubectl config current-context\"\n",
+			want: "module.kube.command",
+		},
+		{
+			name: "module timeout_ms forbidden",
+			body: "config_version = 1\n[module.kube]\ntimeout_ms = 200\n",
+			want: "module.kube.timeout_ms",
+		},
+		{
+			name: "module provider=command forbidden",
+			body: "config_version = 1\n[module.kube]\nprovider = \"command\"\n",
+			want: "module.kube.provider",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := write(tc.name+".ptyline", tc.body)
+			_, err := ApplyOverlays(Default(), path)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ApplyOverlays() error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestMergeOverlay_MapMergeByKey(t *testing.T) {
+	dir := t.TempDir()
+	overlayPath := filepath.Join(dir, "overlay.ptyline")
+	overlayBody := `config_version = 1
+
+[module.env]
+env = ["PROJECT_ENV"]
+
+[style.myblock]
+fg = "#ff0000"
+`
+	if err := os.WriteFile(overlayPath, []byte(overlayBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := Default()
+	base.Modules["time"] = ModuleConfig{Enabled: true, Format: "%H:%M:%S"}
+
+	result, err := ApplyOverlays(base, overlayPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// time module should still exist (not replaced by overlay)
+	if m := result.Modules["time"]; !m.Enabled || m.Format != "%H:%M:%S" {
+		t.Errorf("time module = %+v, want preserved", m)
+	}
+	// env module env list should be replaced
+	if got, want := result.Modules["env"].Env, []string{"PROJECT_ENV"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("env.Env = %v, want %v", got, want)
+	}
+	// style added by overlay
+	if s, ok := result.Styles["myblock"]; !ok || s.FG != "#ff0000" {
+		t.Errorf("styles[myblock] = %+v, want fg=#ff0000", s)
+	}
+}
+
+func TestMergeOverlay_SliceReplaces(t *testing.T) {
+	dir := t.TempDir()
+	overlayPath := filepath.Join(dir, "overlay.ptyline")
+	overlayBody := `config_version = 1
+
+[[bar.row]]
+format = "{hostname} || {time}"
+`
+	if err := os.WriteFile(overlayPath, []byte(overlayBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := Default() // has 2 rows
+	result, err := ApplyOverlays(base, overlayPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(result.Bar.Rows); got != 1 {
+		t.Errorf("bar.row count = %d, want 1 (overlay replaced the slice)", got)
+	}
+	if got, want := result.Bar.Rows[0].Format, "{hostname} || {time}"; got != want {
+		t.Errorf("bar.row[0].format = %q, want %q", got, want)
+	}
+}
+
+func TestMergeOverlay_BoolExplicit(t *testing.T) {
+	dir := t.TempDir()
+	disablePath := filepath.Join(dir, "disable.ptyline")
+	disableBody := `config_version = 1
+
+[module.git]
+enabled = false
+`
+	if err := os.WriteFile(disablePath, []byte(disableBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := Default()
+	base.Bar.Format = "{cwd} || {git} || {time}"
+	// git is referenced in bar format, but overlay explicitly disables it
+	result, err := ApplyOverlays(base, disablePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Modules["git"].Enabled {
+		t.Error("git module should remain disabled (explicit enabled=false beats inference)")
+	}
+}
+
+func TestInferActiveModules(t *testing.T) {
+	dir := t.TempDir()
+	overlayPath := filepath.Join(dir, "overlay.ptyline")
+	// overlay changes the format to include hostname; hostname is not enabled in Default
+	overlayBody := `config_version = 1
+
+[bar]
+format = "{hostname} || {time}"
+`
+	if err := os.WriteFile(overlayPath, []byte(overlayBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := Default()
+	result, err := ApplyOverlays(base, overlayPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// hostname not in Default modules but referenced in format → should be auto-enabled
+	if m := result.Modules["hostname"]; !m.Enabled {
+		t.Error("hostname module should be auto-enabled by bar format reference")
+	}
+	// time still enabled
+	if m := result.Modules["time"]; !m.Enabled {
+		t.Error("time module should remain enabled")
+	}
+}
+
+func TestApplyOverlays_Layering(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	// CLI overlay sets format to single block
+	cliPath := write("cli.ptyline", "config_version = 1\n[bar]\nformat = \"{time}\"\n")
+	// Project overlay overrides format (highest precedence)
+	projPath := write("proj.ptyline", "config_version = 1\n[bar]\nformat = \"{hostname}\"\n")
+
+	result, err := ApplyOverlays(Default(), cliPath, projPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := result.Bar.Format, "{hostname}"; got != want {
+		t.Errorf("bar.format = %q, want %q (project overlay wins)", got, want)
+	}
+}

@@ -19,8 +19,8 @@ func TestNoColorEmitsNothing(t *testing.T) {
 func TestTrueColorResolution(t *testing.T) {
 	th := Default(TrueColor)
 	cases := []struct{ ref, want string }{
-		{"base.bg", "\x1b[48;2;30;30;46m"}, // BG layer
-		{"#ff0000", "\x1b[48;2;255;0;0m"},
+		{"base.bg", ""},                    // not in terminal-native palette → no bg emitted
+		{"#ff0000", "\x1b[48;2;255;0;0m"}, // BG layer
 		{"bogus", ""},
 		{"", ""},
 	}
@@ -29,7 +29,8 @@ func TestTrueColorResolution(t *testing.T) {
 			t.Errorf("BG(%q) = %q, want %q", c.ref, got, c.want)
 		}
 	}
-	if got, want := th.FG("accent"), "\x1b[38;2;137;180;250m"; got != want {
+	// accent = brightcyan (ANSI 14) = RGB{0,255,255}
+	if got, want := th.FG("accent"), "\x1b[38;2;0;255;255m"; got != want {
 		t.Errorf("FG(accent) = %q, want %q", got, want)
 	}
 }

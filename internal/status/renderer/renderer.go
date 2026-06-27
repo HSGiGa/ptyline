@@ -219,21 +219,24 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 			return s
 		}
 	}
-	s := style.Style{FG: "base.fg", BG: "base.bg"}
+	s := style.Style{} // no explicit fg/bg: terminal defaults
 	if block.IsLiteral() {
+		s.FG = "muted" // separators and frame chrome in bright black (8)
 		return s
 	}
 	switch moduleID {
 	case "hostname":
-		s.FG, s.Bold = "accent", true
-	case "time":
-		s.FG = "muted"
+		s.FG, s.Bold = "ok", true // brightgreen 10 — matches user@host convention in bash/zsh/fish
 	case "cwd":
-		s.FG = "base.fg"
+		s.FG, s.Bold = "blue", true // 4 bold — matches bash \w (\e[01;34m)
+	case "time":
+		s.FG = "warn" // brightyellow 11
 	case "git":
-		s.FG, s.Bold = "ok", true
+		s.FG, s.Bold = "ok", true // brightgreen 10; error/warn states are post-MVP
 	case "command":
-		s.FG = "#f2b35d"
+		// terminal default fg — command text blends with the frame line
+	case "exit_code":
+		s.FG = "error" // brightred 9
 	case "ssh":
 		s.FG, s.Bold = "warn", true
 	}

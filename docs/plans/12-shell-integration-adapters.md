@@ -62,3 +62,23 @@ fixture and assert `Supported()`/`Script` surface it with no code change.
 
 ## Out of scope
 Additional shell adapters (nushell, PowerShell) — post-MVP (spec §19).
+
+## Post-MVP extension: shell color sync
+
+Each integration template reads the shell's color variables and emits them via a
+new `OSC 777;colors;<key>=<value>;...` message at startup. Ptyline applies them
+to the live theme, overriding the hardcoded defaults.
+
+Mapping per shell:
+- **fish**: `$fish_color_cwd`, `$fish_color_host`, `$fish_color_host_remote`,
+  `$fish_color_user`, `$fish_color_error`, `$fish_color_status`,
+  `$fish_color_command` → normalize to canonical form (`green`, `brred`, `normal`…)
+- **zsh**: read oh-my-zsh / p10k theme vars if present, else fallback to defaults
+- **bash**: no color vars → template emits nothing; ptyline uses defaults as-is
+
+Protocol: `colors` key, values are `element=color` pairs separated by `;`.
+Color names follow fish conventions (`normal`, `green`, `brgreen`, `--bold`, etc.)
+and are parsed into the token palette. Unknown elements are ignored.
+
+**Design invariant:** defaults (current hardcoded palette) must be valid for bash
+without integration — they are the universal fallback. Integration only overrides.

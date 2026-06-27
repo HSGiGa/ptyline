@@ -6,6 +6,10 @@
 # executable content (spec §9, §17). Values are emitted in canonical form here —
 # exit_code as a plain integer, duration_ms already in milliseconds, cwd absolute
 # — so the Go side consumes one representation for every shell.
+#
+# colors: bash has no standard color variable system ($PS1 embeds raw ANSI escapes,
+# not named color variables), so the "colors" key is not emitted here. ptyline uses
+# its default palette which already matches bash prompt conventions.
 
 __ptyline_emit() { printf '\e]777;%s=%s\e\\' "$1" "$2"; }
 __ptyline_now_ms() { date +%s%3N; }
