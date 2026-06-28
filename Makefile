@@ -2,7 +2,7 @@
 # Requires the Go toolchain (go 1.23+). See README.md for installation.
 
 BINARY      := ptyline
-CONFIG      ?= $(CURDIR)/$(DIST)/.config/ptyline/config.toml
+CONFIG      ?= $(CURDIR)/config/config.toml
 PKG         := ./cmd/ptyline
 DIST        := dist
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
