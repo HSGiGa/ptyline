@@ -150,7 +150,7 @@ func run(opts options) int {
 
 	// sshBaseSnap is the env-based SSH snapshot (inbound SSH detection); stable
 	// for the session lifetime and NOT reset on config reload.
-	sshBaseSnap := modules.NewSSH().Refresh(nil)
+	sshBaseSnap := modules.NewSSH().Refresh(context.TODO())
 	state.UpdateModule(sshBaseSnap)
 	sshAnim := modules.NewSSHAnimator(sshBaseSnap)
 
@@ -223,10 +223,10 @@ func run(opts options) int {
 	})
 
 	var (
-		timeModule  *modules.Time
-		dateModule  *modules.Time
-		gitMod      *modules.Git
-		gitCancel   context.CancelFunc
+		timeModule   *modules.Time
+		dateModule   *modules.Time
+		gitMod       *modules.Git
+		gitCancel    context.CancelFunc
 		tickerCancel context.CancelFunc
 	)
 	userMods := map[string]*userModEntry{}
@@ -286,12 +286,12 @@ func run(opts options) int {
 			}
 			em := newExecModuleRuntime(id, mcfg)
 			em.start(mCtx, bus)
-			state.UpdateModule(em.module.Refresh(nil))
+			state.UpdateModule(em.module.Refresh(context.TODO()))
 			userMods[id] = &userModEntry{cancel: mCancel, command: mcfg.Command, interval: interval, exec: em}
 		case "time":
 			tm := modules.NewTimeWithID(id, mcfg.Format, interval)
 			scheduler.Start(mCtx, tm, 2*time.Second)
-			state.UpdateModule(tm.Refresh(nil))
+			state.UpdateModule(tm.Refresh(context.TODO()))
 			userMods[id] = &userModEntry{cancel: mCancel, interval: interval}
 		default:
 			mCancel()
@@ -312,7 +312,7 @@ func run(opts options) int {
 			modules.NewShell(argv), modules.NewEnv(resolvedCfg.Modules["env"].Env),
 		}
 		for _, m := range builtins {
-			state.UpdateModule(m.Refresh(nil))
+			state.UpdateModule(m.Refresh(context.TODO()))
 		}
 
 		gitCtx, gCancel := context.WithCancel(ctx)
@@ -348,7 +348,7 @@ func run(opts options) int {
 			gitCtx, gCancel := context.WithCancel(ctx)
 			gitCancel = gCancel
 			scheduler.Start(gitCtx, gitMod, time.Second)
-			state.UpdateModule(gitMod.Refresh(nil))
+			state.UpdateModule(gitMod.Refresh(context.TODO()))
 		}
 
 		// User-defined: build the desired set from new config.
@@ -396,7 +396,7 @@ func run(opts options) int {
 			modules.NewHostname(), modules.NewUser(),
 			modules.NewRuntime(profile), modules.NewShell(argv),
 		} {
-			state.UpdateModule(m.Refresh(nil))
+			state.UpdateModule(m.Refresh(context.TODO()))
 		}
 	}
 

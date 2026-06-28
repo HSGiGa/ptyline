@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ func TestDateDefaultFormat(t *testing.T) {
 	if m.ID() != "date" {
 		t.Fatalf("Date.ID() = %q, want date", m.ID())
 	}
-	snap := m.Refresh(nil)
+	snap := m.Refresh(context.TODO())
 	if snap.Value.Text == "" {
 		t.Fatal("Date.Refresh() returned empty value")
 	}
@@ -33,7 +34,7 @@ func TestTimeWithCustomID(t *testing.T) {
 	if got := module.ID(); got != "time_local" {
 		t.Fatalf("Time.ID() = %q, want time_local", got)
 	}
-	if module.Refresh(nil).ID != "time_local" {
+	if module.Refresh(context.TODO()).ID != "time_local" {
 		t.Fatalf("custom time refresh used wrong module id")
 	}
 }
@@ -80,7 +81,7 @@ func TestEnvValue(t *testing.T) {
 	if got := module.Interval(); got != 0 {
 		t.Fatalf("Env.Interval() = %v, want event-driven", got)
 	}
-	if got := module.Refresh(nil).Value.Text; got != "staging" {
+	if got := module.Refresh(context.TODO()).Value.Text; got != "staging" {
 		t.Fatalf("Env.Refresh() = %q, want staging", got)
 	}
 }

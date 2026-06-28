@@ -98,8 +98,8 @@ func (s *Supervisor) Pid() int {
 func (s *Supervisor) Wait() (int, error) {
 	s.waitOnce.Do(func() {
 		err := s.cmd.Wait()
-		switch {
-		case err == nil:
+		switch err {
+		case nil:
 			s.waitCode = 0
 		default:
 			var exitErr *exec.ExitError

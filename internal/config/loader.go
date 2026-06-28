@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -207,24 +206,7 @@ func ModuleSource(id string, module ModuleConfig) string {
 	return ""
 }
 
-var (
-	numericWidth = regexp.MustCompile(`^[1-9][0-9]*%?$`)
-	envName      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-)
-
-func validWidth(width string) bool {
-	if width == "auto" || width == "fill" {
-		return true
-	}
-	if !numericWidth.MatchString(width) {
-		return false
-	}
-	if !strings.HasSuffix(width, "%") {
-		return true
-	}
-	percent, _ := strconv.Atoi(strings.TrimSuffix(width, "%"))
-	return percent <= 100
-}
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validEnvName(name string) bool {
 	return envName.MatchString(name)
@@ -329,7 +311,7 @@ func ValidateOverlayScope(overlay Config, meta toml.MetaData) error {
 // theme palette maps) merge by key; slice fields (env, bar.row) replace entirely
 // when the overlay defines them; scalar fields use the overlay value when non-zero;
 // booleans use IsDefined to detect explicit sets.
-func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
+func MergeOverlay(base, overlay Config, meta toml.MetaData) Config {
 	result := base
 
 	// Bar layout

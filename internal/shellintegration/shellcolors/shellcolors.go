@@ -72,7 +72,7 @@ func ParseColorAttr(s string) (color string, bold bool) {
 			}
 		}
 	}
-	return
+	return color, bold
 }
 
 // ParseToStyles converts the OSC 777 colors payload into a map of
