@@ -60,6 +60,12 @@ type ModuleValue struct {
 	JSON   json.RawMessage
 }
 
+type TextSpan struct {
+	Text  string
+	Role  string
+	Level StatusLevel
+}
+
 // Constructors for the common kinds.
 func Text(s string) ModuleValue    { return ModuleValue{Kind: KindText, Text: s} }
 func Number(n float64) ModuleValue { return ModuleValue{Kind: KindNumber, Number: n} }
@@ -76,6 +82,7 @@ type ModuleSnapshot struct {
 	UpdatedAt time.Time
 	Stale     bool
 	Err       error
+	Spans     []TextSpan
 	// AnimationSuppressed, when true, stops the renderer from applying the
 	// configured animation even if one is set. Default false = animate normally.
 	// Set by modules that control their own animation timing (e.g. command

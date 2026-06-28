@@ -112,7 +112,7 @@ func Validate(cfg *Config) error {
 			(module.Enabled || module.Source != "" || module.Provider != "" || len(module.RefreshOnCommand) > 0) {
 			return fmt.Errorf("module.%s.command is required for source %q", id, source)
 		}
-		if module.Animation != "" && !oneOf(module.Animation, "none", "glint", "pulse", "blink") {
+		if module.Animation != "" && !oneOf(string(module.Animation), "none", "default", "glint", "pulse", "blink") {
 			return fmt.Errorf("module.%s.animation has invalid value %q", id, module.Animation)
 		}
 		if module.AnimationIntervalMS < 0 {
@@ -434,6 +434,9 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	if overlay.Format != "" {
 		base.Format = overlay.Format
 	}
+	if meta.IsDefined("module", id, "separator") {
+		base.Separator = overlay.Separator
+	}
 	if overlay.Source != "" {
 		base.Source = overlay.Source
 	}
@@ -452,7 +455,7 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	if overlay.MaxWidth != 0 {
 		base.MaxWidth = overlay.MaxWidth
 	}
-	if overlay.Animation != "" {
+	if meta.IsDefined("module", id, "animation") {
 		base.Animation = overlay.Animation
 	}
 	if overlay.AnimationIntervalMS != 0 {
@@ -488,6 +491,9 @@ func mergeStyleConfig(base, overlay StyleConfig) StyleConfig {
 	}
 	if overlay.Underline {
 		base.Underline = true
+	}
+	if overlay.Animation != "" {
+		base.Animation = overlay.Animation
 	}
 	if overlay.Shape != "" {
 		base.Shape = overlay.Shape

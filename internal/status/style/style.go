@@ -29,6 +29,7 @@ type Style struct {
 	Dim          bool
 	Italic       bool
 	Underline    bool
+	Animation    string
 	Shape        Shape
 	LeftCap      string
 	RightCap     string

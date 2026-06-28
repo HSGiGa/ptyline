@@ -139,6 +139,11 @@
           "description": "Output format. For exec: {stdout}/{stderr}/{exit_code}. For time: strftime pattern. For template: {module_id} placeholders.",
           "examples": ["%H:%M:%S", "{stdout}", "{user}@{hostname} {cwd}", "{active} {last} {exit} {duration}"]
         },
+        "separator": {
+          "type": "string",
+          "description": "Text inserted for | separator markers in module formats that support conditional separators, such as command.",
+          "examples": [" • ", "|"]
+        },
         "collapse_whitespace": {
           "type": "boolean",
           "description": "Collapse consecutive whitespace in the assembled template value to a single space.",
@@ -210,9 +215,11 @@
           "description": "How long to show a failed command result (command module). 0 = keep until next command."
         },
         "animation": {
-          "type": "string",
-          "enum": ["none", "glint", "pulse", "blink"],
-          "description": "Animation effect for this module."
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string", "enum": ["none", "glint", "pulse", "blink"] }
+          ],
+          "description": "Enable animation for this module. true uses the module default; string values pick an explicit effect."
         },
         "animation_interval_ms": {
           "type": "integer",
@@ -253,6 +260,11 @@
         "dim":       { "type": "boolean" },
         "italic":    { "type": "boolean" },
         "underline": { "type": "boolean" },
+        "animation": {
+          "type": "string",
+          "enum": ["glint", "pulse", "blink"],
+          "description": "Visual animation effect used when the corresponding module enables animation."
+        },
         "shape": {
           "type": "string",
           "description": "Block shape preset (e.g. \"powerline\", \"round\", \"flat\").",

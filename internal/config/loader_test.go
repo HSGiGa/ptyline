@@ -17,6 +17,9 @@ shell = "bash"
 format = "{time}"
 [module.time]
 enabled = true
+animation = true
+[style.time]
+animation = "pulse"
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -27,6 +30,12 @@ enabled = true
 	}
 	if cfg.Shell != "bash" || cfg.Bar.Format != "{time}" {
 		t.Fatalf("Load() = %+v", cfg)
+	}
+	if got := cfg.Modules["time"].Animation; got != AnimationDefault {
+		t.Fatalf("module.time.animation = %q, want default", got)
+	}
+	if got := cfg.Styles["time"].Animation; got != "pulse" {
+		t.Fatalf("style.time.animation = %q, want pulse", got)
 	}
 }
 
@@ -47,8 +56,11 @@ func TestLoadRootConfig(t *testing.T) {
 	if got, want := cfg.Bar.Rows[1].Separator, ":"; got != want {
 		t.Fatalf("root config main row separator = %q, want %q", got, want)
 	}
-	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} {exit} {duration}" {
+	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} | {duration} | {exit}" || module.Separator != "•" {
 		t.Fatalf("root command module = %+v", module)
+	}
+	if got := cfg.Modules["command"].Animation; got != AnimationDefault {
+		t.Fatalf("root command animation = %q, want default", got)
 	}
 	if module := cfg.Modules["gh"]; module.Source != "exec" || module.Command == "" {
 		t.Fatalf("root gh module = %+v, want source=exec with command", module)

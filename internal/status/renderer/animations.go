@@ -12,23 +12,21 @@ import (
 // ModuleConfig.Animation. All effects are color-only: display width is never
 // changed, so layout calculations remain correct.
 const (
-	AnimGlint = "glint" // warm shimmer sweeps across text per-cell
+	AnimGlint = "glint" // soft shimmer sweeps across text per-cell
 	AnimPulse = "pulse" // whole block breathes dim↔bright via sine wave
 	AnimBlink = "blink" // whole block alternates normal↔dim at slow cadence
 )
 
-// glintHighlight is the warm color the shimmer blends the base FG toward at its
-// brightest. glintHalfWidth is how many cells the glow fades out over on each
-// side of the bright center — a wide, soft falloff reads as a smooth glide.
-var glintHighlight = theme.RGB{R: 0xff, G: 0xf0, B: 0xc2}
+// glintHalfWidth is how many cells the glow fades out over on each side of the
+// bright center. A wider falloff reads as a softer shimmer rather than a hard
+// single-cell scanline.
+const glintHalfWidth = 5
 
-const glintHalfWidth = 3
-
-// applyGlint renders the block as a seamless shimmer: a soft brightness wave
-// glides across the text and wraps on a ring of the text length, so the glow
-// leaving the right edge re-enters from the left with no gap and no snap. The
-// per-cell color is the base FG blended toward glintHighlight by a distance
-// falloff; display width is untouched (only colors change).
+// applyGlint renders the block as a single soft shimmer pass: the glow enters
+// from the left, traverses the text, fully exits on the right, and only then
+// starts the next pass. The per-cell color blends from a dimmed foreground
+// toward the configured foreground by a smooth distance falloff; display width
+// is untouched.
 func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 	body := strings.Repeat(" ", max(0, s.PaddingLeft)) + content + strings.Repeat(" ", max(0, s.PaddingRight))
 	if r.theme == nil || r.theme.Mode() == theme.NoColor {
@@ -38,45 +36,107 @@ func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 	if len(runes) == 0 {
 		return s.Apply(content, r.theme)
 	}
-	base, ok := r.theme.Resolve(s.FG)
+	highlight, ok := r.glintForegroundColor(s)
+	if !ok {
+		return s.Apply(content, r.theme)
+	}
+	base := glintDimColor(highlight)
 	var b strings.Builder
 	b.WriteString(s.LeftCap)
 	b.WriteString(r.theme.BG(s.BG))
 	b.WriteString(styleAttrs(s))
-	if !ok {
-		// Unknown base color: keep the static FG so the text still renders.
-		fg := r.theme.FG(s.FG)
-		for _, ch := range runes {
-			b.WriteString(fg)
-			b.WriteRune(ch)
+	center := glintCenter(phase, len(runes))
+	// Pre-compute the color palette (glintHalfWidth distinct blended colors) so
+	// the hot per-glyph loop only indexes, avoiding repeated Sprintf calls.
+	var palette [glintHalfWidth]string
+	for d := 0; d < glintHalfWidth; d++ {
+		t := 1 - float64(d)/float64(glintHalfWidth)
+		t = smoothstep(t)
+		palette[d] = r.theme.FGRGB(mixRGB(base, highlight, t))
+	}
+	baseSGR := r.theme.FGRGB(base)
+	for i, ch := range runes {
+		d := absInt(i - center)
+		if d >= glintHalfWidth {
+			b.WriteString(baseSGR)
+		} else {
+			b.WriteString(palette[d])
 		}
-	} else {
-		l := len(runes)
-		if phase < 0 {
-			phase = -phase
-		}
-		center := phase % l
-		// Pre-compute the color palette (glintHalfWidth distinct blended colors)
-		// so the hot per-glyph loop only indexes, avoiding repeated Sprintf calls.
-		var palette [glintHalfWidth]string
-		for d := 0; d < glintHalfWidth; d++ {
-			t := 1 - float64(d)/glintHalfWidth
-			palette[d] = r.theme.FGRGB(mixRGB(base, glintHighlight, t))
-		}
-		baseSGR := r.theme.FGRGB(base)
-		for i, ch := range runes {
-			d := circularDistance(i, center, l)
-			if d >= glintHalfWidth {
-				b.WriteString(baseSGR)
-			} else {
-				b.WriteString(palette[d])
-			}
-			b.WriteRune(ch)
-		}
+		b.WriteRune(ch)
 	}
 	b.WriteString(theme.Reset)
 	b.WriteString(s.RightCap)
 	return b.String()
+}
+
+func glintCenter(phase, length int) int {
+	if phase < 0 {
+		phase = -phase
+	}
+	cycle := glintCycleLength(length)
+	if cycle <= 0 {
+		return -glintHalfWidth
+	}
+	return phase%cycle - glintHalfWidth
+}
+
+func glintCycleLength(length int) int {
+	return length + 2*glintHalfWidth
+}
+
+func glintVisible(content string, s style.Style, phase int) bool {
+	body := strings.Repeat(" ", max(0, s.PaddingLeft)) + content + strings.Repeat(" ", max(0, s.PaddingRight))
+	length := len([]rune(body))
+	if length == 0 {
+		return false
+	}
+	center := glintCenter(phase, length)
+	return center+glintHalfWidth > 0 && center-glintHalfWidth < length
+}
+
+func (r *Renderer) applyGlintDim(content string, s style.Style) string {
+	body := strings.Repeat(" ", max(0, s.PaddingLeft)) + content + strings.Repeat(" ", max(0, s.PaddingRight))
+	if r.theme == nil || r.theme.Mode() == theme.NoColor {
+		return s.LeftCap + body + s.RightCap
+	}
+	highlight, ok := r.glintForegroundColor(s)
+	if !ok {
+		return s.LeftCap + body + s.RightCap
+	}
+	fg := glintDimColor(highlight)
+	var b strings.Builder
+	b.WriteString(s.LeftCap)
+	b.WriteString(r.theme.BG(s.BG))
+	b.WriteString(styleAttrs(s))
+	b.WriteString(r.theme.FGRGB(fg))
+	b.WriteString(body)
+	b.WriteString(theme.Reset)
+	b.WriteString(s.RightCap)
+	return b.String()
+}
+
+func (r *Renderer) glintForegroundColor(s style.Style) (theme.RGB, bool) {
+	if s.FG != "" {
+		if base, ok := r.theme.Resolve(s.FG); ok {
+			return base, true
+		}
+	}
+	if base, ok := r.theme.Resolve("base.fg"); ok {
+		return base, true
+	}
+	return theme.RGB{}, false
+}
+
+func glintDimColor(base theme.RGB) theme.RGB {
+	return theme.RGB{
+		R: uint8(float64(base.R) * 0.42),
+		G: uint8(float64(base.G) * 0.42),
+		B: uint8(float64(base.B) * 0.42),
+	}
+}
+
+func smoothstep(t float64) float64 {
+	return t * t * (3 - 2*t)
 }
 
 // applyPulse renders the block with a smooth sinusoidal brightness cycle: the
@@ -125,15 +185,11 @@ func (r *Renderer) applyBlink(content string, s style.Style, phase int) string {
 	return dimPhase.Apply(content, r.theme)
 }
 
-// circularDistance is the shorter distance between i and center on a ring of
-// length l, so the shimmer wraps seamlessly across the text edges.
-func circularDistance(i, center, l int) int {
-	forward := ((i-center)%l + l) % l
-	backward := ((center-i)%l + l) % l
-	if forward < backward {
-		return forward
+func absInt(v int) int {
+	if v < 0 {
+		return -v
 	}
-	return backward
+	return v
 }
 
 // mixRGB linearly interpolates each channel from a toward b by t in [0,1].

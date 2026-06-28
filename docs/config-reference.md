@@ -163,6 +163,7 @@ fallback = true
 [style.time]
 fg = "white"
 bg = "blue"
+animation = "pulse"        # visual effect when module.<id>.animation = true
 bold = true
 left_cap = "["
 right_cap = "]"
@@ -189,6 +190,16 @@ timeout_ms = 200
 format = "{stdout}"
 refresh_on_command = ["kubectl config use-context"]
 ```
+
+Module formats that support multiple placeholders can use `|` as a conditional
+separator marker and `separator` to choose the rendered text:
+
+```toml
+format = "{stdout} | {stderr} | {exit_code}"
+separator = "•"
+```
+
+Empty fields drop adjacent separators.
 
 Custom commands run **locally** with a timeout; config is trusted user input but
 commands must always be time-bounded (spec §16, §17).

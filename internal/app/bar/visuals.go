@@ -137,6 +137,9 @@ func styleFromConfig(cfg config.StyleConfig, context string, palette map[string]
 	if cfg.PaddingRight < 0 {
 		return style.Style{}, fmt.Errorf("%s.padding_right must be >= 0", context)
 	}
+	if cfg.Animation != "" && cfg.Animation != "glint" && cfg.Animation != "pulse" && cfg.Animation != "blink" {
+		return style.Style{}, fmt.Errorf("%s.animation has invalid value %q", context, cfg.Animation)
+	}
 	return style.Style{
 		FG:           cfg.FG,
 		BG:           cfg.BG,
@@ -144,6 +147,7 @@ func styleFromConfig(cfg config.StyleConfig, context string, palette map[string]
 		Dim:          cfg.Dim,
 		Italic:       cfg.Italic,
 		Underline:    cfg.Underline,
+		Animation:    cfg.Animation,
 		Shape:        shape,
 		LeftCap:      cfg.LeftCap,
 		RightCap:     cfg.RightCap,

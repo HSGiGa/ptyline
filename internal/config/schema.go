@@ -3,6 +3,8 @@
 // placeholder template — deliberately not Markdown (spec §13, arch.md §17).
 package config
 
+import "fmt"
+
 // CurrentVersion is the schema version written by this build. The loader
 // migrates older configs forward before parsing (arch.md §17).
 const CurrentVersion = 1
@@ -44,27 +46,68 @@ type RowConfig struct {
 
 // ModuleConfig is the per-module configuration (spec §8.7).
 type ModuleConfig struct {
-	Enabled             bool     `toml:"enabled"`
-	Source              string   `toml:"source"` // time | exec | template; empty = builtin or exec for unknown IDs
-	Format              string   `toml:"format"`
-	CollapseWhitespace  bool     `toml:"collapse_whitespace"`
-	HideWhenEmpty       bool     `toml:"hide_when_empty"`
-	Mode                string   `toml:"mode"`     // e.g. "shell-integration"
-	Provider            string   `toml:"provider"` // command | osc | socket (future)
-	Command             string   `toml:"command"`
-	RefreshOnCommand    []string `toml:"refresh_on_command"`
-	Env                 []string `toml:"env"`
-	IntervalMS          int      `toml:"interval_ms"`
-	TimeoutMS           int      `toml:"timeout_ms"`
-	MaxWidth            int      `toml:"max_width"`
-	DoneMinDurationMS   int      `toml:"done_min_duration_ms"`
-	DoneSuccessTTLMS    int      `toml:"done_success_ttl_ms"`
-	DoneFailureTTLMS    int      `toml:"done_failure_ttl_ms"`
-	Animation           string   `toml:"animation"` // none | glint | pulse | blink
-	AnimationIntervalMS int      `toml:"animation_interval_ms"`
-	Icon                string   `toml:"icon"`          // left | right; empty = no icon
-	IconGlyph           string   `toml:"icon_glyph"`    // preferred Nerd Font glyph
-	IconFallback        string   `toml:"icon_fallback"` // fallback text/glyph for non-Nerd presets
+	Enabled             bool             `toml:"enabled"`
+	Source              string           `toml:"source"` // time | exec | template; empty = builtin or exec for unknown IDs
+	Format              string           `toml:"format"`
+	Separator           string           `toml:"separator"`
+	CollapseWhitespace  bool             `toml:"collapse_whitespace"`
+	HideWhenEmpty       bool             `toml:"hide_when_empty"`
+	Mode                string           `toml:"mode"`     // e.g. "shell-integration"
+	Provider            string           `toml:"provider"` // command | osc | socket (future)
+	Command             string           `toml:"command"`
+	RefreshOnCommand    []string         `toml:"refresh_on_command"`
+	Env                 []string         `toml:"env"`
+	IntervalMS          int              `toml:"interval_ms"`
+	TimeoutMS           int              `toml:"timeout_ms"`
+	MaxWidth            int              `toml:"max_width"`
+	DoneMinDurationMS   int              `toml:"done_min_duration_ms"`
+	DoneSuccessTTLMS    int              `toml:"done_success_ttl_ms"`
+	DoneFailureTTLMS    int              `toml:"done_failure_ttl_ms"`
+	Animation           AnimationSetting `toml:"animation"` // false/none | true | glint | pulse | blink
+	AnimationIntervalMS int              `toml:"animation_interval_ms"`
+	Icon                string           `toml:"icon"`          // left | right; empty = no icon
+	IconGlyph           string           `toml:"icon_glyph"`    // preferred Nerd Font glyph
+	IconFallback        string           `toml:"icon_fallback"` // fallback text/glyph for non-Nerd presets
+}
+
+// AnimationSetting accepts the user-facing compact form:
+//
+//	animation = true        -> use the module's default animation behavior
+//	animation = false/none  -> disable animation
+//	animation = "pulse"     -> enable animation with an explicit effect
+type AnimationSetting string
+
+const (
+	AnimationDefault AnimationSetting = "default"
+	AnimationNone    AnimationSetting = "none"
+)
+
+func (a *AnimationSetting) UnmarshalTOML(v any) error {
+	switch value := v.(type) {
+	case bool:
+		if value {
+			*a = AnimationDefault
+		} else {
+			*a = AnimationNone
+		}
+		return nil
+	case string:
+		*a = AnimationSetting(value)
+		return nil
+	default:
+		return fmt.Errorf("animation must be a boolean or string")
+	}
+}
+
+func (a AnimationSetting) Enabled() bool {
+	return a != "" && a != AnimationNone
+}
+
+func (a AnimationSetting) Effect() string {
+	if a == AnimationDefault {
+		return ""
+	}
+	return string(a)
 }
 
 // ThemeConfig selects color scheme, style preset, and semantic tokens (arch.md §16).
@@ -93,6 +136,7 @@ type StyleConfig struct {
 	Dim          bool   `toml:"dim"`
 	Italic       bool   `toml:"italic"`
 	Underline    bool   `toml:"underline"`
+	Animation    string `toml:"animation"` // glint | pulse | blink
 	Shape        string `toml:"shape"`
 	LeftCap      string `toml:"left_cap"`
 	RightCap     string `toml:"right_cap"`

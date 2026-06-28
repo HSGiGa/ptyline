@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/hsgiga/ptyline/internal/status"
+	"github.com/hsgiga/ptyline/internal/status/formatting"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/width"
 )
@@ -15,21 +16,27 @@ type TemplateSpec struct {
 	HideWhenEmpty      bool
 	CollapseWhitespace bool
 	MaxWidth           int
+	Separator          string
 }
 
 // resolveTemplate assembles a template value from cached module snapshots.
 // It never calls any provider — it only reads st.Modules. Template modules
 // cannot reference other template modules (enforced at config validation).
 func resolveTemplate(st status.StatusState, tmpl TemplateSpec, separator string) string {
-	var sb strings.Builder
+	if tmpl.Separator != "" {
+		separator = tmpl.Separator
+	}
+	segments := []string{""}
+	hasSeparator := false
 	allEmpty := true
 	for _, b := range tmpl.Blocks {
 		if b.IsLiteral() {
-			sb.WriteString(b.Text)
+			segments[len(segments)-1] += b.Text
 			continue
 		}
 		if b.IsSeparator() {
-			sb.WriteString(separator)
+			hasSeparator = true
+			segments = append(segments, "")
 			continue
 		}
 		snap, ok := st.Modules[status.ModuleID(b.ModuleID)]
@@ -40,12 +47,15 @@ func resolveTemplate(st status.StatusState, tmpl TemplateSpec, separator string)
 		if v != "" {
 			allEmpty = false
 		}
-		sb.WriteString(v)
+		segments[len(segments)-1] += v
 	}
 	if tmpl.HideWhenEmpty && allEmpty {
 		return ""
 	}
-	result := sb.String()
+	result := segments[0]
+	if hasSeparator {
+		result = formatting.JoinSegments(segments, separator)
+	}
 	if tmpl.CollapseWhitespace {
 		result = strings.Join(strings.Fields(result), " ")
 	}

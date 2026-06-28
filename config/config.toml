@@ -22,6 +22,7 @@ format = "{identity} || {env} | {runtime} | {shell} || {gh} | {time}"
 [module.identity]
 source = "template"
 format = "{user}@{hostname} {cwd}"
+animation = true
 
 [module.time]
 format = "%H:%M:%S"
@@ -33,10 +34,6 @@ command = "gh api user --jq .login"
 icon = "left"
 icon_glyph = ""
 icon_fallback = "gh"
-# interval_ms = 10000
-# timeout_ms = 1000
-# max_width = 60
-# format = "{stdout}"
 refresh_on_command = ["gh auth login", "gh auth logout", "gh auth refresh"]
 
 [module.env]
@@ -44,21 +41,30 @@ env = ["PTYLINE_ENV"]
 
 [module.git]
 icon = "left"
+animation = true
 
 [module.cwd]
 mode = "shell-integration"
 
 [module.command]
 enabled = true
-format = "{active} {last} {exit} {duration}"
+format = "{active} {last} | {duration} | {exit}"
+separator = "•"
 max_width = 60
 done_min_duration_ms = 2000
 done_success_ttl_ms = 3000
 done_failure_ttl_ms = 0
-animation = "glint"
+animation = true
 animation_interval_ms = 80
 
 [module.ssh]
 enabled = true
+
+[style.command]
+animation = "glint"
+
+[style.identity]
 animation = "pulse"
-animation_interval_ms = 250
+
+[style.git]
+animation = "blink"

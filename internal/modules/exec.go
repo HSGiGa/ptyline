@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/status"
+	"github.com/hsgiga/ptyline/internal/status/formatting"
 	"github.com/hsgiga/ptyline/internal/status/width"
 )
 
@@ -25,26 +26,27 @@ const defaultExecMaxWidth = 60
 // provider: expensive work happens on its own goroutine with a timeout; the
 // renderer reads only the cached snapshot (spec §8.7, §17).
 type Exec struct {
-	id       status.ModuleID
-	command  string
-	interval time.Duration
-	timeout  time.Duration
-	format   string
-	maxWidth int
+	id        status.ModuleID
+	command   string
+	interval  time.Duration
+	timeout   time.Duration
+	format    string
+	separator string
+	maxWidth  int
 }
 
 // NewExec creates an Exec module. id is the bar placeholder name (e.g. "gh").
 // format uses {stdout}, {stderr}, {exit_code} placeholders; an empty format
 // defaults to "{stdout}". maxWidth <= 0 applies a default cap so a misbehaving
 // command cannot overflow the status bar.
-func NewExec(id, command string, interval, timeout time.Duration, format string, maxWidth int) *Exec {
+func NewExec(id, command string, interval, timeout time.Duration, format, separator string, maxWidth int) *Exec {
 	if format == "" {
 		format = "{stdout}"
 	}
 	if maxWidth <= 0 {
 		maxWidth = defaultExecMaxWidth
 	}
-	return &Exec{id: status.ModuleID(id), command: command, interval: interval, timeout: timeout, format: format, maxWidth: maxWidth}
+	return &Exec{id: status.ModuleID(id), command: command, interval: interval, timeout: timeout, format: format, separator: separator, maxWidth: maxWidth}
 }
 
 func (m *Exec) ID() status.ModuleID     { return m.id }
@@ -95,6 +97,7 @@ func (m *Exec) Refresh(ctx context.Context) status.ModuleSnapshot {
 	text = strings.ReplaceAll(text, "{stdout}", stdout)
 	text = strings.ReplaceAll(text, "{stderr}", stderr)
 	text = strings.ReplaceAll(text, "{exit_code}", fmt.Sprintf("%d", exitCode))
+	text = formatting.CollapseSeparators(text, m.separator)
 	text = width.Truncate(text, m.maxWidth, "right")
 
 	snap := status.ModuleSnapshot{
