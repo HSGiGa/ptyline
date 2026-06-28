@@ -2,7 +2,7 @@
 // bar. All PTY sizing derives child height from terminal rows minus the reserved
 // rows, so multi-line and panel modes work later without touching PTY logic.
 //
-// See docs/terminal-safety.md and arch.md §6.
+// See docs/terminal-safety.md and ARCHITECTURE.md §6.
 package reserved
 
 // Edge is the terminal edge the reserved area is anchored to.
@@ -17,7 +17,7 @@ const (
 // Area describes the rows reserved for the status bar.
 //
 // MVP value is Area{Edge: Bottom, Rows: 1}. Multi-line / agent-panel modes
-// (arch.md §13) simply increase Rows.
+// (ARCHITECTURE.md §13) simply increase Rows.
 type Area struct {
 	Edge Edge
 	Rows uint16

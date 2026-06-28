@@ -1,7 +1,7 @@
 # 10 — Theme, Style & Icons
 Status: [x] done
 Depends on: 09
-Spec refs: spec §8.9, §8.10; arch.md §14, §16; docs/layout-and-rendering.md
+Spec refs: spec §8.9, §8.10; ARCHITECTURE.md §14, §16; docs/layout-and-rendering.md
 
 ## Goal
 Semantic theme tokens resolve to escape sequences for the detected terminal
@@ -24,7 +24,7 @@ nerd-font/emoji/ascii with fallback. One readable default theme.
 4. Icons: ASCII fallback always usable (spec §20.15); honor `emoji_width`.
 
 ## Invariants
-Modules never write raw ANSI — they go through tokens (arch.md §16). The default
+Modules never write raw ANSI — they go through tokens (ARCHITECTURE.md §16). The default
 theme is readable without Nerd Font or emoji (spec §20.15). Styling must not
 corrupt child output (spec §20.14) — always reset.
 

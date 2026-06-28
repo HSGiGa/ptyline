@@ -9,9 +9,10 @@ native scrollback; ptyline just pins a bar at the bottom.
 Terminal Emulator → ptyline → PTY → fish / bash / zsh / vim / htop / …
 ```
 
-> **Status: scaffolding.** The repository contains the full project skeleton
-> (compilable Go stubs) plus the design docs and a sequenced implementation plan.
-> No feature is implemented yet — start at [`docs/plans/`](docs/plans/).
+> **Status: active implementation.** The core PTY wrapper, status rendering,
+> configuration, shell integration, modules, and CI checks are implemented.
+> The documents in [`docs/plans/`](docs/plans/) remain as historical slices and
+> planning notes for follow-up work.
 
 ## Quickstart
 
@@ -21,7 +22,7 @@ Requires **Go 1.26.1**. The required toolchain is declared in `go.mod`; use
 ```sh
 make bootstrap    # install pinned local gofumpt and golangci-lint
 make build        # build dist/ptyline
-make run ARGS='-- zsh' # run the (currently stubbed) wrapper around a command
+make run ARGS='-- zsh' # run the wrapper around a command
 make test         # run unit tests
 make check        # format check, vet, tests, lint
 make build-all    # cross-compile linux/darwin/windows

@@ -1,7 +1,7 @@
 # Layout & Rendering
 
 Source: `internal/status/{layout,renderer,width,theme,style,icons}`. Design: spec
-§8.6–§8.10, arch.md §7, §8, §15, §16.
+§8.6–§8.10, ARCHITECTURE.md §7, §8, §15, §16.
 
 ## Three concerns, kept separate (spec §8.8)
 
@@ -14,7 +14,7 @@ style   → how it looks (colors, attributes, shape, padding)
 ## The layout engine (not string concatenation)
 
 Even though the MVP config exposes a one-line `format` string, it is parsed into
-**blocks** with metadata, not treated as a final raw string (arch.md §7). A block:
+**blocks** with metadata, not treated as a final raw string (ARCHITECTURE.md §7). A block:
 
 ```text
 anchor    left | center | right     (which terminal side)
@@ -59,7 +59,7 @@ count. CJK and many emoji are 2 cells; combining marks are 0. Emoji width is
 ambiguous across terminals, so the config offers a conservative width policy
 (`icons.emoji_width = auto|1|2`).
 
-## Priority-based overflow (arch.md §8)
+## Priority-based overflow (ARCHITECTURE.md §8)
 
 When the terminal is narrow, low-priority blocks are dropped or rendered in a
 compact variant rather than letting the bar overflow:
@@ -72,7 +72,7 @@ compact: 🤖2 | 18:42
 
 This matters most for future agent info, whose text can grow without bound.
 
-## Theme tokens, not raw ANSI (arch.md §16)
+## Theme tokens, not raw ANSI (ARCHITECTURE.md §16)
 
 Modules/blocks request semantic tokens (`ok`, `warn`, `error`, `accent`,
 `agent.running`, …). The theme translates a token to an escape sequence for the
@@ -86,7 +86,7 @@ glyphs, background colors, caps, and padding. Nerd-Font/Powerline glyphs are
 optional; an ASCII fallback must always be usable (spec §20). Icons come from
 `status/icons` with a primary glyph + ASCII fallback (spec §8.10).
 
-## RenderedBar and click zones (arch.md §15)
+## RenderedBar and click zones (ARCHITECTURE.md §15)
 
 `renderer.Render` returns `RenderedBar{ Line, ClickZones }`. Click zones map cell
 ranges to actions and are **ignored until mouse support is enabled** (post-MVP).

@@ -21,7 +21,7 @@ type Handlers struct {
 
 // Loop is the single select-driven event loop. It multiplexes every input source
 // via the event bus and is the only place that mutates terminal/PTY/bar state, so
-// rendering stays predictable (spec §8.3, arch.md §4).
+// rendering stays predictable (spec §8.3, ARCHITECTURE.md §4).
 type Loop struct {
 	bus    *event.Bus
 	filter *AnsiFilter

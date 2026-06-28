@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Source: `internal/config`. Design: spec §13, arch.md §17.
+Source: `internal/config`. Design: spec §13, ARCHITECTURE.md §17.
 
 ## Location
 
@@ -135,7 +135,7 @@ The supported suffixes are intentionally small:
 
 Widths are terminal display cells, not bytes.
 
-## Theme, icons, style (spec §8.9, §8.10; arch.md §16)
+## Theme, icons, style (spec §8.9, §8.10; ARCHITECTURE.md §16)
 
 ```toml
 [theme]
@@ -149,7 +149,7 @@ fallback = "ascii"
 "base.fg" = "#cdd6f4"
 accent = "#89b4fa"
 
-[theme.status]             # semantic tokens (arch.md §16)
+[theme.status]             # semantic tokens (ARCHITECTURE.md §16)
 ok = "green"
 warn = "yellow"
 error = "red"

@@ -1,7 +1,7 @@
 # 00 — Project Scaffold
 Status: [x] done
 Depends on: —
-Spec refs: spec §21, §22; arch.md §22
+Spec refs: spec §21, §22; ARCHITECTURE.md §22
 
 ## Goal
 A buildable, lint-clean Go project skeleton: module, tooling, CI, the full

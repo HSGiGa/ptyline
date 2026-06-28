@@ -1,6 +1,6 @@
 // Package diagnostics holds internal health/debug state surfaced by future
 // `ptyline doctor` / `ptyline debug-state` commands and optionally by a warning
-// indicator on the bar. See arch.md §19.
+// indicator on the bar. See ARCHITECTURE.md §19.
 package diagnostics
 
 import (

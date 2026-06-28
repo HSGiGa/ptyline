@@ -1,6 +1,6 @@
 # Agents (Reserved Architecture — Post-MVP)
 
-Source: reserved fields in `internal/status` + future packages. Design: arch.md
+Source: reserved fields in `internal/status` + future packages. Design: ARCHITECTURE.md
 §10–§13. **Not implemented in the MVP** (spec §19) — this doc records the shape so
 the MVP avoids choices that would block it.
 
@@ -12,7 +12,7 @@ multiple data ingestion paths. By reserving `StatusState.Agents`, the
 `ModuleValue` types, and `RenderedBar.ClickZones`, agents become an additive
 provider+renderer, not a redesign.
 
-## AgentState (arch.md §10)
+## AgentState (ARCHITECTURE.md §10)
 
 ```text
 AgentState {
@@ -25,7 +25,7 @@ AgentStatus ∈ idle|starting|running|waiting|blocked|done|failed|cancelled
 The UX-critical statuses are `running`, `blocked`, `waiting`, `failed`, `done` —
 they tell the user whether an agent is active, needs attention, or is finished.
 
-## Ingestion paths (arch.md §11)
+## Ingestion paths (ARCHITECTURE.md §11)
 
 1. **OSC events** — for tools inside the child PTY; reuse the OSC 777 channel
    (`agent.started` / `agent.update` / `agent.done`). See
@@ -36,9 +36,9 @@ they tell the user whether an agent is active, needs attention, or is finished.
    timeout, as a simple fallback.
 
 All three normalize into `StatusState.Agents`; the renderer never knows the
-source (arch.md §5).
+source (ARCHITECTURE.md §5).
 
-## Rendering (arch.md §12)
+## Rendering (ARCHITECTURE.md §12)
 
 A separate agent renderer (not mixed into the main bar renderer) with compact
 fallbacks driven by priority overflow:
@@ -49,7 +49,7 @@ fallbacks driven by priority overflow:
 🤖2                                                          (tiny)
 ```
 
-## Multi-line / panel mode (arch.md §13)
+## Multi-line / panel mode (ARCHITECTURE.md §13)
 
 Enabled purely by increasing `reserved.Area.Rows` — PTY sizing already derives
 from it, so no PTY logic changes:
@@ -59,7 +59,7 @@ from it, so no PTY logic changes:
 🤖 reviewer running 4m · tester blocked · writer done
 ```
 
-## Security (arch.md §20)
+## Security (ARCHITECTURE.md §20)
 
 Agent data is **local runtime state, not a trusted command source.** OSC/socket
 events only update state; any click action that runs a command is opt-in.

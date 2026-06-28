@@ -4,7 +4,7 @@
 // in package proxy.
 //
 // Designing around a typed event stream from day one means new sources can be
-// added without rewriting the application core. See docs/event-bus.md, arch.md §4.
+// added without rewriting the application core. See docs/event-bus.md, ARCHITECTURE.md §4.
 package event
 
 import "context"

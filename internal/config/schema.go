@@ -1,12 +1,12 @@
 // Package config defines the TOML configuration schema, defaults, loading, and
 // version migration. The bar layout is a structured block schema plus a small
-// placeholder template — deliberately not Markdown (spec §13, arch.md §17).
+// placeholder template — deliberately not Markdown (spec §13, ARCHITECTURE.md §17).
 package config
 
 import "fmt"
 
 // CurrentVersion is the schema version written by this build. The loader
-// migrates older configs forward before parsing (arch.md §17).
+// migrates older configs forward before parsing (ARCHITECTURE.md §17).
 const CurrentVersion = 1
 
 // Config is the root configuration object.
@@ -110,7 +110,7 @@ func (a AnimationSetting) Effect() string {
 	return string(a)
 }
 
-// ThemeConfig selects color scheme, style preset, and semantic tokens (arch.md §16).
+// ThemeConfig selects color scheme, style preset, and semantic tokens (ARCHITECTURE.md §16).
 type ThemeConfig struct {
 	ColorScheme string            `toml:"color_scheme"`
 	Style       string            `toml:"style"`

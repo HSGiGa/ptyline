@@ -33,7 +33,7 @@ const (
 )
 
 // StatusLevel is the semantic level of a StatusValue; it maps to a theme token,
-// not a raw color (spec §24.4, arch.md §16).
+// not a raw color (spec §24.4, ARCHITECTURE.md §16).
 type StatusLevel string
 
 const (

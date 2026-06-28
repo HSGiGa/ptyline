@@ -10,7 +10,7 @@ order; the `Depends on` line is the real constraint.
 # NN — Title
 Status: [ ] not started | [~] in progress | [x] done
 Depends on: <NN list>
-Spec refs: <spec §, arch.md §>
+Spec refs: <spec §, ARCHITECTURE.md §>
 
 ## Goal          one paragraph: what exists after this slice is done
 ## Deliverables  files created/changed

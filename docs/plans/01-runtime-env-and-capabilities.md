@@ -1,7 +1,7 @@
 # 01 — Runtime Environment & Capabilities
 Status: [x] done
 Depends on: 00
-Spec refs: spec §4, §4.1, §4.2; arch.md §14
+Spec refs: spec §4, §4.1, §4.2; ARCHITECTURE.md §14
 
 ## Goal
 At startup the app resolves a normalized `runtimeenv.Profile` (Kind +
