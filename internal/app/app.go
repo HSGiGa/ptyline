@@ -328,6 +328,9 @@ func run(opts options) int {
 		scheduler.Start(gitCtx, gitMod, time.Second)
 
 		for id, mcfg := range resolvedCfg.Modules {
+			if config.ModuleSource(id, mcfg) == "" {
+				continue // skip built-in IDs that have no user-defined source
+			}
 			startUserMod(id, mcfg)
 		}
 		rebuildExecModules()
@@ -428,17 +431,18 @@ func run(opts options) int {
 	}
 
 	// reloadConfig rebuilds the resolved config and bar. force=true skips the
-	// project-path equality guard (used on explicit --reload). Called from the
-	// event loop goroutine, so no locking is needed for closure-captured variables.
-	reloadConfig := func(newProjectPath string, force bool) {
+	// project-path equality guard (used on explicit --reload). Returns true when
+	// the config was successfully applied. Called from the event loop goroutine,
+	// so no locking is needed for closure-captured variables.
+	reloadConfig := func(newProjectPath string, force bool) bool {
 		old, _ := projectOverlayPath.Load().(string)
 		if !force && old == newProjectPath {
-			return
+			return false
 		}
 		projectOverlayPath.Store(newProjectPath)
 		newCfg, err := config.ApplyOverlays(cfg, cliOverlay, newProjectPath)
 		if err != nil {
-			return // keep running with old config on parse error
+			return false // keep running with old config on parse error
 		}
 		resolvedCfg = newCfg
 		newBarRows := bar.BuildRows(resolvedCfg)
@@ -461,7 +465,7 @@ func run(opts options) int {
 		render = renderer.New(newEngine(int(state.Terminal.Cols)), visuals.Theme)
 		configureRenderer(render)
 		updateModules()
-		redraw()
+		return true
 	}
 
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -586,9 +590,12 @@ func run(opts options) int {
 			if err != nil {
 				return // keep running on bad config
 			}
+			prevCfg := cfg
 			cfg = newBase
 			currentPath, _ := projectOverlayPath.Load().(string)
-			reloadConfig(currentPath, true)
+			if !reloadConfig(currentPath, true) {
+				cfg = prevCfg // ApplyOverlays failed: restore base to stay consistent
+			}
 		},
 	})
 	filter.SetAltHandler(altCoord.SetPending)
