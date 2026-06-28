@@ -93,7 +93,7 @@ func TestRenderThreeSectionOrder(t *testing.T) {
 	out := r.Render(st, layout.ParseFormat("L||C||R"))
 
 	l, c, rr := strings.Index(out.Line, "L"), strings.Index(out.Line, "C"), strings.Index(out.Line, "R")
-	if l < 0 || c < 0 || rr < 0 || !(l < c && c < rr) {
+	if l < 0 || c < 0 || rr < 0 || l >= c || c >= rr {
 		t.Fatalf("section order wrong in %q (L=%d C=%d R=%d)", out.Line, l, c, rr)
 	}
 }

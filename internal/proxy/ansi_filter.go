@@ -128,12 +128,10 @@ func (f *AnsiFilter) Filter(in []byte) []byte {
 				// Oversized/malformed: stop buffering and pass through (spec §15).
 				f.diag(fmt.Sprintf("oversized escape sequence (%d bytes) passed through", len(rest)))
 				out = append(out, rest...)
-				i = len(data)
 				break
 			}
 			// Buffer the incomplete tail for the next read.
 			f.tail = append(f.tail[:0], rest...)
-			i = len(data)
 			break
 		}
 
@@ -181,10 +179,10 @@ func scanEscape(b []byte) (n int, complete bool) {
 // ST (ESC \).
 func scanString(b []byte) (n int, complete bool) {
 	for j := 2; j < len(b); j++ {
-		switch {
-		case b[j] == belByte:
+		switch b[j] {
+		case belByte:
 			return j + 1, true
-		case b[j] == escByte:
+		case escByte:
 			if j+1 < len(b) {
 				if b[j+1] == '\\' {
 					return j + 2, true
@@ -200,7 +198,7 @@ func scanString(b []byte) (n int, complete bool) {
 
 // handleSequence dispatches one complete escape sequence, appending the bytes to
 // forward (possibly rewritten, possibly nothing) to out.
-func (f *AnsiFilter) handleSequence(seq []byte, out []byte) []byte {
+func (f *AnsiFilter) handleSequence(seq, out []byte) []byte {
 	if len(seq) < 2 {
 		return append(out, seq...)
 	}
@@ -281,7 +279,7 @@ func (f *AnsiFilter) trackAltScreen(numbers string, set bool) {
 
 // handleOSC consumes whitelisted OSC 777 shell-integration messages (never
 // forwarding them) and passes every other OSC through unchanged (spec §9, §17).
-func (f *AnsiFilter) handleOSC(seq []byte, out []byte) []byte {
+func (f *AnsiFilter) handleOSC(seq, out []byte) []byte {
 	payload := oscPayload(seq)
 	if !strings.HasPrefix(payload, oscShellCode+";") {
 		return append(out, seq...) // e.g. OSC 0/2 window title — forward

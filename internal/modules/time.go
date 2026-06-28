@@ -32,7 +32,7 @@ func NewDate(format string, interval time.Duration) *Time {
 }
 
 // NewTimeWithID creates a time-backed module with a custom placeholder ID.
-func NewTimeWithID(id string, format string, interval time.Duration) *Time {
+func NewTimeWithID(id, format string, interval time.Duration) *Time {
 	if format == "" {
 		format = "%H:%M:%S"
 	}

@@ -150,7 +150,7 @@ func run(opts options) int {
 
 	// sshBaseSnap is the env-based SSH snapshot (inbound SSH detection); stable
 	// for the session lifetime and NOT reset on config reload.
-	sshBaseSnap := modules.NewSSH().Refresh(nil)
+	sshBaseSnap := modules.NewSSH().Refresh(context.TODO())
 	state.UpdateModule(sshBaseSnap)
 	sshAnim := modules.NewSSHAnimator(sshBaseSnap)
 
@@ -223,10 +223,12 @@ func run(opts options) int {
 	})
 
 	var (
-		timeModule  *modules.Time
-		dateModule  *modules.Time
-		gitMod      *modules.Git
-		gitCancel   context.CancelFunc
+		timeModule   *modules.Time
+		dateModule   *modules.Time
+		gitMod       *modules.Git
+		gitCancel    context.CancelFunc
+		timeCancel   context.CancelFunc
+		dateCancel   context.CancelFunc
 		tickerCancel context.CancelFunc
 	)
 	userMods := map[string]*userModEntry{}
@@ -286,12 +288,12 @@ func run(opts options) int {
 			}
 			em := newExecModuleRuntime(id, mcfg)
 			em.start(mCtx, bus)
-			state.UpdateModule(em.module.Refresh(nil))
+			state.UpdateModule(em.module.Refresh(context.TODO()))
 			userMods[id] = &userModEntry{cancel: mCancel, command: mcfg.Command, interval: interval, exec: em}
 		case "time":
 			tm := modules.NewTimeWithID(id, mcfg.Format, interval)
 			scheduler.Start(mCtx, tm, 2*time.Second)
-			state.UpdateModule(tm.Refresh(nil))
+			state.UpdateModule(tm.Refresh(context.TODO()))
 			userMods[id] = &userModEntry{cancel: mCancel, interval: interval}
 		default:
 			mCancel()
@@ -312,16 +314,23 @@ func run(opts options) int {
 			modules.NewShell(argv), modules.NewEnv(resolvedCfg.Modules["env"].Env),
 		}
 		for _, m := range builtins {
-			state.UpdateModule(m.Refresh(nil))
+			state.UpdateModule(m.Refresh(context.TODO()))
 		}
 
 		gitCtx, gCancel := context.WithCancel(ctx)
 		gitCancel = gCancel
-		scheduler.Start(ctx, timeModule, 2*time.Second)
-		scheduler.Start(ctx, dateModule, 30*time.Second)
+		tCtx, tCancel := context.WithCancel(ctx)
+		timeCancel = tCancel
+		scheduler.Start(tCtx, timeModule, 2*time.Second)
+		dCtx, dCancel := context.WithCancel(ctx)
+		dateCancel = dCancel
+		scheduler.Start(dCtx, dateModule, 30*time.Second)
 		scheduler.Start(gitCtx, gitMod, time.Second)
 
 		for id, mcfg := range resolvedCfg.Modules {
+			if config.ModuleSource(id, mcfg) == "" {
+				continue // skip built-in IDs that have no user-defined source
+			}
 			startUserMod(id, mcfg)
 		}
 		rebuildExecModules()
@@ -331,12 +340,33 @@ func run(opts options) int {
 	// updateModules applies a new resolvedCfg to the running module set:
 	// built-ins are updated in-place, user-defined modules are diff'ed by ID.
 	updateModules := func() {
-		// Built-in time/date: Format is a hot-swappable field; no restart needed.
-		if f := resolvedCfg.Modules["time"].Format; f != "" {
-			timeModule.Format = f
+		// Built-in time/date: restart goroutine when format or interval changes to
+		// avoid a data race between the scheduler goroutine (reader) and this write.
+		newTimeFmt := resolvedCfg.Modules["time"].Format
+		newTimeInterval := moduleInterval(resolvedCfg.Modules["time"], time.Second)
+		if (newTimeFmt != "" && newTimeFmt != timeModule.Format) || newTimeInterval != timeModule.Interval() {
+			if newTimeFmt == "" {
+				newTimeFmt = timeModule.Format
+			}
+			timeCancel()
+			timeModule = modules.NewTime(newTimeFmt, newTimeInterval)
+			tCtx, tCancel := context.WithCancel(ctx)
+			timeCancel = tCancel
+			scheduler.Start(tCtx, timeModule, 2*time.Second)
+			state.UpdateModule(timeModule.Refresh(context.TODO()))
 		}
-		if f := resolvedCfg.Modules["date"].Format; f != "" {
-			dateModule.Format = f
+		newDateFmt := resolvedCfg.Modules["date"].Format
+		newDateInterval := moduleInterval(resolvedCfg.Modules["date"], time.Minute)
+		if (newDateFmt != "" && newDateFmt != dateModule.Format) || newDateInterval != dateModule.Interval() {
+			if newDateFmt == "" {
+				newDateFmt = dateModule.Format
+			}
+			dateCancel()
+			dateModule = modules.NewDate(newDateFmt, newDateInterval)
+			dCtx, dCancel := context.WithCancel(ctx)
+			dateCancel = dCancel
+			scheduler.Start(dCtx, dateModule, 30*time.Second)
+			state.UpdateModule(dateModule.Refresh(context.TODO()))
 		}
 
 		// Git: restart only when the polling interval changed (rare).
@@ -348,7 +378,7 @@ func run(opts options) int {
 			gitCtx, gCancel := context.WithCancel(ctx)
 			gitCancel = gCancel
 			scheduler.Start(gitCtx, gitMod, time.Second)
-			state.UpdateModule(gitMod.Refresh(nil))
+			state.UpdateModule(gitMod.Refresh(context.TODO()))
 		}
 
 		// User-defined: build the desired set from new config.
@@ -396,22 +426,23 @@ func run(opts options) int {
 			modules.NewHostname(), modules.NewUser(),
 			modules.NewRuntime(profile), modules.NewShell(argv),
 		} {
-			state.UpdateModule(m.Refresh(nil))
+			state.UpdateModule(m.Refresh(context.TODO()))
 		}
 	}
 
 	// reloadConfig rebuilds the resolved config and bar. force=true skips the
-	// project-path equality guard (used on explicit --reload). Called from the
-	// event loop goroutine, so no locking is needed for closure-captured variables.
-	reloadConfig := func(newProjectPath string, force bool) {
+	// project-path equality guard (used on explicit --reload). Returns true when
+	// the config was successfully applied. Called from the event loop goroutine,
+	// so no locking is needed for closure-captured variables.
+	reloadConfig := func(newProjectPath string, force bool) bool {
 		old, _ := projectOverlayPath.Load().(string)
 		if !force && old == newProjectPath {
-			return
+			return false
 		}
 		projectOverlayPath.Store(newProjectPath)
 		newCfg, err := config.ApplyOverlays(cfg, cliOverlay, newProjectPath)
 		if err != nil {
-			return // keep running with old config on parse error
+			return false // keep running with old config on parse error
 		}
 		resolvedCfg = newCfg
 		newBarRows := bar.BuildRows(resolvedCfg)
@@ -434,7 +465,7 @@ func run(opts options) int {
 		render = renderer.New(newEngine(int(state.Terminal.Cols)), visuals.Theme)
 		configureRenderer(render)
 		updateModules()
-		redraw()
+		return true
 	}
 
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -559,9 +590,12 @@ func run(opts options) int {
 			if err != nil {
 				return // keep running on bad config
 			}
+			prevCfg := cfg
 			cfg = newBase
 			currentPath, _ := projectOverlayPath.Load().(string)
-			reloadConfig(currentPath, true)
+			if !reloadConfig(currentPath, true) {
+				cfg = prevCfg // ApplyOverlays failed: restore base to stay consistent
+			}
 		},
 	})
 	filter.SetAltHandler(altCoord.SetPending)

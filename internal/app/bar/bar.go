@@ -211,7 +211,7 @@ func TickerConfig(modules map[string]config.ModuleConfig) (interval time.Duratio
 // StartTicker launches the animation ticker goroutine. active is the
 // command-animating flag; changeActive is raised by the renderer while
 // value-change animations are still visible. Does nothing if interval <= 0.
-func StartTicker(ctx context.Context, bus *event.Bus, modules map[string]config.ModuleConfig, active *atomic.Bool, changeActive *atomic.Bool) {
+func StartTicker(ctx context.Context, bus *event.Bus, modules map[string]config.ModuleConfig, active, changeActive *atomic.Bool) {
 	interval, continuous := TickerConfig(modules)
 	if interval <= 0 {
 		return

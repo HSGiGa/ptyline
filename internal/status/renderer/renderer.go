@@ -562,8 +562,8 @@ func (r *Renderer) applySnapshotSpans(st status.StatusState, block layout.Block,
 	if idx < 0 {
 		return "", false
 	}
-	alignPad := content[:idx]           // leading spaces from width.Pad (right/center alignment)
-	suffix := content[idx+len(plain):]  // trailing spaces from width.Pad
+	alignPad := content[:idx]          // leading spaces from width.Pad (right/center alignment)
+	suffix := content[idx+len(plain):] // trailing spaces from width.Pad
 	var b strings.Builder
 	b.WriteString(blockStyle.LeftCap)
 	b.WriteString(r.theme.BG(blockStyle.BG))

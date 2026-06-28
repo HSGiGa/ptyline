@@ -2,7 +2,7 @@
 # Requires the Go toolchain (go 1.23+). See README.md for installation.
 
 BINARY      := ptyline
-CONFIG      ?= $(CURDIR)/$(DIST)/.config/ptyline/config.toml
+CONFIG      ?= $(CURDIR)/config/config.toml
 PKG         := ./cmd/ptyline
 DIST        := dist
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -74,11 +74,11 @@ lint: tools ## Run the pinned local golangci-lint
 
 .PHONY: fmt
 fmt: tools ## Format the codebase with the pinned gofumpt
-	$(GOFUMPT) -w .
+	$(GOFUMPT) -extra -w .
 
 .PHONY: fmt-check
 fmt-check: tools ## Verify formatting without modifying files
-	@test -z "$$($(GOFUMPT) -l .)" || (echo "Run 'make fmt' to format these files:"; $(GOFUMPT) -l .; exit 1)
+	@test -z "$$($(GOFUMPT) -extra -l .)" || (echo "Run 'make fmt' to format these files:"; $(GOFUMPT) -extra -l .; exit 1)
 
 .PHONY: check
 check: fmt-check vet test lint ## Run the local development validation suite
