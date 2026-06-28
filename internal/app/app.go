@@ -227,6 +227,8 @@ func run(opts options) int {
 		dateModule   *modules.Time
 		gitMod       *modules.Git
 		gitCancel    context.CancelFunc
+		timeCancel   context.CancelFunc
+		dateCancel   context.CancelFunc
 		tickerCancel context.CancelFunc
 	)
 	userMods := map[string]*userModEntry{}
@@ -317,8 +319,12 @@ func run(opts options) int {
 
 		gitCtx, gCancel := context.WithCancel(ctx)
 		gitCancel = gCancel
-		scheduler.Start(ctx, timeModule, 2*time.Second)
-		scheduler.Start(ctx, dateModule, 30*time.Second)
+		tCtx, tCancel := context.WithCancel(ctx)
+		timeCancel = tCancel
+		scheduler.Start(tCtx, timeModule, 2*time.Second)
+		dCtx, dCancel := context.WithCancel(ctx)
+		dateCancel = dCancel
+		scheduler.Start(dCtx, dateModule, 30*time.Second)
 		scheduler.Start(gitCtx, gitMod, time.Second)
 
 		for id, mcfg := range resolvedCfg.Modules {
@@ -331,12 +337,33 @@ func run(opts options) int {
 	// updateModules applies a new resolvedCfg to the running module set:
 	// built-ins are updated in-place, user-defined modules are diff'ed by ID.
 	updateModules := func() {
-		// Built-in time/date: Format is a hot-swappable field; no restart needed.
-		if f := resolvedCfg.Modules["time"].Format; f != "" {
-			timeModule.Format = f
+		// Built-in time/date: restart goroutine when format or interval changes to
+		// avoid a data race between the scheduler goroutine (reader) and this write.
+		newTimeFmt := resolvedCfg.Modules["time"].Format
+		newTimeInterval := moduleInterval(resolvedCfg.Modules["time"], time.Second)
+		if (newTimeFmt != "" && newTimeFmt != timeModule.Format) || newTimeInterval != timeModule.Interval() {
+			if newTimeFmt == "" {
+				newTimeFmt = timeModule.Format
+			}
+			timeCancel()
+			timeModule = modules.NewTime(newTimeFmt, newTimeInterval)
+			tCtx, tCancel := context.WithCancel(ctx)
+			timeCancel = tCancel
+			scheduler.Start(tCtx, timeModule, 2*time.Second)
+			state.UpdateModule(timeModule.Refresh(context.TODO()))
 		}
-		if f := resolvedCfg.Modules["date"].Format; f != "" {
-			dateModule.Format = f
+		newDateFmt := resolvedCfg.Modules["date"].Format
+		newDateInterval := moduleInterval(resolvedCfg.Modules["date"], time.Minute)
+		if (newDateFmt != "" && newDateFmt != dateModule.Format) || newDateInterval != dateModule.Interval() {
+			if newDateFmt == "" {
+				newDateFmt = dateModule.Format
+			}
+			dateCancel()
+			dateModule = modules.NewDate(newDateFmt, newDateInterval)
+			dCtx, dCancel := context.WithCancel(ctx)
+			dateCancel = dCancel
+			scheduler.Start(dCtx, dateModule, 30*time.Second)
+			state.UpdateModule(dateModule.Refresh(context.TODO()))
 		}
 
 		// Git: restart only when the polling interval changed (rare).
