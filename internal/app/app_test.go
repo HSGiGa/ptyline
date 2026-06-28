@@ -67,22 +67,37 @@ func TestAnimationTickerConfig(t *testing.T) {
 	}
 
 	interval, continuous = bar.TickerConfig(map[string]config.ModuleConfig{
-		"time": {Enabled: true, Animation: "glint", AnimationIntervalMS: 120},
+		"git": {Enabled: true, Animation: config.AnimationDefault, AnimationIntervalMS: 120},
 	})
-	if interval != 120*time.Millisecond || !continuous {
-		t.Fatalf("time animation = (%v, %t), want (120ms, true)", interval, continuous)
+	if interval != 120*time.Millisecond || continuous {
+		t.Fatalf("git change animation = (%v, %t), want (120ms, false)", interval, continuous)
+	}
+
+	interval, continuous = bar.TickerConfig(map[string]config.ModuleConfig{
+		"time": {Enabled: true, Animation: config.AnimationDefault, AnimationIntervalMS: 120},
+	})
+	if interval != 0 || continuous {
+		t.Fatalf("time animation = (%v, %t), want disabled", interval, continuous)
 	}
 }
 
 func TestAnimationsFromConfig(t *testing.T) {
 	got := bar.AnimationsFromConfig(map[string]config.ModuleConfig{
-		"time": {Enabled: true, Animation: "glint"},
-		"git":  {Enabled: true, Animation: "none"},
+		"command": {Enabled: true, Animation: config.AnimationDefault},
+		"git":     {Enabled: true, Animation: "blink"},
+		"time":    {Enabled: true, Animation: config.AnimationDefault},
+		"env":     {Enabled: true, Animation: "none"},
 	})
-	if got["time"].Mode != "glint" {
-		t.Fatalf("time animation = %+v, want glint", got["time"])
+	if got["command"].Trigger != "active" || got["command"].Mode != "" {
+		t.Fatalf("command animation = %+v, want default active", got["command"])
 	}
-	if _, ok := got["git"]; ok {
+	if got["git"].Trigger != "change" || got["git"].Mode != "blink" {
+		t.Fatalf("git animation = %+v, want blink change", got["git"])
+	}
+	if _, ok := got["time"]; ok {
+		t.Fatalf("time animation unexpectedly present: %+v", got)
+	}
+	if _, ok := got["env"]; ok {
 		t.Fatalf("disabled animation unexpectedly present: %+v", got)
 	}
 }

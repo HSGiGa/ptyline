@@ -138,6 +138,26 @@ func TestFormatCommandTruncates(t *testing.T) {
 	}
 }
 
+func TestFormatCommandConditionalSeparators(t *testing.T) {
+	format := "{active} {last} | {exit} | {duration}"
+	policy := CommandDisplayPolicy{Separator: "•"}
+
+	text, active := FormatCommand(status.ShellState{ActiveCommand: "sleep 100"}, format, 60, policy)
+	if text != "sleep 100" || !active {
+		t.Fatalf("active command with separators = (%q, %t), want sleep 100 true", text, active)
+	}
+
+	text, active = FormatCommand(status.ShellState{
+		LastCommand:          "sleep 100",
+		LastExitCode:         130,
+		LastDurationMS:       1000,
+		LastCommandCompleted: true,
+	}, format, 60, policy)
+	if text != "sleep 100 • sigint • 1s" || active {
+		t.Fatalf("done command with separators = (%q, %t), want bullets", text, active)
+	}
+}
+
 func TestFormatCommandDonePolicy(t *testing.T) {
 	completedAt := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
 	policy := CommandDisplayPolicy{
@@ -186,5 +206,19 @@ func TestFormatCommandDonePolicy(t *testing.T) {
 	}
 	if ShouldClearDoneCommand(failure, policy) {
 		t.Fatalf("failure should not auto-clear with default policy")
+	}
+}
+
+func TestFormatCommandSignalExit(t *testing.T) {
+	shell := status.ShellState{
+		LastCommand:          "sleep 100",
+		LastExitCode:         130,
+		LastDurationMS:       1000,
+		LastCommandCompleted: true,
+	}
+
+	text, _ := FormatCommand(shell, "{last} {exit} {exit_code} {duration}", 60, CommandDisplayPolicy{})
+	if text != "sleep 100 sigint 130 1s" {
+		t.Fatalf("signal exit command = %q, want sigint with raw exit_code", text)
 	}
 }

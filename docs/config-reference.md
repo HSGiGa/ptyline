@@ -43,8 +43,8 @@ config is migrated forward before parsing so old files keep working (spec §13.1
 ## MVP example (spec §13)
 
 The MVP default uses only initial modules (`time`, `cwd`, `hostname`, static) —
-git is a post-MVP provider. There is no `show_in_alternate_screen`: the bar is
-always hidden in the alternate screen in the MVP (spec §11, §13.1).
+git is a post-MVP provider. The bar is always hidden in the alternate screen
+(spec §11, §13.1).
 
 ```toml
 config_version = 1
@@ -76,9 +76,8 @@ enabled = true
   width expressions are **startup errors** that name the file and key. Config is
   loaded → migrated → validated → applied; invalid config is never silently
   reinterpreted.
-- `bar.format` and `[[bar.block]]` are **mutually exclusive**: if blocks are
-  present, `format` is rejected; otherwise `format` splits on `||` into sections:
-  one section is left, two are left/right, three are left/center/right.
+- `bar.format` splits on `||` into sections: one section is left, two are
+  left/right, three are left/center/right.
 - `|` inside `bar.format` or `[[bar.row]].format` is a separator marker. It draws
   the active row separator (`[[bar.row]].separator`, falling back to
   `bar.separator`) and collapses when either neighboring block in that section is
@@ -91,9 +90,7 @@ enabled = true
   truncated to a tiny sliver. Literal blocks (separators, spacing) are never
   hidden by this rule. Set e.g. `min_block_width = 5` to keep the bar readable on
   narrow terminals.
-- `bar.height` must be `1` in the normal screen; alternate-screen behavior is fixed
-  (bar hidden) and not configurable in the MVP.
-- Module IDs are unique; a block references an enabled module by ID. Defaults are
+- Module IDs are unique; a placeholder references an enabled module by ID. Defaults are
   applied only for omitted values. An unavailable optional provider renders its
   fallback and emits a diagnostic — it never blocks terminal I/O.
 
@@ -138,31 +135,6 @@ The supported suffixes are intentionally small:
 
 Widths are terminal display cells, not bytes.
 
-## Structured block layout (spec §8.8)
-
-This target-schema example uses post-MVP providers (git). `format` and `[[bar.block]]`
-are mutually exclusive (spec §13.1) — use one or the other.
-
-```toml
-[bar]
-height = 1
-
-[[bar.block]]
-module = "git"
-anchor = "left"
-width = "30%"
-align = "left"
-truncate = "right"
-style = "git"
-
-[[bar.block]]
-module = "time"
-anchor = "right"
-width = 10
-align = "right"
-style = "time"
-```
-
 ## Theme, icons, style (spec §8.9, §8.10; arch.md §16)
 
 ```toml
@@ -191,6 +163,7 @@ fallback = true
 [style.time]
 fg = "white"
 bg = "blue"
+animation = "pulse"        # visual effect when module.<id>.animation = true
 bold = true
 left_cap = "["
 right_cap = "]"
@@ -218,6 +191,16 @@ format = "{stdout}"
 refresh_on_command = ["kubectl config use-context"]
 ```
 
+Module formats that support multiple placeholders can use `|` as a conditional
+separator marker and `separator` to choose the rendered text:
+
+```toml
+format = "{stdout} | {stderr} | {exit_code}"
+separator = "•"
+```
+
+Empty fields drop adjacent separators.
+
 Custom commands run **locally** with a timeout; config is trusted user input but
 commands must always be time-bounded (spec §16, §17).
 `refresh_on_command` triggers an immediate refresh after a matching foreground
@@ -235,5 +218,5 @@ format = "%H:%M UTC"
 ## Field map
 
 The Go schema lives in `internal/config/schema.go` (`Config`, `BarConfig`,
-`BlockConfig`, `ModuleConfig`, `ThemeConfig`, `IconsConfig`, `StyleConfig`).
+`RowConfig`, `ModuleConfig`, `ThemeConfig`, `IconsConfig`, `StyleConfig`).
 Defaults in `default.go`.

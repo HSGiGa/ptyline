@@ -8,13 +8,9 @@ func Default() Config {
 		Shell:             "auto",
 		RefreshIntervalMS: 1000,
 		Bar: BarConfig{
-			// Height is advisory; the reserved row count is the number of [[bar.row]]
-			// entries (or 1 for the single-line Format fallback). Validate derives it.
-			Height: 1,
-			Mode:   "single-line",
 			// Built-in fallback is intentionally minimal: a rule-like stripe and a
-			// clock. Rich development layouts live in ptyline.toml and are passed via
-			// --config by `make run`.
+			// clock. Rich development layouts live in config/config.toml and are
+			// passed via --config by `make run`.
 			Rows: []RowConfig{
 				// Fill is the box-drawing horizontal "─" (U+2500), which joins into a
 				// solid rule; a plain "-" looks like a dashed line. Set fill = "-" for

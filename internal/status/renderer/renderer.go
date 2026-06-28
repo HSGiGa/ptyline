@@ -7,6 +7,7 @@ package renderer
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/hsgiga/ptyline/internal/status"
 	"github.com/hsgiga/ptyline/internal/status/layout"
@@ -58,7 +59,12 @@ type Renderer struct {
 	styles map[string]style.Style
 	// animations enables visual effects by module ID. Effects are applied after
 	// layout so ANSI bytes never affect display-width calculations.
-	animations map[string]Animation
+	animations           map[string]Animation
+	lastValues           map[string]string
+	changedAt            map[string]int
+	changedFor           map[string]int
+	changeFlag           *atomic.Bool
+	frameActiveAnimation bool
 	// templates holds pre-parsed template module specs resolved at render time
 	// from cached snapshots (no provider calls, no goroutines).
 	templates map[string]TemplateSpec
@@ -72,13 +78,15 @@ type Renderer struct {
 
 // Animation is a resolved per-module animation setting.
 type Animation struct {
-	Mode string
+	Mode          string
+	Trigger       string
+	DurationTicks int
 }
 
 // New creates a renderer over a layout engine and theme. A nil theme renders
 // plain (no-color) output.
 func New(engine *layout.Engine, th *theme.Theme) *Renderer {
-	r := &Renderer{engine: engine, theme: th, justify: JustifyCenter, styles: map[string]style.Style{}, animations: map[string]Animation{}, templates: map[string]TemplateSpec{}, icons: map[string]ModuleIcon{}}
+	r := &Renderer{engine: engine, theme: th, justify: JustifyCenter, styles: map[string]style.Style{}, animations: map[string]Animation{}, lastValues: map[string]string{}, changedAt: map[string]int{}, changedFor: map[string]int{}, templates: map[string]TemplateSpec{}, icons: map[string]ModuleIcon{}}
 	if th != nil && th.Mode() != theme.NoColor {
 		r.base = th.FG("base.fg") + th.BG("base.bg")
 	}
@@ -120,6 +128,13 @@ func (r *Renderer) SetAnimations(animations map[string]Animation) {
 	}
 }
 
+// SetChangeFlag installs the shared activity flag used by the animation ticker.
+// The renderer raises it when a change animation starts and clears it after all
+// change windows have expired.
+func (r *Renderer) SetChangeFlag(active *atomic.Bool) {
+	r.changeFlag = active
+}
+
 // SetJustify installs the configured center-section placement policy.
 func (r *Renderer) SetJustify(j Justify) {
 	switch j {
@@ -144,6 +159,8 @@ func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) Rendered
 // `--{left} ----- {center} ----- {right} --` (multi-line panels, the top line).
 // Pass separator="" to render without `|` marker expansion.
 func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill rune, separator string) RenderedBar {
+	prevFrameActive := r.frameActiveAnimation
+	r.frameActiveAnimation = false
 	fillStr := string(fill)
 	border := fill != ' '
 
@@ -208,9 +225,12 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		pb.WriteString(blockStyle.Plain(text))
 		// Each segment is styled and reset, then the base colors are re-emitted so
 		// the bar background continues across gaps and padding.
-		switch r.animationMode(st, placement.Block) {
+		switch r.animationMode(st, placement.Block, blockStyle, text) {
 		case AnimGlint:
 			sb.WriteString(r.applyGlint(text, blockStyle, st.AnimationPhase))
+			sb.WriteString(r.base)
+		case "glint_dim":
+			sb.WriteString(r.applyGlintDim(text, blockStyle))
 			sb.WriteString(r.base)
 		case AnimPulse:
 			sb.WriteString(r.applyPulse(text, blockStyle, st.AnimationPhase))
@@ -219,7 +239,11 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 			sb.WriteString(r.applyBlink(text, blockStyle, st.AnimationPhase))
 			sb.WriteString(r.base)
 		default:
-			sb.WriteString(blockStyle.Apply(text, r.theme))
+			if styled, ok := r.applySnapshotSpans(st, placement.Block, text, blockStyle); ok {
+				sb.WriteString(styled)
+			} else {
+				sb.WriteString(blockStyle.Apply(text, r.theme))
+			}
 			sb.WriteString(r.base)
 		}
 	}
@@ -252,6 +276,10 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	// the unstyled twin line, otherwise escape bytes would corrupt cell widths.
 	if wLine < target {
 		line += strings.Repeat(fillStr, target-wLine)
+	}
+	changeActive := r.refreshChangeFlag(st.AnimationPhase)
+	if r.changeFlag != nil {
+		r.changeFlag.Store(changeActive || r.frameActiveAnimation || prevFrameActive)
 	}
 	return RenderedBar{Line: r.base + caps + line + caps}
 }
@@ -336,18 +364,24 @@ func emptyWhitespaceSection(styled, plain string) (string, string) {
 // tokens (never raw ANSI — arch.md §16). All defaults share the base background
 // so the bar reads as one band.
 func (r *Renderer) styleFor(block layout.Block) style.Style {
+	base := defaultStyleFor(block)
 	moduleID := canonicalModuleID(block.ModuleID)
 	if block.StyleID != "" {
 		if s, ok := r.styles[block.StyleID]; ok {
-			return s
+			return mergeStyle(base, s)
 		}
 	}
 	if moduleID != "" {
 		if s, ok := r.styles[moduleID]; ok {
-			return s
+			return mergeStyle(base, s)
 		}
 	}
+	return base
+}
+
+func defaultStyleFor(block layout.Block) style.Style {
 	s := style.Style{} // no explicit fg/bg: terminal defaults
+	moduleID := canonicalModuleID(block.ModuleID)
 	if block.IsLiteral() || block.IsSeparator() {
 		s.FG = "muted" // separators and frame chrome in bright black (8)
 		return s
@@ -371,27 +405,203 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 	return s
 }
 
+func mergeStyle(base, overlay style.Style) style.Style {
+	if overlay.FG != "" {
+		base.FG = overlay.FG
+	}
+	if overlay.BG != "" {
+		base.BG = overlay.BG
+	}
+	base.Bold = overlay.Bold
+	base.Dim = overlay.Dim
+	base.Italic = overlay.Italic
+	base.Underline = overlay.Underline
+	if overlay.Animation != "" {
+		base.Animation = overlay.Animation
+	}
+	if overlay.Shape != "" {
+		base.Shape = overlay.Shape
+	}
+	if overlay.LeftCap != "" {
+		base.LeftCap = overlay.LeftCap
+	}
+	if overlay.RightCap != "" {
+		base.RightCap = overlay.RightCap
+	}
+	if overlay.PaddingLeft != 0 {
+		base.PaddingLeft = overlay.PaddingLeft
+	}
+	if overlay.PaddingRight != 0 {
+		base.PaddingRight = overlay.PaddingRight
+	}
+	return base
+}
+
 // animationMode returns the animation mode for a block, or "" if no animation
 // should run. Checks: color support, config opt-in, and the snapshot's
 // AnimationSuppressed flag (set by modules that control their own animation
 // timing, e.g. command only animates while a command is running).
-func (r *Renderer) animationMode(st status.StatusState, block layout.Block) string {
+func (r *Renderer) animationMode(st status.StatusState, block layout.Block, blockStyle style.Style, renderedValue string) string {
 	if block.IsLiteral() || block.IsSeparator() || r.theme == nil || r.theme.Mode() == theme.NoColor {
 		return ""
 	}
-	anim, ok := r.animations[canonicalModuleID(block.ModuleID)]
+	id := canonicalModuleID(block.ModuleID)
+	anim, ok := r.animations[id]
 	if !ok || anim.Mode == "" || anim.Mode == "none" {
+		if !ok {
+			return ""
+		}
+	}
+	mode := anim.Mode
+	if mode == "" {
+		mode = blockStyle.Animation
+	}
+	if mode == "" {
+		mode = defaultAnimationMode(id, anim.Trigger)
+	}
+	if mode == "" || mode == "none" {
 		return ""
 	}
-	snap, hasSnap := st.Modules[status.ModuleID(canonicalModuleID(block.ModuleID))]
+	snap, hasSnap := st.Modules[status.ModuleID(id)]
 	if hasSnap && snap.AnimationSuppressed {
+		if id == "command" && st.Shell.ActiveCommand != "" && mode == AnimGlint {
+			if glintVisible(renderedValue, blockStyle, st.AnimationPhase) {
+				r.frameActiveAnimation = true
+				return AnimGlint
+			}
+			return "glint_dim"
+		}
 		return ""
 	}
-	return anim.Mode
+	switch anim.Trigger {
+	case "change":
+		if !r.changeAnimationActive(id, renderedValue, st.AnimationPhase, anim.DurationTicks) {
+			return ""
+		}
+	case "active":
+		// Snapshot suppression above carries active-module timing.
+	default:
+		return ""
+	}
+	return mode
+}
+
+func defaultAnimationMode(id, trigger string) string {
+	if id == "command" && trigger == "active" {
+		return AnimGlint
+	}
+	if trigger == "change" {
+		return AnimPulse
+	}
+	return ""
+}
+
+func (r *Renderer) changeAnimationActive(id, value string, phase, durationTicks int) bool {
+	if durationTicks <= 0 {
+		durationTicks = 8
+	}
+	if id != "time" && value != "" {
+		if previous, ok := r.lastValues[id]; !ok {
+			r.lastValues[id] = value
+		} else if previous != value {
+			r.lastValues[id] = value
+			r.changedAt[id] = phase
+			r.changedFor[id] = durationTicks
+		}
+	}
+	r.refreshChangeFlag(phase)
+	if id == "time" || value == "" {
+		return false
+	}
+	changedPhase, ok := r.changedAt[id]
+	if !ok {
+		return false
+	}
+	if phase < changedPhase {
+		// AnimationPhase was reset (e.g. on command end); treat as expired.
+		delete(r.changedAt, id)
+		delete(r.changedFor, id)
+		return false
+	}
+	return phase-changedPhase < durationTicks
+}
+
+func (r *Renderer) refreshChangeFlag(phase int) bool {
+	active := false
+	for changedID, changedPhase := range r.changedAt {
+		durationTicks := r.changedFor[changedID]
+		if durationTicks <= 0 {
+			durationTicks = 8
+		}
+		if phase < changedPhase || phase-changedPhase >= durationTicks {
+			delete(r.changedAt, changedID)
+			delete(r.changedFor, changedID)
+			continue
+		}
+		active = true
+	}
+	return active
 }
 
 // styleAttrs delegates to style.Style.attrs() to avoid duplicating SGR logic.
 func styleAttrs(s style.Style) string { return s.Attrs() }
+
+func (r *Renderer) applySnapshotSpans(st status.StatusState, block layout.Block, content string, blockStyle style.Style) (string, bool) {
+	if block.IsLiteral() || block.IsSeparator() || r.theme == nil || r.theme.Mode() == theme.NoColor {
+		return "", false
+	}
+	snap, ok := st.Modules[status.ModuleID(canonicalModuleID(block.ModuleID))]
+	if !ok || len(snap.Spans) == 0 {
+		return "", false
+	}
+	plain := spansText(snap.Spans)
+	if plain == "" {
+		return "", false
+	}
+	idx := strings.Index(content, plain)
+	if idx < 0 {
+		return "", false
+	}
+	alignPad := content[:idx]           // leading spaces from width.Pad (right/center alignment)
+	suffix := content[idx+len(plain):]  // trailing spaces from width.Pad
+	var b strings.Builder
+	b.WriteString(blockStyle.LeftCap)
+	b.WriteString(r.theme.BG(blockStyle.BG))
+	b.WriteString(strings.Repeat(" ", max(0, blockStyle.PaddingLeft)))
+	b.WriteString(alignPad)
+	for _, span := range snap.Spans {
+		spanStyle := blockStyle
+		spanStyle.LeftCap = ""
+		spanStyle.RightCap = ""
+		spanStyle.PaddingLeft = 0
+		spanStyle.PaddingRight = 0
+		switch span.Role {
+		case "exit":
+			if span.Level == status.LevelOK {
+				spanStyle.FG = "ok"
+			} else {
+				spanStyle.FG = "error"
+			}
+		case "duration":
+			spanStyle.Dim = true
+		}
+		b.WriteString(spanStyle.Apply(span.Text, r.theme))
+		b.WriteString(r.theme.BG(blockStyle.BG))
+	}
+	b.WriteString(suffix)
+	b.WriteString(strings.Repeat(" ", max(0, blockStyle.PaddingRight)))
+	b.WriteString(theme.Reset)
+	b.WriteString(blockStyle.RightCap)
+	return b.String(), true
+}
+
+func spansText(spans []status.TextSpan) string {
+	var b strings.Builder
+	for _, span := range spans {
+		b.WriteString(span.Text)
+	}
+	return b.String()
+}
 
 func blockValue(st status.StatusState, block layout.Block, templates map[string]TemplateSpec, separator string) string {
 	if block.IsLiteral() {

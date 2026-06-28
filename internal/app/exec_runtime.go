@@ -30,6 +30,7 @@ func newExecModuleRuntime(id string, cfg config.ModuleConfig) *execModuleRuntime
 			moduleInterval(cfg, 10*time.Second),
 			timeout,
 			cfg.Format,
+			cfg.Separator,
 			cfg.MaxWidth,
 		),
 		refreshOnCommand: cfg.RefreshOnCommand,

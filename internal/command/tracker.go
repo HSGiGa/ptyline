@@ -5,6 +5,8 @@
 package command
 
 import (
+	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +20,11 @@ import (
 // remain active but stop producing output, such as an idle agent prompt.
 const commandAnimationIdleTimeout = 1200 * time.Millisecond
 
+// commandAnimationStartGrace keeps a newly-started command looking active even
+// before it produces output. This covers short silent commands such as `sleep 2`
+// without letting long idle processes animate forever.
+const commandAnimationStartGrace = 3 * time.Second
+
 // keystrokeEchoWindow is how long after a keystroke output is treated as the
 // program echoing the user's typing rather than doing work; within it the
 // command glint does not start.
@@ -28,6 +35,7 @@ const keystrokeEchoWindow = 180 * time.Millisecond
 // read by the ticker goroutine).
 type Tracker struct {
 	animating    atomic.Bool
+	startedAt    time.Time
 	lastActivity time.Time
 	lastStdin    time.Time
 	cfg          config.ModuleConfig
@@ -73,7 +81,9 @@ func (t *Tracker) ApplyShellMeta(key string, st *status.StatusState) *status.Mod
 	}
 	if key == shellintegration.KeyCommand {
 		if st.Shell.ActiveCommand != "" {
-			t.lastActivity = time.Now()
+			now := time.Now()
+			t.startedAt = now
+			t.lastActivity = now
 			st.ActiveCommandAnimating = true
 			t.animating.Store(true)
 		} else {
@@ -104,7 +114,17 @@ func (t *Tracker) Tick(st *status.StatusState) *status.ModuleSnapshot {
 		}
 		return nil
 	}
-	if time.Since(t.lastActivity) > commandAnimationIdleTimeout {
+	now := time.Now()
+	if !t.startedAt.IsZero() && now.Sub(t.startedAt) <= commandAnimationStartGrace {
+		st.ActiveCommandAnimating = true
+		t.animating.Store(true)
+		if t.cfg.Enabled {
+			snap := t.snapshot(st.Shell, true)
+			return &snap
+		}
+		return nil
+	}
+	if now.Sub(t.lastActivity) > commandAnimationIdleTimeout {
 		st.ActiveCommandAnimating = false
 		t.animating.Store(false)
 		if t.cfg.Enabled {
@@ -127,6 +147,7 @@ func DisplayPolicy(cfg config.ModuleConfig) modules.CommandDisplayPolicy {
 		DoneMinDuration: time.Duration(cfg.DoneMinDurationMS) * time.Millisecond,
 		DoneSuccessTTL:  time.Duration(cfg.DoneSuccessTTLMS) * time.Millisecond,
 		DoneFailureTTL:  time.Duration(cfg.DoneFailureTTLMS) * time.Millisecond,
+		Separator:       cfg.Separator,
 	}
 }
 
@@ -136,6 +157,56 @@ func (t *Tracker) snapshot(shell status.ShellState, animating bool) status.Modul
 		ID:                  "command",
 		Value:               status.Text(text),
 		UpdatedAt:           time.Now(),
+		Spans:               commandSpans(text, shell),
 		AnimationSuppressed: !active || !animating,
 	}
+}
+
+func commandSpans(text string, shell status.ShellState) []status.TextSpan {
+	if text == "" || shell.ActiveCommand != "" || !shell.LastCommandCompleted {
+		return nil
+	}
+	exit := modules.FormatExit(shell.LastExitCode)
+	duration := modules.FormatDuration(shell.LastDurationMS)
+	marks := []spanMark{}
+	if exit != "" {
+		if idx := strings.LastIndex(text, exit); idx >= 0 {
+			level := status.LevelError
+			if shell.LastExitCode == 0 {
+				level = status.LevelOK
+			}
+			marks = append(marks, spanMark{Start: idx, End: idx + len(exit), Span: status.TextSpan{Text: exit, Role: "exit", Level: level}})
+		}
+	}
+	if duration != "" {
+		if idx := strings.LastIndex(text, duration); idx >= 0 {
+			marks = append(marks, spanMark{Start: idx, End: idx + len(duration), Span: status.TextSpan{Text: duration, Role: "duration"}})
+		}
+	}
+	if len(marks) == 0 {
+		return nil
+	}
+	sort.Slice(marks, func(i, j int) bool { return marks[i].Start < marks[j].Start })
+	spans := []status.TextSpan{}
+	cursor := 0
+	for _, mark := range marks {
+		if mark.Start < cursor {
+			continue
+		}
+		if mark.Start > cursor {
+			spans = append(spans, status.TextSpan{Text: text[cursor:mark.Start]})
+		}
+		spans = append(spans, mark.Span)
+		cursor = mark.End
+	}
+	if cursor < len(text) {
+		spans = append(spans, status.TextSpan{Text: text[cursor:]})
+	}
+	return spans
+}
+
+type spanMark struct {
+	Start int
+	End   int
+	Span  status.TextSpan
 }

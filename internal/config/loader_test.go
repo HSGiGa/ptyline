@@ -17,6 +17,9 @@ shell = "bash"
 format = "{time}"
 [module.time]
 enabled = true
+animation = true
+[style.time]
+animation = "pulse"
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -25,18 +28,24 @@ enabled = true
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Shell != "bash" || cfg.Bar.Format != "{time}" || cfg.Bar.Height != 1 {
+	if cfg.Shell != "bash" || cfg.Bar.Format != "{time}" {
 		t.Fatalf("Load() = %+v", cfg)
+	}
+	if got := cfg.Modules["time"].Animation; got != AnimationDefault {
+		t.Fatalf("module.time.animation = %q, want default", got)
+	}
+	if got := cfg.Styles["time"].Animation; got != "pulse" {
+		t.Fatalf("style.time.animation = %q, want pulse", got)
 	}
 }
 
 func TestLoadRootConfig(t *testing.T) {
-	cfg, err := Load(filepath.Join("..", "..", "ptyline.toml"))
+	cfg, err := Load(filepath.Join("..", "..", "config", "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Bar.Height != 2 || len(cfg.Bar.Rows) != 2 {
-		t.Fatalf("root config rows = height %d len %d, want 2 rows", cfg.Bar.Height, len(cfg.Bar.Rows))
+	if len(cfg.Bar.Rows) != 2 {
+		t.Fatalf("root config rows = %d, want 2", len(cfg.Bar.Rows))
 	}
 	if got, want := cfg.Bar.Rows[0].Format, " {command} || || {git} "; got != want {
 		t.Fatalf("root config top row = %q, want %q", got, want)
@@ -44,11 +53,14 @@ func TestLoadRootConfig(t *testing.T) {
 	if got, want := cfg.Bar.Rows[1].Format, "{identity} || {env} | {runtime} | {shell} || {gh} | {time}"; got != want {
 		t.Fatalf("root config main row = %q, want %q", got, want)
 	}
-	if got, want := cfg.Bar.Rows[1].Separator, " : "; got != want {
+	if got, want := cfg.Bar.Rows[1].Separator, ":"; got != want {
 		t.Fatalf("root config main row separator = %q, want %q", got, want)
 	}
-	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} {exit} {duration}" {
+	if module := cfg.Modules["command"]; !module.Enabled || module.Format != "{active} {last} | {duration} | {exit}" || module.Separator != "•" {
 		t.Fatalf("root command module = %+v", module)
+	}
+	if got := cfg.Modules["command"].Animation; got != AnimationDefault {
+		t.Fatalf("root command animation = %q, want default", got)
 	}
 	if module := cfg.Modules["gh"]; module.Source != "exec" || module.Command == "" {
 		t.Fatalf("root gh module = %+v, want source=exec with command", module)
@@ -80,9 +92,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 	}{
 		{name: "missing version", body: "shell = \"bash\"", key: "config_version"},
 		{name: "unknown key", body: "config_version = 1\nunknown = true", key: "unknown"},
-		{name: "format and block", body: "config_version = 1\n[bar]\nformat = \"{time}\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"auto\"\ntruncate = \"right\"", key: "bar.format"},
-		{name: "bad justify", body: "config_version = 1\n[bar]\njustify = \"middle\"", key: "bar.justify"},
-		{name: "bad width", body: "config_version = 1\n[bar]\nformat = \"\"\n[[bar.block]]\nmodule = \"time\"\nanchor = \"left\"\nalign = \"left\"\nwidth = \"101%\"\ntruncate = \"right\"", key: "width"},
+		{name: "bad justify", body: "config_version = 1\n[bar]\nformat = \"{time}\"\njustify = \"middle\"", key: "bar.justify"},
 		{name: "bad env name", body: "config_version = 1\n[module.env]\nenabled = true\nenv = [\"BAD-NAME\"]", key: "module.env.env"},
 		{name: "bad source", body: "config_version = 1\n[module.foo]\nsource = \"socket\"\ncommand = \"echo hi\"", key: "module.foo.source"},
 		{name: "exec source without command", body: "config_version = 1\n[module.foo]\nsource = \"exec\"", key: "module.foo.command"},

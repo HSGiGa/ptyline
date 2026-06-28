@@ -176,12 +176,14 @@ func run(opts options) int {
 	newEngine := func(cols int) *layout.Engine {
 		return layout.NewWithMinBlock(cols, resolvedCfg.Bar.MinBlockWidth)
 	}
+	var changeAnimating atomic.Bool
 	configureRenderer := func(r *renderer.Renderer) {
 		r.SetJustify(renderer.Justify(resolvedCfg.Bar.Justify))
 		r.SetStyles(mergedStyles())
 		r.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
 		r.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 		r.SetIcons(bar.IconSpecs(resolvedCfg))
+		r.SetChangeFlag(&changeAnimating)
 	}
 	render := renderer.New(newEngine(int(size.Cols)), visuals.Theme)
 	configureRenderer(render)
@@ -259,7 +261,7 @@ func run(opts options) int {
 		}
 		tCtx, tCancel := context.WithCancel(ctx)
 		tickerCancel = tCancel
-		bar.StartTicker(tCtx, bus, resolvedCfg.Modules, cmdTracker.Animating())
+		bar.StartTicker(tCtx, bus, resolvedCfg.Modules, cmdTracker.Animating(), &changeAnimating)
 	}
 
 	rebuildExecModules := func() {

@@ -29,7 +29,7 @@ Theme name resolution:
 
 Theme files are TOML. The extension should be `.toml`, not a custom `.them`
 extension, so editors, linters, and tests can treat the file as ordinary TOML.
-Example themes live in `examples/themes/`, including flat palettes and visual
+Example themes live in `config/themes/`, including flat palettes and visual
 shape variants such as `gruvbox-box`, `nord-pill`, and
 `catppuccin-powerline`.
 

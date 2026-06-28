@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/status"
+	"github.com/hsgiga/ptyline/internal/status/formatting"
 	"github.com/hsgiga/ptyline/internal/status/width"
 )
 
@@ -21,6 +22,7 @@ type CommandDisplayPolicy struct {
 	DoneMinDuration time.Duration
 	DoneSuccessTTL  time.Duration
 	DoneFailureTTL  time.Duration
+	Separator       string
 	Now             time.Time
 }
 
@@ -48,6 +50,9 @@ func normalizeCommandDisplayPolicy(policy CommandDisplayPolicy) CommandDisplayPo
 	if policy.DoneSuccessTTL == 0 {
 		policy.DoneSuccessTTL = DefaultCommandDoneSuccessTTL
 	}
+	if policy.Separator == "" {
+		policy.Separator = " | "
+	}
 	if policy.Now.IsZero() {
 		policy.Now = time.Now()
 	}
@@ -63,9 +68,9 @@ func replaceCommandFields(format string, shell status.ShellState, policy Command
 	durationMS := ""
 	if active == "" && shouldShowDoneCommand(shell, policy) {
 		last = shell.LastCommand
-		exit = formatExit(shell.LastExitCode)
+		exit = FormatExit(shell.LastExitCode)
 		exitCode = strconv.Itoa(shell.LastExitCode)
-		duration = formatDuration(shell.LastDurationMS)
+		duration = FormatDuration(shell.LastDurationMS)
 		durationMS = strconv.Itoa(shell.LastDurationMS)
 	}
 	replacer := strings.NewReplacer(
@@ -76,7 +81,7 @@ func replaceCommandFields(format string, shell status.ShellState, policy Command
 		"{duration}", duration,
 		"{duration_ms}", durationMS,
 	)
-	return replacer.Replace(format)
+	return formatting.CollapseSeparators(replacer.Replace(format), policy.Separator)
 }
 
 func ShouldClearDoneCommand(shell status.ShellState, policy CommandDisplayPolicy) bool {
@@ -120,14 +125,32 @@ func shouldShowDoneCommand(shell status.ShellState, policy CommandDisplayPolicy)
 	return true
 }
 
-func formatExit(code int) string {
+func FormatExit(code int) string {
 	if code == 0 {
 		return "ok"
+	}
+	if signal, ok := signalExitName(code); ok {
+		return signal
 	}
 	return "exit " + strconv.Itoa(code)
 }
 
-func formatDuration(ms int) string {
+func signalExitName(code int) (string, bool) {
+	signals := map[int]string{
+		129: "sighup",
+		130: "sigint",
+		131: "sigquit",
+		134: "sigabrt",
+		137: "sigkill",
+		139: "sigsegv",
+		141: "sigpipe",
+		143: "sigterm",
+	}
+	signal, ok := signals[code]
+	return signal, ok
+}
+
+func FormatDuration(ms int) string {
 	if ms < 0 {
 		return ""
 	}

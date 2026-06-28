@@ -62,11 +62,9 @@ func parse(raw []byte) (Config, error) {
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
 		return Config{}, fmt.Errorf("unknown key %q", undecoded[0])
 	}
-	// A user who specifies a single-line `format` (or `[[bar.block]]`) but no
-	// `[[bar.row]]` overrides the multi-line default; otherwise the default rows
-	// would shadow their intent (defaults fill unset fields).
-	if !metadata.IsDefined("bar", "row") &&
-		(metadata.IsDefined("bar", "format") || metadata.IsDefined("bar", "block")) {
+	// A user who specifies `format` but no `[[bar.row]]` overrides the multi-line
+	// default; otherwise the default rows would shadow their intent.
+	if !metadata.IsDefined("bar", "row") && metadata.IsDefined("bar", "format") {
 		cfg.Bar.Rows = nil
 	}
 	return cfg, nil
@@ -78,27 +76,14 @@ func parse(raw []byte) (Config, error) {
 //   - config_version is required and must equal CurrentVersion;
 //   - unknown top-level/module keys, invalid enums, and invalid width expressions
 //     are errors (not silently defaulted);
-//   - `bar.format` and `[[bar.block]]` are mutually exclusive;
-//   - the reserved height is the number of `[[bar.row]]` entries (or 1 for the
-//     single-line `bar.format` fallback) and must be >= 1;
-//   - module IDs are unique and a block references an enabled module by ID;
+//   - bar must define format or at least one [[bar.row]];
 //   - custom-command modules must carry a timeout (spec §16, §17).
 func Validate(cfg *Config) error {
 	if cfg.Version != CurrentVersion {
 		return fmt.Errorf("config_version must be %d", CurrentVersion)
 	}
-	// Multi-line: the reserved height follows the [[bar.row]] count when present.
-	if len(cfg.Bar.Rows) > 0 {
-		cfg.Bar.Height = uint16(len(cfg.Bar.Rows))
-	}
-	if cfg.Bar.Height < 1 {
-		return fmt.Errorf("bar.height must be >= 1")
-	}
-	if cfg.Bar.Format != "" && len(cfg.Bar.Blocks) > 0 {
-		return fmt.Errorf("bar.format and bar.block are mutually exclusive")
-	}
-	if !oneOf(cfg.Bar.Mode, "single-line", "agent-panel") {
-		return fmt.Errorf("bar.mode has invalid value %q", cfg.Bar.Mode)
+	if cfg.Bar.Format == "" && len(cfg.Bar.Rows) == 0 {
+		return fmt.Errorf("bar must define format or at least one [[bar.row]]")
 	}
 	if !oneOf(cfg.Bar.Justify, "left", "center", "right", "absolute_center") {
 		return fmt.Errorf("bar.justify has invalid value %q", cfg.Bar.Justify)
@@ -111,27 +96,6 @@ func Validate(cfg *Config) error {
 	}
 	if !oneOf(cfg.Icons.EmojiWidth, "auto", "1", "2") {
 		return fmt.Errorf("icons.emoji_width has invalid value %q", cfg.Icons.EmojiWidth)
-	}
-	for index, block := range cfg.Bar.Blocks {
-		prefix := fmt.Sprintf("bar.block[%d]", index)
-		if !oneOf(block.Anchor, "left", "center", "right") {
-			return fmt.Errorf("%s.anchor has invalid value %q", prefix, block.Anchor)
-		}
-		if !oneOf(block.Align, "left", "center", "right") {
-			return fmt.Errorf("%s.align has invalid value %q", prefix, block.Align)
-		}
-		if !oneOf(block.Truncate, "left", "right", "middle", "none") {
-			return fmt.Errorf("%s.truncate has invalid value %q", prefix, block.Truncate)
-		}
-		for name, width := range map[string]string{"width": block.Width, "min_width": block.MinWidth, "max_width": block.MaxWidth} {
-			if width != "" && !validWidth(width) {
-				return fmt.Errorf("%s.%s has invalid value %q", prefix, name, width)
-			}
-		}
-		module, ok := cfg.Modules[block.Module]
-		if !ok || !module.Enabled {
-			return fmt.Errorf("%s.module references unavailable module %q", prefix, block.Module)
-		}
 	}
 	for id, module := range cfg.Modules {
 		source := ModuleSource(id, module)
@@ -148,7 +112,7 @@ func Validate(cfg *Config) error {
 			(module.Enabled || module.Source != "" || module.Provider != "" || len(module.RefreshOnCommand) > 0) {
 			return fmt.Errorf("module.%s.command is required for source %q", id, source)
 		}
-		if module.Animation != "" && !oneOf(module.Animation, "none", "glint", "pulse", "blink") {
+		if module.Animation != "" && !oneOf(string(module.Animation), "none", "default", "glint", "pulse", "blink") {
 			return fmt.Errorf("module.%s.animation has invalid value %q", id, module.Animation)
 		}
 		if module.AnimationIntervalMS < 0 {
@@ -274,7 +238,7 @@ func DefaultPath() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "ptyline.toml"
+		return filepath.Join("config", "config.toml")
 	}
 	return filepath.Join(home, ".config", "ptyline", "config.toml")
 }
@@ -362,9 +326,9 @@ func ValidateOverlayScope(overlay Config, meta toml.MetaData) error {
 }
 
 // MergeOverlay applies an overlay on top of base. Map sections (modules, styles,
-// theme palette maps) merge by key; slice fields (env, bar.row, bar.block) replace
-// entirely when the overlay defines them; scalar fields use the overlay value when
-// non-zero; booleans use IsDefined to detect explicit sets.
+// theme palette maps) merge by key; slice fields (env, bar.row) replace entirely
+// when the overlay defines them; scalar fields use the overlay value when non-zero;
+// booleans use IsDefined to detect explicit sets.
 func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
 	result := base
 
@@ -375,17 +339,11 @@ func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
 	if meta.IsDefined("bar", "row") {
 		result.Bar.Rows = overlay.Bar.Rows
 	}
-	if meta.IsDefined("bar", "block") {
-		result.Bar.Blocks = overlay.Bar.Blocks
-	}
 	if overlay.Bar.Separator != "" {
 		result.Bar.Separator = overlay.Bar.Separator
 	}
 	if overlay.Bar.Padding != 0 {
 		result.Bar.Padding = overlay.Bar.Padding
-	}
-	if overlay.Bar.Mode != "" {
-		result.Bar.Mode = overlay.Bar.Mode
 	}
 	if overlay.Bar.Justify != "" {
 		result.Bar.Justify = overlay.Bar.Justify
@@ -419,12 +377,6 @@ func MergeOverlay(base Config, overlay Config, meta toml.MetaData) Config {
 	}
 	for k, v := range overlay.Theme.Status {
 		result.Theme.Status[k] = v
-	}
-	if result.Theme.Agent == nil {
-		result.Theme.Agent = map[string]string{}
-	}
-	for k, v := range overlay.Theme.Agent {
-		result.Theme.Agent[k] = v
 	}
 
 	// Icons
@@ -482,6 +434,9 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	if overlay.Format != "" {
 		base.Format = overlay.Format
 	}
+	if meta.IsDefined("module", id, "separator") {
+		base.Separator = overlay.Separator
+	}
 	if overlay.Source != "" {
 		base.Source = overlay.Source
 	}
@@ -500,7 +455,7 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	if overlay.MaxWidth != 0 {
 		base.MaxWidth = overlay.MaxWidth
 	}
-	if overlay.Animation != "" {
+	if meta.IsDefined("module", id, "animation") {
 		base.Animation = overlay.Animation
 	}
 	if overlay.AnimationIntervalMS != 0 {
@@ -536,6 +491,9 @@ func mergeStyleConfig(base, overlay StyleConfig) StyleConfig {
 	}
 	if overlay.Underline {
 		base.Underline = true
+	}
+	if overlay.Animation != "" {
+		base.Animation = overlay.Animation
 	}
 	if overlay.Shape != "" {
 		base.Shape = overlay.Shape
@@ -578,9 +536,6 @@ func inferActiveModules(cfg *Config, explicitlyDisabled map[string]bool) {
 		for _, m := range moduleRefRE.FindAllStringSubmatch(row.Format, -1) {
 			activate(m[1])
 		}
-	}
-	for _, block := range cfg.Bar.Blocks {
-		activate(block.Module)
 	}
 }
 

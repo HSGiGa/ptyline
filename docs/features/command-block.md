@@ -15,13 +15,17 @@ format = "{hostname} {cwd} {command} || {git} {time}"
 
 [module.command]
 enabled = true
-format = "{active} {last} {exit} {duration}"
+format = "{active} {last} | {exit} | {duration}"
+separator = "•"
 max_width = 60
 done_min_duration_ms = 2000
 done_success_ttl_ms = 3000
 done_failure_ttl_ms = 0
-animation = "glint"
+animation = true
 animation_interval_ms = 80
+
+[style.command]
+animation = "glint"
 ```
 
 ## User Model
@@ -43,6 +47,17 @@ The same format is used for all states:
 ```toml
 format = "{active} {last} {exit} {duration}"
 ```
+
+Use `|` as a conditional separator marker in command formats:
+
+```toml
+format = "{active} {last} | {exit} | {duration}"
+separator = "•"
+```
+
+Empty fields drop adjacent separator markers, so an active `sleep 100` renders as
+`sleep 100`, while a completed interrupted command can render as
+`sleep 100 • sigint • 1s`.
 
 State controls which placeholders are populated:
 
@@ -111,12 +126,16 @@ Rendering rules:
 
 ## Animation
 
-`module.command.animation = "glint"` animates only while the command is active and
-doing work. The command text remains visible when the animation is suppressed.
-Completed command output is static.
+`module.command.animation = true` animates while the command is active and doing
+work. A newly-started command gets a short grace window, so silent commands like
+`sleep 2` still look active. After that, an active command that stops producing
+output becomes idle: the command text remains visible, but animation is
+suppressed. Completed command output is static. The default command effect is
+`glint`; set `[style.command].animation` to `pulse`, `blink`, or `glint` to
+choose the visual effect.
 
-In no-color mode, glint degrades to static text. Setting `animation = "none"`
-disables it.
+In no-color mode, animation degrades to static text. Setting `animation = false`
+or `animation = "none"` disables it.
 
 ## Future Rich Text
 
@@ -124,7 +143,7 @@ Per-placeholder styling is reserved for the rich text/span renderer:
 
 ```toml
 [module.command.active]
-animation = "glint"
+animation = true
 fg = "#f2b35d"
 
 [module.command.exit]

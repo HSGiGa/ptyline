@@ -61,6 +61,7 @@ func TemplateSpecs(cfg config.Config) map[string]renderer.TemplateSpec {
 			HideWhenEmpty:      mcfg.HideWhenEmpty,
 			CollapseWhitespace: mcfg.CollapseWhitespace,
 			MaxWidth:           mcfg.MaxWidth,
+			Separator:          mcfg.Separator,
 		}
 	}
 	return specs
@@ -159,27 +160,46 @@ func Geometry(area reserved.Area, rows uint16, want int) (top uint16, count int)
 func AnimationsFromConfig(modules map[string]config.ModuleConfig) map[string]renderer.Animation {
 	animations := make(map[string]renderer.Animation)
 	for id, module := range modules {
-		if !module.Enabled || module.Animation == "" || module.Animation == "none" {
+		if !module.Enabled || !module.Animation.Enabled() {
 			continue
 		}
-		animations[id] = renderer.Animation{Mode: module.Animation}
+		if id == "time" {
+			continue
+		}
+		trigger := "change"
+		if id == "command" {
+			trigger = "active"
+		}
+		animations[id] = renderer.Animation{
+			Mode:          module.Animation.Effect(),
+			Trigger:       trigger,
+			DurationTicks: durationTicks(module.AnimationIntervalMS),
+		}
 	}
 	return animations
 }
 
+func durationTicks(intervalMS int) int {
+	if intervalMS <= 0 {
+		intervalMS = 120
+	}
+	ticks := 900 / intervalMS
+	if ticks < 1 {
+		return 1
+	}
+	return ticks
+}
+
 // TickerConfig derives the global tick interval and whether it is continuous
-// (any non-command animated module) or command-gated.
+// (legacy only; current animations are gated by command/change activity).
 func TickerConfig(modules map[string]config.ModuleConfig) (interval time.Duration, continuous bool) {
 	for id, module := range modules {
-		if !module.Enabled || module.Animation == "" || module.Animation == "none" {
+		if !module.Enabled || !module.Animation.Enabled() || id == "time" {
 			continue
-		}
-		if id != "command" {
-			continuous = true
 		}
 		next := time.Duration(module.AnimationIntervalMS) * time.Millisecond
 		if next <= 0 {
-			next = 250 * time.Millisecond
+			next = 120 * time.Millisecond
 		}
 		if interval == 0 || next < interval {
 			interval = next
@@ -189,9 +209,9 @@ func TickerConfig(modules map[string]config.ModuleConfig) (interval time.Duratio
 }
 
 // StartTicker launches the animation ticker goroutine. active is the
-// command-animating flag; when continuous is false ticks are suppressed unless
-// active.Load() is true. Does nothing if interval <= 0.
-func StartTicker(ctx context.Context, bus *event.Bus, modules map[string]config.ModuleConfig, active *atomic.Bool) {
+// command-animating flag; changeActive is raised by the renderer while
+// value-change animations are still visible. Does nothing if interval <= 0.
+func StartTicker(ctx context.Context, bus *event.Bus, modules map[string]config.ModuleConfig, active *atomic.Bool, changeActive *atomic.Bool) {
 	interval, continuous := TickerConfig(modules)
 	if interval <= 0 {
 		return
@@ -204,7 +224,7 @@ func StartTicker(ctx context.Context, bus *event.Bus, modules map[string]config.
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if continuous || (active != nil && active.Load()) {
+				if continuous || (active != nil && active.Load()) || (changeActive != nil && changeActive.Load()) {
 					bus.SendCtx(ctx, event.Tick{})
 				}
 			}

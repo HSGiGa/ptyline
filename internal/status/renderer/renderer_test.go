@@ -3,6 +3,7 @@ package renderer
 import (
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/hsgiga/ptyline/internal/status"
@@ -328,14 +329,13 @@ func TestCommandGlintKeepsVisibleText(t *testing.T) {
 	st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("npm test"), AnimationSuppressed: false})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+	r.SetAnimations(map[string]Animation{"command": {Mode: "glint", Trigger: "active"}})
 	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 
-	// command has no explicit FG (terminal default), so glint cannot blend colors —
-	// it renders plain text. Only verify visible content is preserved.
 	if !strings.Contains(stripANSI(line), "npm test") {
 		t.Fatalf("command glint changed visible text: %q", line)
 	}
+	// command has no explicit FG, so glint falls back to static rendering — no truecolor codes.
 }
 
 func TestCommandDoneStopsGlint(t *testing.T) {
@@ -347,18 +347,75 @@ func TestCommandDoneStopsGlint(t *testing.T) {
 	st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("npm test exit 2 8.4s"), AnimationSuppressed: true})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+	r.SetAnimations(map[string]Animation{"command": {Mode: "glint", Trigger: "active"}})
 	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 
-	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
-		t.Fatalf("done command should not glint: %q", line)
+	if strings.Contains(line, "\x1b[38;2;") {
+		t.Fatalf("done command should not use glint colors: %q", line)
 	}
 	if !strings.Contains(stripANSI(line), "npm test exit 2 8.4s") {
 		t.Fatalf("done command missing visible text: %q", line)
 	}
 }
 
-func TestCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
+func TestCommandDoneSpansColorExitAndDimDuration(t *testing.T) {
+	st := status.NewState()
+	st.Resize(60, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{
+		ID:    "command",
+		Value: status.Text("sleep 5 • sigint • 1s"),
+		Spans: []status.TextSpan{
+			{Text: "sleep 5 • "},
+			{Text: "sigint", Role: "exit", Level: status.LevelError},
+			{Text: " • "},
+			{Text: "1s", Role: "duration"},
+		},
+	})
+
+	r := New(layout.New(60), theme.Default(theme.TrueColor))
+	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
+	if !strings.Contains(line, "\x1b[38;2;205;0;0m") {
+		t.Fatalf("exit span should be error-colored: %q", line)
+	}
+	if !containsDimSGR(line) {
+		t.Fatalf("duration span should be dimmed: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), "sleep 5 • sigint • 1s") {
+		t.Fatalf("styled command lost visible text: %q", line)
+	}
+}
+
+func TestCommandDoneSpansWorkWithRightAlignment(t *testing.T) {
+	// Blocks with explicit width and right alignment are padded by width.Pad before
+	// applySnapshotSpans is called. The leading spaces must not break span lookup.
+	st := status.NewState()
+	st.Resize(60, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{
+		ID:    "command",
+		Value: status.Text("sleep 5 • sigint • 1s"),
+		Spans: []status.TextSpan{
+			{Text: "sleep 5 • "},
+			{Text: "sigint", Role: "exit", Level: status.LevelError},
+			{Text: " • "},
+			{Text: "1s", Role: "duration"},
+		},
+	})
+
+	r := New(layout.New(60), theme.Default(theme.TrueColor))
+	// {command:40:right} pads the text with leading spaces for right-alignment.
+	line := r.RenderRow(st, layout.ParseFormat("{command:40:right}"), ' ', "").Line
+	if !strings.Contains(line, "\x1b[38;2;205;0;0m") {
+		t.Fatalf("exit span should be error-colored in right-aligned block: %q", line)
+	}
+	if !containsDimSGR(line) {
+		t.Fatalf("duration span should be dimmed in right-aligned block: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), "sleep 5 • sigint • 1s") {
+		t.Fatalf("styled command lost visible text in right-aligned block: %q", line)
+	}
+}
+
+func TestCommandGlintStableWidthAndSinglePassCycle(t *testing.T) {
 	render := func(phase int) string {
 		st := status.NewState()
 		st.Resize(40, 1, false)
@@ -367,7 +424,8 @@ func TestCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
 		st.ActiveCommandAnimating = true
 		st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("sleep 30"), AnimationSuppressed: false})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
-		r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+		r.SetStyles(map[string]style.Style{"command": {FG: "#e5e5e5"}})
+		r.SetAnimations(map[string]Animation{"command": {Mode: "glint", Trigger: "active"}})
 		return r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 	}
 	// Only colors change between frames: the visible cells stay identical, so the
@@ -378,10 +436,43 @@ func TestCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
 			t.Fatalf("phase %d changed visible cells: %q vs %q", phase, got, base)
 		}
 	}
-	// "sleep 30" is 8 cells and the shimmer wraps on a ring of that length, so a
-	// full cycle returns an identical frame, colors included — no snap.
-	if render(2) != render(2+len("sleep 30")) {
-		t.Fatalf("shimmer is not seamless across a full cycle")
+	cycle := glintCycleLength(len("sleep 30"))
+	if strings.Contains(render(0), "\x1b[38;2;229;229;229m") {
+		t.Fatalf("first off-left frame should not show the highlight: %q", render(0))
+	}
+	if strings.Contains(render(cycle-1), "\x1b[38;2;229;229;229m") {
+		t.Fatalf("last off-right frame should not show the next highlight: %q", render(cycle-1))
+	}
+	if !strings.Contains(render(cycle+1), "\x1b[38;2;110;110;110m") {
+		t.Fatalf("next pass should start only after previous pass has disappeared: %q", render(cycle+1))
+	}
+}
+
+func TestCommandGlintSuppressedPassFinishesBeforeDim(t *testing.T) {
+	render := func(phase int) (string, bool) {
+		st := status.NewState()
+		st.Resize(40, 1, false)
+		st.Shell.ActiveCommand = "sleep 30"
+		st.AnimationPhase = phase
+		st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("sleep 30"), AnimationSuppressed: true})
+		r := New(layout.New(40), theme.Default(theme.TrueColor))
+		r.SetStyles(map[string]style.Style{"command": {FG: "#e5e5e5"}})
+		var active atomic.Bool
+		r.SetChangeFlag(&active)
+		r.SetAnimations(map[string]Animation{"command": {Mode: "glint", Trigger: "active"}})
+		return r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line, active.Load()
+	}
+
+	line, active := render(glintHalfWidth)
+	if !strings.Contains(line, "\x1b[38;2;229;229;229m") || !active {
+		t.Fatalf("suppressed command should finish visible glint pass: active=%t line=%q", active, line)
+	}
+	line, active = render(glintCycleLength(len("sleep 30")))
+	if strings.Contains(line, "\x1b[38;2;229;229;229m") || active {
+		t.Fatalf("after glint exits, suppressed command should be dim: active=%t line=%q", active, line)
+	}
+	if !strings.Contains(line, "\x1b[38;2;96;96;96m") {
+		t.Fatalf("suppressed command should settle to dim text: %q", line)
 	}
 }
 
@@ -393,11 +484,15 @@ func TestCommandGlintStopsWhenIdle(t *testing.T) {
 	st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("codex"), AnimationSuppressed: true})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
+	r.SetStyles(map[string]style.Style{"command": {FG: "#e5e5e5"}})
+	r.SetAnimations(map[string]Animation{"command": {Mode: "glint", Trigger: "active"}})
 	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 
-	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
-		t.Fatalf("idle command should not glint: %q", line)
+	if strings.Contains(line, "\x1b[38;2;229;229;229m") {
+		t.Fatalf("idle command should not show bright glint highlight: %q", line)
+	}
+	if !strings.Contains(line, "\x1b[38;2;96;96;96m") {
+		t.Fatalf("idle command should stay dimmed: %q", line)
 	}
 	if !strings.Contains(stripANSI(line), "codex") {
 		t.Fatalf("idle command missing visible text: %q", line)
@@ -411,14 +506,34 @@ func TestAnyModuleCanGlint(t *testing.T) {
 	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	r.SetAnimations(map[string]Animation{"time": {Mode: "glint"}})
+	r.SetAnimations(map[string]Animation{"time": {Mode: "glint", Trigger: "active"}})
 	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
 
-	if !strings.Contains(line, "\x1b[38;2;255;240;194m") {
-		t.Fatalf("animated time block missing glint highlight: %q", line)
-	}
+	// time has no explicit FG, so glint falls back to static rendering — no truecolor codes.
 	if !strings.Contains(stripANSI(line), "12:34") {
 		t.Fatalf("animated time block changed visible text: %q", line)
+	}
+}
+
+func TestGlintHighlightTracksForegroundHue(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.AnimationPhase = glintHalfWidth
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("main-branch")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetStyles(map[string]style.Style{"git": {FG: "#00cd00"}})
+	r.SetAnimations(map[string]Animation{"git": {Mode: "glint", Trigger: "active"}})
+	line := r.RenderRow(st, layout.ParseFormat("{git}"), ' ', "").Line
+
+	if !strings.Contains(line, "\x1b[38;2;0;205;0m") {
+		t.Fatalf("glint highlight should use the configured green fg: %q", line)
+	}
+	if !strings.Contains(line, "\x1b[38;2;0;86;0m") {
+		t.Fatalf("glint base should be a dimmed green fg: %q", line)
+	}
+	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
+		t.Fatalf("glint should not use the old fixed warm highlight: %q", line)
 	}
 }
 
@@ -429,7 +544,7 @@ func TestPulseKeepsVisibleTextAndChangesColors(t *testing.T) {
 	st.UpdateModule(status.ModuleSnapshot{ID: "hostname", Value: status.Text("myhost")})
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
-	r.SetAnimations(map[string]Animation{"hostname": {Mode: "pulse"}})
+	r.SetAnimations(map[string]Animation{"hostname": {Mode: "pulse", Trigger: "active"}})
 	line := r.RenderRow(st, layout.ParseFormat("{hostname}"), ' ', "").Line
 
 	if !strings.Contains(stripANSI(line), "myhost") {
@@ -446,10 +561,10 @@ func TestPulseStableDisplayWidth(t *testing.T) {
 		st := status.NewState()
 		st.Resize(40, 1, false)
 		st.AnimationPhase = phase
-		st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34:56")})
+		st.UpdateModule(status.ModuleSnapshot{ID: "hostname", Value: status.Text("myhost")})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
-		r.SetAnimations(map[string]Animation{"time": {Mode: "pulse"}})
-		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
+		r.SetAnimations(map[string]Animation{"hostname": {Mode: "pulse", Trigger: "active"}})
+		return r.RenderRow(st, layout.ParseFormat("{hostname}"), ' ', "").Line
 	}
 	base := width.String(stripANSI(render(0)))
 	for _, phase := range []int{1, 4, 8, 12, 15} {
@@ -464,29 +579,136 @@ func TestBlinkKeepsVisibleTextAndAlternates(t *testing.T) {
 		st := status.NewState()
 		st.Resize(40, 1, false)
 		st.AnimationPhase = phase
-		st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
+		st.UpdateModule(status.ModuleSnapshot{ID: "hostname", Value: status.Text("myhost")})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
-		r.SetAnimations(map[string]Animation{"time": {Mode: "blink"}})
-		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
+		r.SetAnimations(map[string]Animation{"hostname": {Mode: "blink", Trigger: "active"}})
+		return r.RenderRow(st, layout.ParseFormat("{hostname}"), ' ', "").Line
 	}
 	// Visible text must not change.
 	for _, phase := range []int{0, blinkPeriod, blinkPeriod * 2} {
-		if !strings.Contains(stripANSI(render(phase)), "12:34") {
+		if !strings.Contains(stripANSI(render(phase)), "myhost") {
 			t.Fatalf("blink phase %d lost visible text", phase)
 		}
 	}
 	// Odd half-cycles carry SGR Dim (code "2"), even half-cycles do not.
 	dimLine := render(blinkPeriod)
 	brightLine := render(0)
-	if !strings.Contains(dimLine, "\x1b[2m") {
+	if !containsDimSGR(dimLine) {
 		t.Fatalf("blink dim phase missing SGR 2: %q", dimLine)
 	}
-	if strings.Contains(brightLine, "\x1b[2m") {
+	if containsDimSGR(brightLine) {
 		t.Fatalf("blink bright phase should not carry SGR 2: %q", brightLine)
 	}
 }
 
+func TestChangeAnimationStartsOnValueChange(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.AnimationPhase = 1
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("main")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"git": {Mode: "blink", Trigger: "change", DurationTicks: 4}})
+	first := r.RenderRow(st, layout.ParseFormat("{git}"), ' ', "").Line
+	if strings.Contains(first, "\x1b[2m") {
+		t.Fatalf("first observed value should not animate: %q", first)
+	}
+
+	st.AnimationPhase = blinkPeriod
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("feature")})
+	changed := r.RenderRow(st, layout.ParseFormat("{git}"), ' ', "").Line
+	if !containsDimSGR(changed) {
+		t.Fatalf("changed value should blink: %q", changed)
+	}
+}
+
+func TestTimeIgnoresChangeAnimation(t *testing.T) {
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.AnimationPhase = blinkPeriod
+	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"time": {Mode: "blink", Trigger: "change", DurationTicks: 4}})
+	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
+	if strings.Contains(line, "\x1b[2m") {
+		t.Fatalf("time change animation should be ignored: %q", line)
+	}
+}
+
+func TestPartialStyleOverrideClearsBoldDefault(t *testing.T) {
+	// defaultStyleFor sets Bold=true for "git". A user who writes only
+	// [style.git] fg = "white" must not inherit Bold — mergeStyle must not
+	// OR booleans; the overlay value wins.
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("main")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetStyles(map[string]style.Style{"git": {FG: "white"}})
+	line := r.RenderRow(st, layout.ParseFormat("{git}"), ' ', "").Line
+	if strings.Contains(line, "\x1b[1m") {
+		t.Fatalf("partial style override should clear Bold default for git: %q", line)
+	}
+	if !strings.Contains(stripANSI(line), "main") {
+		t.Fatalf("git block lost visible text: %q", line)
+	}
+}
+
+func TestMultiRowChangeFlagAccumulates(t *testing.T) {
+	// Row 0: suppressed command with glint still mid-pass (frameActiveAnimation=true).
+	// Row 1: time with no animation. changeFlag must stay true after both rows —
+	// the second RenderRow must not overwrite row 0's result.
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.Shell.ActiveCommand = "sleep 30"
+	st.AnimationPhase = glintHalfWidth // glint is mid-pass (center=0, visible)
+	st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("sleep 30"), AnimationSuppressed: true})
+	st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
+
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetStyles(map[string]style.Style{"command": {FG: "#e5e5e5"}})
+	r.SetAnimations(map[string]Animation{"command": {Mode: "glint", Trigger: "active"}})
+	var flag atomic.Bool
+	r.SetChangeFlag(&flag)
+
+	r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "")
+	r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "")
+	if !flag.Load() {
+		t.Fatal("changeFlag should remain true after rendering a second empty-animation row")
+	}
+}
+
+func TestChangeAnimationExpiresOnPhaseReset(t *testing.T) {
+	// Simulate a value change at phase=150, then a phase reset to 0.
+	// The change animation must expire immediately on the reset, not stall for ~19s.
+	r := New(layout.New(40), theme.Default(theme.TrueColor))
+	r.SetAnimations(map[string]Animation{"git": {Mode: "blink", Trigger: "change", DurationTicks: 8}})
+
+	st := status.NewState()
+	st.Resize(40, 1, false)
+	st.AnimationPhase = blinkPeriod
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("main")})
+	r.RenderRow(st, layout.ParseFormat("{git}"), ' ', "")
+
+	st.AnimationPhase = 150
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("feature")})
+	r.RenderRow(st, layout.ParseFormat("{git}"), ' ', "")
+
+	// Phase reset to 0 (as happens when command ends).
+	st.AnimationPhase = 0
+	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("feature")})
+	line := r.RenderRow(st, layout.ParseFormat("{git}"), ' ', "").Line
+	if containsDimSGR(line) {
+		t.Fatalf("change animation should expire on phase reset, not stall: %q", line)
+	}
+}
+
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func containsDimSGR(s string) bool {
+	return strings.Contains(s, "\x1b[2m") || strings.Contains(s, ";2m")
+}
 
 func stripANSI(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
@@ -563,6 +785,21 @@ func TestTemplateCollapseWhitespace(t *testing.T) {
 	}
 	if out != "foo bar" {
 		t.Fatalf("collapse result = %q, want %q", out, "foo bar")
+	}
+}
+
+func TestTemplateConditionalSeparators(t *testing.T) {
+	st := newStateWithModules(80, map[string]string{"a": "foo", "b": "", "c": "bar"})
+	r := New(layout.New(80), nil)
+	r.SetTemplates(map[string]TemplateSpec{
+		"combo": {
+			Blocks:    layout.ParseFormat("{a} | {b} | {c}"),
+			Separator: "•",
+		},
+	})
+	out := strings.TrimSpace(stripANSI(r.Render(st, layout.ParseFormat("{combo}")).Line))
+	if out != "foo • bar" {
+		t.Fatalf("template conditional separators = %q, want foo • bar", out)
 	}
 }
 

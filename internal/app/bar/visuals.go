@@ -51,9 +51,6 @@ func VisualsFromConfig(cfg config.Config, mode theme.Mode, configPath string) (V
 	if err := mergePalette(palette, cfg.Theme.Status, "theme.status"); err != nil {
 		return Visuals{}, err
 	}
-	if err := mergePalette(palette, cfg.Theme.Agent, "theme.agent"); err != nil {
-		return Visuals{}, err
-	}
 	if err := mergeStyles(styles, cfg.Styles, "style", palette); err != nil {
 		return Visuals{}, err
 	}
@@ -140,6 +137,9 @@ func styleFromConfig(cfg config.StyleConfig, context string, palette map[string]
 	if cfg.PaddingRight < 0 {
 		return style.Style{}, fmt.Errorf("%s.padding_right must be >= 0", context)
 	}
+	if cfg.Animation != "" && cfg.Animation != "glint" && cfg.Animation != "pulse" && cfg.Animation != "blink" {
+		return style.Style{}, fmt.Errorf("%s.animation has invalid value %q", context, cfg.Animation)
+	}
 	return style.Style{
 		FG:           cfg.FG,
 		BG:           cfg.BG,
@@ -147,6 +147,7 @@ func styleFromConfig(cfg config.StyleConfig, context string, palette map[string]
 		Dim:          cfg.Dim,
 		Italic:       cfg.Italic,
 		Underline:    cfg.Underline,
+		Animation:    cfg.Animation,
 		Shape:        shape,
 		LeftCap:      cfg.LeftCap,
 		RightCap:     cfg.RightCap,
