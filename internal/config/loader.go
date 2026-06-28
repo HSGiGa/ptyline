@@ -220,7 +220,7 @@ func DefaultPath() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join("config", "config.toml")
+		return filepath.Join(os.TempDir(), "ptyline", "config.toml")
 	}
 	return filepath.Join(home, ".config", "ptyline", "config.toml")
 }
