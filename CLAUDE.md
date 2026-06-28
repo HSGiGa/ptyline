@@ -18,7 +18,7 @@ Sources of truth, in order:
   before touching `internal/terminal`, `internal/pty`, or `internal/proxy`.**
 - [`docs/plans/`](docs/plans/) — the implementation broken into small, ordered, executable slices.
 - [`ptyline-technical-spec.md`](ptyline-technical-spec.md) — product/MVP spec.
-- [`arch.md`](arch.md) — future-ready architecture notes.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — future-ready architecture notes.
 
 ### Commands
 

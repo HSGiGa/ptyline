@@ -27,7 +27,7 @@ child→terminal path to clamp anything that would touch the reserved rows.
 
 The naive design renders by querying git/shell/clock inline. That couples
 rendering to slow I/O, makes the bar janky, and is untestable. ptyline instead
-treats the bar as a **view of structured runtime state** (arch.md §2):
+treats the bar as a **view of structured runtime state** (ARCHITECTURE.md §2):
 
 - **Providers** (modules, shell-integration OSC, future sockets) collect data on
   their own schedule and push snapshots.

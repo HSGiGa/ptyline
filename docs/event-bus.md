@@ -1,6 +1,6 @@
 # Event Bus & Event Loop
 
-Source: `internal/event`, `internal/proxy/eventloop.go`. Design: arch.md §4, spec §8.3.
+Source: `internal/event`, `internal/proxy/eventloop.go`. Design: ARCHITECTURE.md §4, spec §8.3.
 
 ## Why an event bus
 
@@ -25,7 +25,7 @@ exhaustively type-switch:
 | `ChildExited{Code}` | PTY supervisor `Wait` | return code, begin shutdown |
 | `TerminationSignal{Signal}` | signal handler | return `128+signo`, shutdown |
 
-Future sources reuse this mechanism without core changes (arch.md §4): agent
+Future sources reuse this mechanism without core changes (ARCHITECTURE.md §4): agent
 updates, socket events, click actions, replay-driven events.
 
 ## The loop contract

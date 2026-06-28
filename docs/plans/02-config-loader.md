@@ -1,7 +1,7 @@
 # 02 — Config Loader
 Status: [x] done
 Depends on: 00
-Spec refs: spec §13, §13.1; arch.md §17
+Spec refs: spec §13, §13.1; ARCHITECTURE.md §17
 
 ## Goal
 TOML config loads from the XDG path (or `--config`), missing files fall back to

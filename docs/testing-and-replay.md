@@ -1,6 +1,6 @@
 # Testing & Replay
 
-Design: arch.md §18. Goal: deterministic tests of terminal behavior without a real
+Design: ARCHITECTURE.md §18. Goal: deterministic tests of terminal behavior without a real
 terminal or child process.
 
 ## Layers
@@ -13,7 +13,7 @@ terminal or child process.
 3. **Replay tests** — feed a recorded session through the event loop and assert
    terminal-level outcomes.
 
-## Record/replay format (arch.md §18)
+## Record/replay format (ARCHITECTURE.md §18)
 
 A recording is an ordered log of timed events:
 
@@ -41,7 +41,7 @@ The event loop consumes events from the bus; in tests the bus is fed from a
 recording instead of live producers, and time/`Tick` are injected. No goroutine
 timing, no real clock — same input, same output every run.
 
-## Diagnostics in tests (arch.md §19)
+## Diagnostics in tests (ARCHITECTURE.md §19)
 
 Assert on `diagnostics.Record` (last module error, last render duration, ANSI
 warnings) to catch silent degradations. These also back future `ptyline doctor` /

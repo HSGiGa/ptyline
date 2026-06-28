@@ -1,7 +1,7 @@
 // Package status holds the normalized StatusState and the module framework. The
 // renderer consumes a prepared StatusState only — it never queries git, the
 // shell, or modules during rendering. This keeps rendering fast, cacheable, and
-// testable (spec §24, arch.md §2).
+// testable (spec §24, ARCHITECTURE.md §2).
 package status
 
 import (
@@ -120,7 +120,7 @@ type GitState struct {
 // ModuleValues maps a module ID to its latest snapshot.
 type ModuleValues map[ModuleID]ModuleSnapshot
 
-// AgentStatus is the lifecycle state of an agent (spec §24.5, arch.md §10).
+// AgentStatus is the lifecycle state of an agent (spec §24.5, ARCHITECTURE.md §10).
 type AgentStatus string
 
 const (

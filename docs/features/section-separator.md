@@ -1,6 +1,9 @@
 # Section Separator
 
-Status: planned
+> **Status: Planned.** The `|` in-section separator marker (single pipe as a conditional
+> separator *within* a section) is already live — see `docs/config-reference.md`. This document
+> describes the planned `bar.separator` feature that injects a visible glyph at `||` section
+> boundaries.
 
 ## Goal
 

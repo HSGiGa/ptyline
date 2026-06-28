@@ -21,7 +21,7 @@ its own status bar on them.
 
 ## Data flow (one direction)
 
-The central design rule (arch.md §2): the renderer never queries git/shell/modules.
+The central design rule (ARCHITECTURE.md §2): the renderer never queries git/shell/modules.
 Everything flows one way into a prepared `StatusState`, which the renderer reads.
 
 ```text
@@ -98,7 +98,7 @@ Components depend on **capabilities** (`unix_pty`, `windows_conpty`, `vt_sequenc
 
 ## Future-proofing already wired in
 
-So post-MVP features (arch.md) don't force a redesign, the scaffold already
+So post-MVP features (ARCHITECTURE.md) don't force a redesign, the scaffold already
 includes: the typed event bus, the `reserved.Area` abstraction (multi-line bars),
 typed `ModuleValue`/`ModuleSnapshot` (stale/error aware), theme tokens, reserved
 `StatusState.Agents`, `RenderedBar.ClickZones` (mouse), and `config_version`.

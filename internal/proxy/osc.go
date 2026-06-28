@@ -6,7 +6,7 @@ import (
 	"github.com/hsgiga/ptyline/internal/shellintegration"
 )
 
-// OSC shell-integration protocol (spec §9, arch.md §11.1). Messages arrive as:
+// OSC shell-integration protocol (spec §9, ARCHITECTURE.md §11.1). Messages arrive as:
 //
 //	OSC 777 ; key=value ST
 //

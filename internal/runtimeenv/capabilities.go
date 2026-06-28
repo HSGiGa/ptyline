@@ -26,7 +26,7 @@ func (c ColorLevel) String() string {
 
 // Capabilities are the feature flags components query instead of checking the OS
 // name directly. Backends and modules ask "do I have unix_pty / linux_procfs?"
-// rather than "am I on Linux / WSL?" (spec §4.2, arch.md §14).
+// rather than "am I on Linux / WSL?" (spec §4.2, ARCHITECTURE.md §14).
 type Capabilities struct {
 	UnixPTY        bool
 	WindowsConPTY  bool
@@ -35,7 +35,7 @@ type Capabilities struct {
 	LinuxSysfs     bool
 	WindowsInterop bool
 
-	// Terminal feature detection (arch.md §14). Color is probed from the
+	// Terminal feature detection (ARCHITECTURE.md §14). Color is probed from the
 	// environment; NerdFont/Emoji cannot be detected reliably and are driven by
 	// config (icons.preset), not set here.
 	Color           ColorLevel

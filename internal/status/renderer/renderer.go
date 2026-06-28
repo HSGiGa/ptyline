@@ -1,7 +1,7 @@
 // Package renderer turns a prepared StatusState into a single bar line. It reads
 // state only — never queries providers. The Render result also carries click
 // zones, even though mouse handling is post-MVP, so adding mouse support later
-// needs no renderer rewrite (spec §8.6, arch.md §15).
+// needs no renderer rewrite (spec §8.6, ARCHITECTURE.md §15).
 package renderer
 
 import (
@@ -22,7 +22,7 @@ type Action struct {
 	Param string
 }
 
-// ClickZone maps a cell range on the bar row to an Action (arch.md §15).
+// ClickZone maps a cell range on the bar row to an Action (ARCHITECTURE.md §15).
 type ClickZone struct {
 	StartCol uint16
 	EndCol   uint16
@@ -292,6 +292,27 @@ func visibleSeparators(placements []layout.Placement, values []string) []bool {
 		}
 		visible[i] = hasVisibleNeighbor(placements, values, i, -1) && hasVisibleNeighbor(placements, values, i, 1)
 	}
+	// Collapse consecutive visible separators: when two seps share only empty/
+	// invisible blocks between them (e.g. {env} | {empty} | {shell}), suppress
+	// the later one to prevent "• •" double-separator output.
+	for i := range visible {
+		if !visible[i] {
+			continue
+		}
+		anchor := placements[i].Block.Anchor
+		for j := i - 1; j >= 0; j-- {
+			if placements[j].Block.Anchor != anchor {
+				break
+			}
+			if !placements[j].Block.IsSeparator() && placements[j].Visible && values[j] != "" {
+				break // non-empty content between them — not consecutive
+			}
+			if placements[j].Block.IsSeparator() && visible[j] {
+				visible[i] = false // drop later separator, keep earlier
+				break
+			}
+		}
+	}
 	return visible
 }
 
@@ -361,7 +382,7 @@ func emptyWhitespaceSection(styled, plain string) (string, string) {
 
 // styleFor resolves the style for a block: an explicit config style by StyleID,
 // otherwise a readable default that colors a few well-known modules via theme
-// tokens (never raw ANSI — arch.md §16). All defaults share the base background
+// tokens (never raw ANSI — ARCHITECTURE.md §16). All defaults share the base background
 // so the bar reads as one band.
 func (r *Renderer) styleFor(block layout.Block) style.Style {
 	base := defaultStyleFor(block)

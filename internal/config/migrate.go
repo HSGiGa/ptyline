@@ -9,7 +9,7 @@ import (
 
 // migrateToLatest upgrades raw config bytes from an older schema version to
 // CurrentVersion before parsing, so old configs keep working as features are
-// added (arch.md §17).
+// added (ARCHITECTURE.md §17).
 func migrateToLatest(raw []byte) ([]byte, error) {
 	var header struct {
 		Version *int `toml:"config_version"`

@@ -1,7 +1,7 @@
 // Package runtimeenv detects the runtime environment once at startup and exposes
 // a normalized Profile plus Capabilities. The rest of the application depends on
 // capabilities and selected backends, never on raw OS-name checks (spec §4.2,
-// arch.md §14).
+// ARCHITECTURE.md §14).
 package runtimeenv
 
 // Kind is the normalized runtime classification.

@@ -1,7 +1,7 @@
 # 06 — ANSI / OSC Filter
 Status: [x] done
 Depends on: 05
-Spec refs: spec §8.4, §9, §11; arch.md §11.1; docs/ansi-osc-filter.md, docs/terminal-safety.md
+Spec refs: spec §8.4, §9, §11; ARCHITECTURE.md §11.1; docs/ansi-osc-filter.md, docs/terminal-safety.md
 
 ## Goal
 The child→terminal stream is filtered so the reserved row(s) cannot be corrupted,

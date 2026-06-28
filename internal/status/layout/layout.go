@@ -1,7 +1,7 @@
 // Package layout is the small layout engine behind the bar. Even though the MVP
 // renders a one-line format string, that string is parsed into renderable blocks
 // with layout metadata so multi-line, priority overflow, and compact variants
-// work later without a redesign (spec §8.8, arch.md §7, §8).
+// work later without a redesign (spec §8.8, ARCHITECTURE.md §7, §8).
 package layout
 
 import (
@@ -45,7 +45,7 @@ type Width struct {
 }
 
 // Block is one renderable unit with layout metadata. Priority drives graceful
-// degradation when the terminal is narrow (arch.md §8). A block is either a
+// degradation when the terminal is narrow (ARCHITECTURE.md §8). A block is either a
 // module reference (ModuleID set) or a literal run of text (Text set, ModuleID
 // empty) produced by parsing the format string.
 type Block struct {

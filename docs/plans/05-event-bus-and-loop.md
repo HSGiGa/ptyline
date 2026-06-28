@@ -1,7 +1,7 @@
 # 05 — Event Bus & Loop
 Status: [x] done
 Depends on: 03, 04
-Spec refs: spec §8.3, §7; arch.md §4; docs/event-bus.md
+Spec refs: spec §8.3, §7; ARCHITECTURE.md §4; docs/event-bus.md
 
 ## Goal
 A single event loop drives the program: it spawns producers (stdin, PTY, signals,

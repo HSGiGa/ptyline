@@ -1,7 +1,7 @@
 # 07 — Status State & Module Framework
 Status: [x] done
 Depends on: 05, 06
-Spec refs: spec §8.5, §8.7; arch.md §3, §9; docs/state-model.md
+Spec refs: spec §8.5, §8.7; ARCHITECTURE.md §3, §9; docs/state-model.md
 
 ## Goal
 A `StatusState` updated solely by the loop, plus a module runner that refreshes

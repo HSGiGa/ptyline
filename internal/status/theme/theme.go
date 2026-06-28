@@ -1,7 +1,7 @@
 // Package theme translates semantic color tokens into terminal escape sequences.
 // Modules and blocks request tokens (accent/ok/warn/error/muted, base.fg/base.bg)
 // or literal colors rather than writing raw ANSI, so light/dark, no-color, and
-// reduced-color terminals all work uniformly (arch.md §16).
+// reduced-color terminals all work uniformly (ARCHITECTURE.md §16).
 package theme
 
 import (

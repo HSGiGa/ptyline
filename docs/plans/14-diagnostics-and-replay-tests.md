@@ -1,7 +1,7 @@
 # 14 — Diagnostics & Replay Test Harness
 Status: [ ] not started
 Depends on: 05, 06
-Spec refs: spec §20, §20.1 (verification matrix); arch.md §18, §19; docs/testing-and-replay.md
+Spec refs: spec §20, §20.1 (verification matrix); ARCHITECTURE.md §18, §19; docs/testing-and-replay.md
 
 ## Goal
 A deterministic record/replay harness for terminal behavior, plus a diagnostics

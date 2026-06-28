@@ -1,7 +1,7 @@
 # 09 — Layout & Renderer
 Status: [x] done
 Depends on: 07, 08
-Spec refs: spec §8.6, §8.8; arch.md §7, §8, §15; docs/layout-and-rendering.md, docs/terminal-safety.md
+Spec refs: spec §8.6, §8.8; ARCHITECTURE.md §7, §8, §15; docs/layout-and-rendering.md, docs/terminal-safety.md
 
 ## Goal
 A real one-line bar pinned to the last row: blocks parsed from config/format,
