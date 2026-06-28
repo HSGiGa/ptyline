@@ -2,6 +2,7 @@
 # Requires the Go toolchain (go 1.23+). See README.md for installation.
 
 BINARY      := ptyline
+CONFIG      ?= $(CURDIR)/$(DIST)/.config/ptyline/config.toml
 PKG         := ./cmd/ptyline
 DIST        := dist
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -46,9 +47,9 @@ build-all: ## Cross-compile linux, darwin, windows binaries
 .PHONY: run
 run: build ## Build and run with fish integration (use ARGS="..." to override)
 	@if [ -n "$(ARGS)" ]; then \
-		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) --config "$(CURDIR)/ptyline.toml" $(ARGS); \
+		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) --config "$(CONFIG)" $(ARGS); \
 	else \
-		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) --config "$(CURDIR)/ptyline.toml" fish -C 'ptyline init fish | source'; \
+		PATH="$(CURDIR)/$(DIST):$$PATH" $(DIST)/$(BINARY) --config "$(CONFIG)" fish -C 'ptyline init fish | source'; \
 	fi
 
 .PHONY: test

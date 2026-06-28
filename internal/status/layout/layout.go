@@ -280,9 +280,44 @@ func placeholderBlock(expr string, anchor Anchor) Block {
 		Width:    Width{Kind: WidthAuto},
 		Truncate: "right",
 	}
-	if !hasSpec || len(spec) < 2 {
+	if !hasSpec {
 		return block
 	}
+	// {name:>}  {name:^}  → anchor override, WidthAuto (block moves to right/center, order-safe)
+	// {name:<}  → no-op: block stays in its section anchor (documents intent, no reorder)
+	if len(spec) == 1 {
+		switch spec[0] {
+		case '>':
+			block.Anchor = AnchorRight
+		case '^':
+			block.Anchor = AnchorCenter
+		case '<':
+			// no-op: keep section anchor
+		default:
+			return block
+		}
+		return block
+	}
+	// {name:>20%}  → WidthPercent + align
+	if strings.HasSuffix(spec[1:], "%") {
+		pct, err := strconv.Atoi(strings.TrimSuffix(spec[1:], "%"))
+		if err != nil || pct <= 0 || pct > 100 {
+			return block
+		}
+		switch spec[0] {
+		case '<':
+			block.Align = AlignLeft
+		case '^':
+			block.Align = AlignCenter
+		case '>':
+			block.Align = AlignRight
+		default:
+			return block
+		}
+		block.Width = Width{Kind: WidthPercent, Value: pct}
+		return block
+	}
+	// {name:>8}  → WidthCells + align
 	cells, err := strconv.Atoi(spec[1:])
 	if err != nil || cells <= 0 {
 		return block
