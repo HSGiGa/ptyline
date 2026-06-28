@@ -84,7 +84,7 @@
         },
         "format": {
           "type": "string",
-          "description": "Placeholder template, e.g. \"{hostname:<20} {cwd} || {git:^20} || {time:>8}\". Mutually exclusive with [[bar.block]].",
+          "description": "Placeholder template, e.g. \"{hostname:<20} {cwd} || {git:^20} || {time:>8}\". Use || for sections and | for separator markers. Mutually exclusive with [[bar.block]].",
           "examples": ["{hostname} {cwd} || {time}", "{cwd:<30} || {git:^20} || {time:>8}"]
         },
         "justify": {
@@ -100,7 +100,7 @@
         },
         "separator": {
           "type": "string",
-          "description": "Separator drawn between blocks.",
+          "description": "Default text drawn for | separator markers in bar formats.",
           "default": " | "
         },
         "padding": {
@@ -132,13 +132,17 @@
       "properties": {
         "format": {
           "type": "string",
-          "description": "Placeholder template for this row. Use || to split into left/center/right."
+          "description": "Placeholder template for this row. Use || to split into left/center/right and | for separator markers."
         },
         "fill": {
           "type": "string",
           "description": "Character drawn in gaps between blocks.",
           "default": " ",
           "examples": [" ", "─", "-"]
+        },
+        "separator": {
+          "type": "string",
+          "description": "Text drawn for | separator markers in this row. Falls back to bar.separator."
         }
       }
     },
@@ -328,13 +332,13 @@
           "description": "Block shape preset (e.g. \"powerline\", \"round\", \"flat\").",
           "examples": ["flat", "powerline", "round"]
         },
-        "left_separator": {
+        "left_cap": {
           "type": "string",
-          "description": "Custom left separator glyph."
+          "description": "Custom left cap glyph for this styled block."
         },
-        "right_separator": {
+        "right_cap": {
           "type": "string",
-          "description": "Custom right separator glyph."
+          "description": "Custom right cap glyph for this styled block."
         },
         "padding_left": {
           "type": "integer",

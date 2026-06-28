@@ -141,16 +141,16 @@ func styleFromConfig(cfg config.StyleConfig, context string, palette map[string]
 		return style.Style{}, fmt.Errorf("%s.padding_right must be >= 0", context)
 	}
 	return style.Style{
-		FG:             cfg.FG,
-		BG:             cfg.BG,
-		Bold:           cfg.Bold,
-		Dim:            cfg.Dim,
-		Italic:         cfg.Italic,
-		Underline:      cfg.Underline,
-		Shape:          shape,
-		LeftSeparator:  cfg.LeftSeparator,
-		RightSeparator: cfg.RightSeparator,
-		PaddingLeft:    cfg.PaddingLeft,
-		PaddingRight:   cfg.PaddingRight,
+		FG:           cfg.FG,
+		BG:           cfg.BG,
+		Bold:         cfg.Bold,
+		Dim:          cfg.Dim,
+		Italic:       cfg.Italic,
+		Underline:    cfg.Underline,
+		Shape:        shape,
+		LeftCap:      cfg.LeftCap,
+		RightCap:     cfg.RightCap,
+		PaddingLeft:  cfg.PaddingLeft,
+		PaddingRight: cfg.PaddingRight,
 	}, nil
 }

@@ -49,20 +49,24 @@ type Width struct {
 // module reference (ModuleID set) or a literal run of text (Text set, ModuleID
 // empty) produced by parsing the format string.
 type Block struct {
-	ModuleID string
-	Text     string // literal content when ModuleID == ""
-	Anchor   Anchor
-	Align    Align
-	Width    Width
-	MinWidth int
-	MaxWidth int
-	Truncate string
-	Priority int
-	StyleID  string
+	ModuleID  string
+	Text      string // literal content when ModuleID == ""
+	Separator bool
+	Anchor    Anchor
+	Align     Align
+	Width     Width
+	MinWidth  int
+	MaxWidth  int
+	Truncate  string
+	Priority  int
+	StyleID   string
 }
 
 // IsLiteral reports whether the block is a literal text run (no module).
-func (b Block) IsLiteral() bool { return b.ModuleID == "" }
+func (b Block) IsLiteral() bool { return b.ModuleID == "" && !b.Separator }
+
+// IsSeparator reports whether the block is a separator marker (`|` in format).
+func (b Block) IsSeparator() bool { return b.Separator }
 
 // Engine assigns each block a cell range given the total bar width.
 type Engine struct {
@@ -143,7 +147,7 @@ func (e *Engine) arrange(blocks []Block, natural []int) []Placement {
 	for _, idx := range order {
 		w := placements[idx].Width
 		isFill := blocks[idx].Width.Kind == WidthFill
-		tooNarrow := e.minBlockWidth > 0 && !isFill && !blocks[idx].IsLiteral() && w < e.minBlockWidth
+		tooNarrow := e.minBlockWidth > 0 && !isFill && !blocks[idx].IsLiteral() && !blocks[idx].IsSeparator() && w < e.minBlockWidth
 		if w <= remaining && !tooNarrow {
 			placements[idx].Visible = true
 			remaining -= w
@@ -215,18 +219,105 @@ func (e *Engine) resolveWidth(b Block, natural int) int {
 }
 
 // ParseFormat turns a placeholder template into ordered blocks. `||` splits the
-// template into anchor sections (1 → left; 2 → left,right; 3 → left,center,right)
-// and `{name}` placeholders become module blocks; the literal text between them
-// becomes literal blocks (spec §13.1).
+// template into anchor sections (1 → left; 2 → left,right; 3 → left,center,right),
+// `{name}` placeholders become module blocks, literal text becomes literal blocks,
+// `|` inserts a separator marker, and `\|` is a literal pipe character (spec §13.1).
 func ParseFormat(format string) []Block {
-	sections := strings.Split(format, "||")
-	anchors := sectionAnchors(len(sections))
+	tokens := tokenize(format)
 
+	var sections [][]Block
+	var current []Block
+	for _, t := range tokens {
+		switch t.kind {
+		case tokSplit:
+			sections = append(sections, current)
+			current = nil
+		case tokSep:
+			trimTrailingSpace(&current)
+			current = append(current, separatorBlock(""))
+		case tokPlaceholder:
+			current = append(current, placeholderBlock(t.text, ""))
+		case tokLiteral:
+			text := t.text
+			if len(current) > 0 && current[len(current)-1].IsSeparator() {
+				text = strings.TrimLeft(text, " \t")
+			}
+			if text != "" {
+				current = append(current, literalBlock(text, ""))
+			}
+		}
+	}
+	sections = append(sections, current)
+
+	anchors := sectionAnchors(len(sections))
 	var blocks []Block
 	for i, section := range sections {
-		blocks = append(blocks, parseSection(section, anchors[i])...)
+		for j := range section {
+			if section[j].Anchor == "" {
+				section[j].Anchor = anchors[i]
+			}
+		}
+		blocks = append(blocks, section...)
 	}
 	return blocks
+}
+
+// tokKind identifies token categories produced by the format string scanner.
+type tokKind int
+
+const (
+	tokLiteral     tokKind = iota // run of literal text (escape-decoded)
+	tokPlaceholder                // {name} or {name:spec} expression
+	tokSep                        // | separator marker within a section
+	tokSplit                      // || section boundary (left/center/right)
+)
+
+type fmtTok struct {
+	kind tokKind
+	text string // set for tokLiteral and tokPlaceholder
+}
+
+// tokenize scans a format string into a flat token stream. Escape rule: \| is a
+// literal |; all other \ sequences are passed through as-is.
+func tokenize(format string) []fmtTok {
+	var tokens []fmtTok
+	i := 0
+	for i < len(format) {
+		switch {
+		case format[i] == '|' && i+1 < len(format) && format[i+1] == '|':
+			tokens = append(tokens, fmtTok{kind: tokSplit})
+			i += 2
+		case format[i] == '|':
+			tokens = append(tokens, fmtTok{kind: tokSep})
+			i++
+		case format[i] == '{':
+			close := strings.IndexByte(format[i:], '}')
+			if close < 0 {
+				tokens = append(tokens, fmtTok{kind: tokLiteral, text: format[i:]})
+				i = len(format)
+			} else {
+				close += i
+				tokens = append(tokens, fmtTok{kind: tokPlaceholder, text: format[i+1 : close]})
+				i = close + 1
+			}
+		default:
+			var b strings.Builder
+			for i < len(format) {
+				if format[i] == '|' || format[i] == '{' {
+					break
+				}
+				if format[i] == '\\' && i+1 < len(format) && format[i+1] == '|' {
+					b.WriteByte('|')
+					i += 2
+				} else {
+					b.WriteByte(format[i])
+					i++
+				}
+			}
+			tokens = append(tokens, fmtTok{kind: tokLiteral, text: b.String()})
+		}
+	}
+	return tokens
 }
 
 func sectionAnchors(n int) []Anchor {
@@ -244,31 +335,18 @@ func sectionAnchors(n int) []Anchor {
 	}
 }
 
-// parseSection splits a single section into literal and {module} blocks.
-func parseSection(section string, anchor Anchor) []Block {
-	var blocks []Block
-	i := 0
-	for i < len(section) {
-		open := strings.IndexByte(section[i:], '{')
-		if open < 0 {
-			blocks = append(blocks, literalBlock(section[i:], anchor))
-			break
-		}
-		open += i
-		if open > i {
-			blocks = append(blocks, literalBlock(section[i:open], anchor))
-		}
-		close := strings.IndexByte(section[open:], '}')
-		if close < 0 {
-			// Unterminated placeholder: treat the rest as literal.
-			blocks = append(blocks, literalBlock(section[open:], anchor))
-			break
-		}
-		close += open
-		blocks = append(blocks, placeholderBlock(section[open+1:close], anchor))
-		i = close + 1
+func trimTrailingSpace(blocks *[]Block) {
+	if len(*blocks) == 0 {
+		return
 	}
-	return blocks
+	last := &(*blocks)[len(*blocks)-1]
+	if !last.IsLiteral() {
+		return
+	}
+	last.Text = strings.TrimRight(last.Text, " \t")
+	if last.Text == "" {
+		*blocks = (*blocks)[:len(*blocks)-1]
+	}
 }
 
 func placeholderBlock(expr string, anchor Anchor) Block {
@@ -280,9 +358,44 @@ func placeholderBlock(expr string, anchor Anchor) Block {
 		Width:    Width{Kind: WidthAuto},
 		Truncate: "right",
 	}
-	if !hasSpec || len(spec) < 2 {
+	if !hasSpec {
 		return block
 	}
+	// {name:>}  {name:^}  → anchor override, WidthAuto (block moves to right/center, order-safe)
+	// {name:<}  → no-op: block stays in its section anchor (documents intent, no reorder)
+	if len(spec) == 1 {
+		switch spec[0] {
+		case '>':
+			block.Anchor = AnchorRight
+		case '^':
+			block.Anchor = AnchorCenter
+		case '<':
+			// no-op: keep section anchor
+		default:
+			return block
+		}
+		return block
+	}
+	// {name:>20%}  → WidthPercent + align
+	if strings.HasSuffix(spec[1:], "%") {
+		pct, err := strconv.Atoi(strings.TrimSuffix(spec[1:], "%"))
+		if err != nil || pct <= 0 || pct > 100 {
+			return block
+		}
+		switch spec[0] {
+		case '<':
+			block.Align = AlignLeft
+		case '^':
+			block.Align = AlignCenter
+		case '>':
+			block.Align = AlignRight
+		default:
+			return block
+		}
+		block.Width = Width{Kind: WidthPercent, Value: pct}
+		return block
+	}
+	// {name:>8}  → WidthCells + align
 	cells, err := strconv.Atoi(spec[1:])
 	if err != nil || cells <= 0 {
 		return block
@@ -310,6 +423,17 @@ func literalBlock(text string, anchor Anchor) Block {
 		Truncate: "none",
 		// Literals (separators, spacing) are kept ahead of modules under pressure.
 		Priority: 1,
+	}
+}
+
+func separatorBlock(anchor Anchor) Block {
+	return Block{
+		Separator: true,
+		Anchor:    anchor,
+		Align:     AlignLeft,
+		Width:     Width{Kind: WidthAuto},
+		Truncate:  "none",
+		Priority:  1,
 	}
 }
 

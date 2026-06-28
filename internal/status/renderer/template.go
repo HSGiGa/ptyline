@@ -20,12 +20,16 @@ type TemplateSpec struct {
 // resolveTemplate assembles a template value from cached module snapshots.
 // It never calls any provider — it only reads st.Modules. Template modules
 // cannot reference other template modules (enforced at config validation).
-func resolveTemplate(st status.StatusState, tmpl TemplateSpec) string {
+func resolveTemplate(st status.StatusState, tmpl TemplateSpec, separator string) string {
 	var sb strings.Builder
 	allEmpty := true
 	for _, b := range tmpl.Blocks {
 		if b.IsLiteral() {
 			sb.WriteString(b.Text)
+			continue
+		}
+		if b.IsSeparator() {
+			sb.WriteString(separator)
 			continue
 		}
 		snap, ok := st.Modules[status.ModuleID(b.ModuleID)]

@@ -136,15 +136,14 @@ func (r *Renderer) SetJustify(j Justify) {
 // absolute positioning — save cursor → move to bar row → clear line → write
 // Line → reset → restore cursor — and NEVER appends a newline.
 func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) RenderedBar {
-	return r.RenderRow(st, blocks, ' ')
+	return r.RenderRow(st, blocks, ' ', "")
 }
 
-// RenderRow renders one bar row with a chosen fill character used for the gaps
-// between the left/center/right slots and the edge caps. A space fill yields a
-// plain bar; a '-' fill yields a "border" row like
+// RenderRow renders one bar row with a chosen fill character and separator glyph.
+// A space fill yields a plain bar; a '-' fill yields a "border" row like
 // `--{left} ----- {center} ----- {right} --` (multi-line panels, the top line).
-// Only the three anchor slots exist; blocks cannot be added beyond them.
-func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill rune) RenderedBar {
+// Pass separator="" to render without `|` marker expansion.
+func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill rune, separator string) RenderedBar {
 	fillStr := string(fill)
 	border := fill != ' '
 
@@ -161,22 +160,33 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	values := make([]string, len(blocks))
 	styles := make([]style.Style, len(blocks))
 	for i, block := range blocks {
-		values[i] = blockValue(st, block, r.templates)
-		if !block.IsLiteral() && values[i] != "" {
+		if block.IsSeparator() {
+			values[i] = separator
+		} else {
+			values[i] = blockValue(st, block, r.templates, separator)
+		}
+		if !block.IsLiteral() && !block.IsSeparator() && values[i] != "" {
 			values[i] = r.applyIcon(canonicalModuleID(block.ModuleID), values[i])
 		}
 		styles[i] = r.styleFor(block)
+		if block.IsSeparator() && separator == "" {
+			continue
+		}
 		if !block.IsLiteral() && values[i] == "" {
 			continue
 		}
 		natural[i] = width.String(values[i]) + styles[i].OuterWidth()
 	}
 	placements := r.engine.ArrangeIn(blocks, natural, target)
+	separatorVisible := visibleSeparators(placements, values)
 	// Use per-anchor builders to avoid map allocations and string += copies.
 	var styledL, styledC, styledR strings.Builder
 	var plainL, plainC, plainR strings.Builder
 	for i, placement := range placements {
 		if !placement.Visible {
+			continue
+		}
+		if placement.Block.IsSeparator() && !separatorVisible[i] {
 			continue
 		}
 		if !placement.Block.IsLiteral() && values[i] == "" {
@@ -246,6 +256,40 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 	return RenderedBar{Line: r.base + caps + line + caps}
 }
 
+func visibleSeparators(placements []layout.Placement, values []string) []bool {
+	visible := make([]bool, len(placements))
+	for i, placement := range placements {
+		if !placement.Visible || !placement.Block.IsSeparator() || values[i] == "" {
+			continue
+		}
+		visible[i] = hasVisibleNeighbor(placements, values, i, -1) && hasVisibleNeighbor(placements, values, i, 1)
+	}
+	return visible
+}
+
+func hasVisibleNeighbor(placements []layout.Placement, values []string, idx, step int) bool {
+	anchor := placements[idx].Block.Anchor
+	for i := idx + step; i >= 0 && i < len(placements); i += step {
+		if placements[i].Block.Anchor != anchor {
+			return false
+		}
+		if values[i] == "" {
+			continue // no rendered content: transparent
+		}
+		if !placements[i].Visible {
+			return false // has content but was width-dropped: hard barrier
+		}
+		if placements[i].Block.IsSeparator() {
+			continue
+		}
+		if placements[i].Block.IsLiteral() && strings.TrimSpace(values[i]) == "" {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func (r *Renderer) sectionGaps(target, wLeft, wCenter, wRight int, hasCenter bool) (gapLC, gapCR int) {
 	if !hasCenter {
 		return 0, max(0, target-wLeft-wRight)
@@ -304,7 +348,7 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 		}
 	}
 	s := style.Style{} // no explicit fg/bg: terminal defaults
-	if block.IsLiteral() {
+	if block.IsLiteral() || block.IsSeparator() {
 		s.FG = "muted" // separators and frame chrome in bright black (8)
 		return s
 	}
@@ -332,7 +376,7 @@ func (r *Renderer) styleFor(block layout.Block) style.Style {
 // AnimationSuppressed flag (set by modules that control their own animation
 // timing, e.g. command only animates while a command is running).
 func (r *Renderer) animationMode(st status.StatusState, block layout.Block) string {
-	if block.IsLiteral() || r.theme == nil || r.theme.Mode() == theme.NoColor {
+	if block.IsLiteral() || block.IsSeparator() || r.theme == nil || r.theme.Mode() == theme.NoColor {
 		return ""
 	}
 	anim, ok := r.animations[canonicalModuleID(block.ModuleID)]
@@ -349,13 +393,13 @@ func (r *Renderer) animationMode(st status.StatusState, block layout.Block) stri
 // styleAttrs delegates to style.Style.attrs() to avoid duplicating SGR logic.
 func styleAttrs(s style.Style) string { return s.Attrs() }
 
-func blockValue(st status.StatusState, block layout.Block, templates map[string]TemplateSpec) string {
+func blockValue(st status.StatusState, block layout.Block, templates map[string]TemplateSpec, separator string) string {
 	if block.IsLiteral() {
 		return block.Text // trusted user config, no sanitization
 	}
 	id := canonicalModuleID(block.ModuleID)
 	if tmpl, ok := templates[id]; ok {
-		return resolveTemplate(st, tmpl)
+		return resolveTemplate(st, tmpl, separator)
 	}
 	snapshot, ok := st.Modules[status.ModuleID(id)]
 	if !ok || snapshot.Err != nil {

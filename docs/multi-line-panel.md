@@ -121,7 +121,7 @@ content_rows = 1
 
 The schema already anticipates most of this: `BarConfig.Height` / `MaxHeight`
 (marked *reserved, multi-line, post-MVP*), `Mode` (`single-line | agent-panel`),
-and `StyleConfig.Shape` / `LeftSeparator` / `RightSeparator`. `Mode` should be a
+and `StyleConfig.Shape` / `LeftCap` / `RightCap`. `Mode` should be a
 preset layered over `content_rows`, not a second source of truth for height.
 
 ## 6. Framing details

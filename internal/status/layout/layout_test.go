@@ -39,6 +39,113 @@ func TestParseFormatPlaceholderWidthAlign(t *testing.T) {
 	}
 }
 
+func TestParseFormatPlaceholderAnchorOverride(t *testing.T) {
+	// {b:>} and {c:^} override anchor; {a:<} is a no-op (keeps section anchor = left).
+	blocks := ParseFormat("{a:<} {b:>} {c:^}")
+	got := map[string]Block{}
+	for _, b := range blocks {
+		if !b.IsLiteral() {
+			got[b.ModuleID] = b
+		}
+	}
+
+	if b := got["a"]; b.Anchor != AnchorLeft || b.Width.Kind != WidthAuto {
+		t.Fatalf("a: got anchor=%q width=%v, want AnchorLeft WidthAuto", b.Anchor, b.Width.Kind)
+	}
+	if b := got["b"]; b.Anchor != AnchorRight || b.Width.Kind != WidthAuto {
+		t.Fatalf("b: got anchor=%q width=%v, want AnchorRight WidthAuto", b.Anchor, b.Width.Kind)
+	}
+	if b := got["c"]; b.Anchor != AnchorCenter || b.Width.Kind != WidthAuto {
+		t.Fatalf("c: got anchor=%q width=%v, want AnchorCenter WidthAuto", b.Anchor, b.Width.Kind)
+	}
+}
+
+func TestParseFormatPlaceholderLtNoReorder(t *testing.T) {
+	// {shell:<} in the center section must NOT move shell to left anchor.
+	blocks := ParseFormat("{identity} || {runtime} {shell:<} || {time}")
+	got := map[string]Block{}
+	for _, b := range blocks {
+		if !b.IsLiteral() {
+			got[b.ModuleID] = b
+		}
+	}
+	if b := got["shell"]; b.Anchor != AnchorCenter {
+		t.Fatalf("shell anchor = %q, want center (no reorder from <)", b.Anchor)
+	}
+}
+
+func TestParseFormatPlaceholderPercentAlign(t *testing.T) {
+	blocks := ParseFormat("{a:>20%} || {b:^10%} || {c:<5%}")
+	got := map[string]Block{}
+	for _, b := range blocks {
+		if !b.IsLiteral() {
+			got[b.ModuleID] = b
+		}
+	}
+
+	if b := got["a"]; b.Width.Kind != WidthPercent || b.Width.Value != 20 || b.Align != AlignRight {
+		t.Fatalf("a block = %+v, want WidthPercent(20) AlignRight", b)
+	}
+	if b := got["b"]; b.Width.Kind != WidthPercent || b.Width.Value != 10 || b.Align != AlignCenter {
+		t.Fatalf("b block = %+v, want WidthPercent(10) AlignCenter", b)
+	}
+	if b := got["c"]; b.Width.Kind != WidthPercent || b.Width.Value != 5 || b.Align != AlignLeft {
+		t.Fatalf("c block = %+v, want WidthPercent(5) AlignLeft", b)
+	}
+}
+
+func TestParseFormatPlaceholderInvalidSuffix(t *testing.T) {
+	// Unknown single char, invalid percent, unknown align with percent → all fall back to WidthAuto AlignLeft
+	cases := []struct {
+		format string
+		id     string
+	}{
+		{"{a:!}", "a"},
+		{"{b:>0%}", "b"},
+		{"{c:>101%}", "c"},
+		{"{d:x20%}", "d"},
+	}
+	for _, tc := range cases {
+		blocks := ParseFormat(tc.format)
+		var b Block
+		for _, bl := range blocks {
+			if bl.ModuleID == tc.id {
+				b = bl
+				break
+			}
+		}
+		if b.Width.Kind != WidthAuto || b.Align != AlignLeft {
+			t.Fatalf("format %q: block = %+v, want WidthAuto AlignLeft", tc.format, b)
+		}
+	}
+}
+
+func TestParseFormatSeparatorMarkers(t *testing.T) {
+	blocks := ParseFormat("{env} | {runtime}||{time}")
+	if len(blocks) != 4 {
+		t.Fatalf("block count = %d, want 4: %+v", len(blocks), blocks)
+	}
+	if !blocks[1].IsSeparator() {
+		t.Fatalf("second block = %+v, want separator marker", blocks[1])
+	}
+	if blocks[1].Anchor != AnchorLeft {
+		t.Fatalf("separator anchor = %q, want left", blocks[1].Anchor)
+	}
+	if blocks[3].ModuleID != "time" || blocks[3].Anchor != AnchorRight {
+		t.Fatalf("right section time block = %+v", blocks[3])
+	}
+}
+
+func TestParseFormatEscapedPipeLiteral(t *testing.T) {
+	blocks := ParseFormat(`{env} \| {runtime}`)
+	if len(blocks) != 3 {
+		t.Fatalf("block count = %d, want 3: %+v", len(blocks), blocks)
+	}
+	if !blocks[1].IsLiteral() || blocks[1].Text != " | " {
+		t.Fatalf("escaped pipe block = %+v, want literal pipe text", blocks[1])
+	}
+}
+
 func TestResolveWidthPercent(t *testing.T) {
 	e := New(100)
 	w := e.resolveWidth(Block{Width: Width{Kind: WidthPercent, Value: 25}}, 10)

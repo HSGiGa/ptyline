@@ -34,7 +34,19 @@ range on the bar row. `justify` is a bar-level policy for the center section:
 the center section to the full row's geometric center when it does not overlap.
 `align` remains local to a block's allocated width.
 
-The one-line format parser supports a compact width/alignment suffix:
+The one-line format parser supports section and separator markers plus a compact
+width/alignment suffix:
+
+```text
+{identity} || {env} | {runtime} | {shell} || {gh} | {time}
+```
+
+`||` splits left/center/right sections and is not drawn. A single `|` marks a
+block separator; the renderer draws the active row separator at that position and
+collapses it when either neighboring block in the same section is empty. Use
+`\|` for a literal pipe.
+
+Width/alignment suffixes attach to placeholders:
 
 ```text
 {cwd:<30} || {git:^20} || {time:>8}
@@ -70,7 +82,7 @@ light/dark, no-color, and accessibility modes without touching module code.
 ## Styles are terminal text, not a GUI (spec §8.9)
 
 Segment "shapes" (`flat`, `powerline`, `pill`, `box`) are produced with Unicode
-glyphs, background colors, separators, and padding. Nerd-Font/Powerline glyphs are
+glyphs, background colors, caps, and padding. Nerd-Font/Powerline glyphs are
 optional; an ASCII fallback must always be usable (spec §20). Icons come from
 `status/icons` with a primary glyph + ASCII fallback (spec §8.10).
 

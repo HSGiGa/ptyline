@@ -151,6 +151,68 @@ func TestRenderPlaceholderWidthAlign(t *testing.T) {
 	}
 }
 
+func TestRenderRowSeparatorMarker(t *testing.T) {
+	st := status.NewState()
+	st.Resize(30, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "env", Value: status.Text("dev")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "runtime", Value: status.Text("linux")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "shell", Value: status.Text("zsh")})
+
+	r := New(layout.New(30), nil)
+	line := r.RenderRow(st, layout.ParseFormat("{env} | {runtime} | {shell}"), ' ', " : ").Line
+
+	if want := "dev : linux : zsh             "; line != want {
+		t.Fatalf("line = %q, want %q", line, want)
+	}
+}
+
+func TestRenderRowSeparatorMarkerCollapsesAroundEmptyModules(t *testing.T) {
+	st := status.NewState()
+	st.Resize(24, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "env", Value: status.Text("")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "runtime", Value: status.Text("linux")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "shell", Value: status.Text("zsh")})
+
+	r := New(layout.New(24), nil)
+	line := r.RenderRow(st, layout.ParseFormat("{env} | {runtime} | {shell}"), ' ', " : ").Line
+
+	if want := "linux : zsh             "; line != want {
+		t.Fatalf("line = %q, want %q", line, want)
+	}
+}
+
+func TestRenderRowSeparatorMarkerIgnoresWhitespaceLiteralsForCollapse(t *testing.T) {
+	st := status.NewState()
+	st.Resize(24, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "env", Value: status.Text("dev")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "runtime", Value: status.Text("")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "shell", Value: status.Text("")})
+
+	r := New(layout.New(24), nil)
+	line := r.RenderRow(st, layout.ParseFormat("{env} | {runtime} | {shell} || {time}"), ' ', " : ").Line
+
+	if strings.Contains(line, " : ") {
+		t.Fatalf("line kept dangling separator next to whitespace literal: %q", line)
+	}
+	if !strings.HasPrefix(line, "dev") {
+		t.Fatalf("line = %q, want env prefix", line)
+	}
+}
+
+func TestRenderEscapedPipeLiteral(t *testing.T) {
+	st := status.NewState()
+	st.Resize(20, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "env", Value: status.Text("dev")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "runtime", Value: status.Text("linux")})
+
+	r := New(layout.New(20), nil)
+	line := r.RenderRow(st, layout.ParseFormat(`{env}\|{runtime}`), ' ', " : ").Line
+
+	if want := "dev|linux           "; line != want {
+		t.Fatalf("line = %q, want %q", line, want)
+	}
+}
+
 // A border row ('-' fill) fills the whole width with dashes, draws edge caps, and
 // places the block in its slot — exactly barWidth cells wide.
 func TestRenderRowBorderFill(t *testing.T) {
@@ -159,7 +221,7 @@ func TestRenderRowBorderFill(t *testing.T) {
 	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("main")})
 
 	r := New(layout.New(30), theme.Default(theme.NoColor))
-	line := r.RenderRow(st, layout.ParseFormat("|| {git} ||"), '-').Line
+	line := r.RenderRow(st, layout.ParseFormat("|| {git} ||"), '-', "").Line
 
 	if w := width.String(line); w != 30 {
 		t.Fatalf("border row width = %d, want 30: %q", w, line)
@@ -181,7 +243,7 @@ func TestRenderRowBorderFillEmptyModuleUsesFill(t *testing.T) {
 	st.UpdateModule(status.ModuleSnapshot{ID: "git", Value: status.Text("")})
 
 	r := New(layout.New(30), theme.Default(theme.NoColor))
-	line := r.RenderRow(st, layout.ParseFormat("|| {git} ||"), '─').Line
+	line := r.RenderRow(st, layout.ParseFormat("|| {git} ||"), '─', "").Line
 
 	if w := width.String(line); w != 30 {
 		t.Fatalf("border row width = %d, want 30: %q", w, line)
@@ -205,7 +267,7 @@ func TestRenderMainBarHidesEmptyModuleBlock(t *testing.T) {
 	r.SetStyles(map[string]style.Style{
 		"git": {PaddingLeft: 2, PaddingRight: 2},
 	})
-	line := r.RenderRow(st, blocks, ' ').Line
+	line := r.RenderRow(st, blocks, ' ', "").Line
 
 	if line != strings.Repeat(" ", 20) {
 		t.Fatalf("empty main-bar git block rendered %q, want blank bar", line)
@@ -222,7 +284,7 @@ func TestRenderUsesModuleIDStyleFallback(t *testing.T) {
 		// accent=brightcyan RGB{0,255,255}; muted=brightblack used as fg
 		"time": {FG: "muted", BG: "accent", Bold: true, PaddingLeft: 1, PaddingRight: 1},
 	})
-	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
 
 	// BG accent = brightcyan = RGB{0,255,255}
 	if !strings.Contains(line, "\x1b[48;2;0;255;255m") {
@@ -241,13 +303,13 @@ func TestRenderAccountsForStyledRightAnchorWidth(t *testing.T) {
 	r := New(layout.New(20), theme.Default(theme.NoColor))
 	r.SetStyles(map[string]style.Style{
 		"time": {
-			LeftSeparator:  " ",
-			RightSeparator: " ",
-			PaddingLeft:    1,
-			PaddingRight:   1,
+			LeftCap:      " ",
+			RightCap:     " ",
+			PaddingLeft:  1,
+			PaddingRight: 1,
 		},
 	})
-	line := r.RenderRow(st, layout.ParseFormat("left||{time}"), ' ').Line
+	line := r.RenderRow(st, layout.ParseFormat("left||{time}"), ' ', "").Line
 
 	if got := width.String(line); got != 20 {
 		t.Fatalf("styled right anchor width = %d, want 20: %q", got, line)
@@ -267,7 +329,7 @@ func TestCommandGlintKeepsVisibleText(t *testing.T) {
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
 	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
-	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
+	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 
 	// command has no explicit FG (terminal default), so glint cannot blend colors —
 	// it renders plain text. Only verify visible content is preserved.
@@ -286,7 +348,7 @@ func TestCommandDoneStopsGlint(t *testing.T) {
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
 	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
-	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
+	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 
 	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
 		t.Fatalf("done command should not glint: %q", line)
@@ -306,7 +368,7 @@ func TestCommandGlintStableWidthAndSeamlessCycle(t *testing.T) {
 		st.UpdateModule(status.ModuleSnapshot{ID: "command", Value: status.Text("sleep 30"), AnimationSuppressed: false})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
 		r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
-		return r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
+		return r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 	}
 	// Only colors change between frames: the visible cells stay identical, so the
 	// display width never shifts.
@@ -332,7 +394,7 @@ func TestCommandGlintStopsWhenIdle(t *testing.T) {
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
 	r.SetAnimations(map[string]Animation{"command": {Mode: "glint"}})
-	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ').Line
+	line := r.RenderRow(st, layout.ParseFormat("{command}"), ' ', "").Line
 
 	if strings.Contains(line, "\x1b[38;2;255;240;194m") {
 		t.Fatalf("idle command should not glint: %q", line)
@@ -350,7 +412,7 @@ func TestAnyModuleCanGlint(t *testing.T) {
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
 	r.SetAnimations(map[string]Animation{"time": {Mode: "glint"}})
-	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+	line := r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
 
 	if !strings.Contains(line, "\x1b[38;2;255;240;194m") {
 		t.Fatalf("animated time block missing glint highlight: %q", line)
@@ -368,7 +430,7 @@ func TestPulseKeepsVisibleTextAndChangesColors(t *testing.T) {
 
 	r := New(layout.New(40), theme.Default(theme.TrueColor))
 	r.SetAnimations(map[string]Animation{"hostname": {Mode: "pulse"}})
-	line := r.RenderRow(st, layout.ParseFormat("{hostname}"), ' ').Line
+	line := r.RenderRow(st, layout.ParseFormat("{hostname}"), ' ', "").Line
 
 	if !strings.Contains(stripANSI(line), "myhost") {
 		t.Fatalf("pulse changed visible text: %q", line)
@@ -387,7 +449,7 @@ func TestPulseStableDisplayWidth(t *testing.T) {
 		st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34:56")})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
 		r.SetAnimations(map[string]Animation{"time": {Mode: "pulse"}})
-		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
 	}
 	base := width.String(stripANSI(render(0)))
 	for _, phase := range []int{1, 4, 8, 12, 15} {
@@ -405,7 +467,7 @@ func TestBlinkKeepsVisibleTextAndAlternates(t *testing.T) {
 		st.UpdateModule(status.ModuleSnapshot{ID: "time", Value: status.Text("12:34")})
 		r := New(layout.New(40), theme.Default(theme.TrueColor))
 		r.SetAnimations(map[string]Animation{"time": {Mode: "blink"}})
-		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ').Line
+		return r.RenderRow(st, layout.ParseFormat("{time}"), ' ', "").Line
 	}
 	// Visible text must not change.
 	for _, phase := range []int{0, blinkPeriod, blinkPeriod * 2} {

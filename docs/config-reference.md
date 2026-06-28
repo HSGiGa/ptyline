@@ -79,6 +79,10 @@ enabled = true
 - `bar.format` and `[[bar.block]]` are **mutually exclusive**: if blocks are
   present, `format` is rejected; otherwise `format` splits on `||` into sections:
   one section is left, two are left/right, three are left/center/right.
+- `|` inside `bar.format` or `[[bar.row]].format` is a separator marker. It draws
+  the active row separator (`[[bar.row]].separator`, falling back to
+  `bar.separator`) and collapses when either neighboring block in that section is
+  empty. Use `\|` for a literal pipe.
 - `bar.justify` controls center-section placement: `center` places it in the
   free space between left/right; `absolute_center` uses the full bar center when
   it fits; `left` and `right` pin it next to the corresponding side section.
@@ -94,6 +98,26 @@ enabled = true
   fallback and emits a diagnostic — it never blocks terminal I/O.
 
 ## Format placeholders
+
+Format strings use a small grammar:
+
+```text
+{module}  module placeholder
+||        section split: left / center / right; not drawn
+|         separator marker; draws the active separator
+\|        literal pipe
+```
+
+For example:
+
+```toml
+[[bar.row]]
+separator = " : "
+format = "{env} | {runtime} | {shell}"
+```
+
+renders as `env : runtime : shell`. If `{env}` is empty, it renders as
+`runtime : shell` with no dangling separator.
 
 Placeholders may carry a small width/alignment suffix:
 
@@ -168,6 +192,8 @@ fallback = true
 fg = "white"
 bg = "blue"
 bold = true
+left_cap = "["
+right_cap = "]"
 padding_left = 1
 padding_right = 1
 ```

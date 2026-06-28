@@ -690,8 +690,8 @@ The style system should support:
 - bold, dim, italic, and underline attributes
 - padding
 - margins
-- left separator
-- right separator
+- left cap
+- right cap
 - inner separator
 - fallback shape
 
@@ -719,8 +719,8 @@ fg = "#000000"
 bg = "#aaff00"
 bold = true
 shape = "powerline"
-left_separator = ""
-right_separator = ""
+left_cap = ""
+right_cap = ""
 padding_left = 1
 padding_right = 1
 
