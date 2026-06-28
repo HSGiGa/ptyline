@@ -60,6 +60,33 @@ func TestParseFormatPlaceholderAnchorOverride(t *testing.T) {
 	}
 }
 
+// A {name:>} inside the left section of a 3-part format moves the block to
+// AnchorRight (alongside the right-section blocks). This is intentional: the
+// anchor spec overrides the section default so the user can position a module
+// anywhere from any section. Documented here as the single-section test above
+// does not cover the cross-section interaction.
+func TestParseFormatAnchorOverrideMultiSection(t *testing.T) {
+	blocks := ParseFormat("{a} {b:>} || {c} || {d}")
+	got := map[string]Anchor{}
+	for _, b := range blocks {
+		if !b.IsLiteral() && !b.IsSeparator() {
+			got[b.ModuleID] = b.Anchor
+		}
+	}
+	if got["a"] != AnchorLeft {
+		t.Fatalf("a: got %q, want left", got["a"])
+	}
+	if got["b"] != AnchorRight {
+		t.Fatalf("b: got %q, want right (anchor override from left section)", got["b"])
+	}
+	if got["c"] != AnchorCenter {
+		t.Fatalf("c: got %q, want center", got["c"])
+	}
+	if got["d"] != AnchorRight {
+		t.Fatalf("d: got %q, want right", got["d"])
+	}
+}
+
 func TestParseFormatPlaceholderLtNoReorder(t *testing.T) {
 	// {shell:<} in the center section must NOT move shell to left anchor.
 	blocks := ParseFormat("{identity} || {runtime} {shell:<} || {time}")
