@@ -200,6 +200,28 @@ func TestRenderRowSeparatorMarkerIgnoresWhitespaceLiteralsForCollapse(t *testing
 	}
 }
 
+// When the middle module is empty, both adjacent separators were previously
+// both visible (each skipped past the other to find content), producing "• •".
+// The dedup pass now collapses consecutive visible separators to one.
+func TestRenderRowSeparatorMarkerCollapsesMiddleEmpty(t *testing.T) {
+	st := status.NewState()
+	st.Resize(24, 1, false)
+	st.UpdateModule(status.ModuleSnapshot{ID: "env", Value: status.Text("dev")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "runtime", Value: status.Text("")})
+	st.UpdateModule(status.ModuleSnapshot{ID: "shell", Value: status.Text("zsh")})
+
+	r := New(layout.New(24), nil)
+	line := r.RenderRow(st, layout.ParseFormat("{env} | {runtime} | {shell}"), ' ', " : ").Line
+
+	if strings.Count(line, " : ") != 1 {
+		t.Fatalf("expected exactly one separator for middle-empty case, got %q", line)
+	}
+	stripped := stripANSI(line)
+	if !strings.Contains(stripped, "dev") || !strings.Contains(stripped, "zsh") {
+		t.Fatalf("line missing env or shell content: %q", stripped)
+	}
+}
+
 func TestRenderEscapedPipeLiteral(t *testing.T) {
 	st := status.NewState()
 	st.Resize(20, 1, false)
