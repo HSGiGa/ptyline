@@ -22,25 +22,13 @@ type Config struct {
 }
 
 // BarConfig controls the reserved area and overall bar behavior.
-//
-// MVP contract (spec §13.1): `Height` must be 1 in the normal screen; `Format`
-// and `Blocks` are mutually exclusive (if Blocks is present, Format is rejected).
-// Alternate-screen behavior is fixed by spec §11 (bar hidden) and is NOT
-// configurable in the MVP — `ShowInAlternateScreen` is reserved for post-MVP
-// (spec §19 "optional visible bar in alternate screen").
 type BarConfig struct {
-	Height        uint16        `toml:"height"`
-	MaxHeight     uint16        `toml:"max_height"` // reserved (multi-line, post-MVP)
-	Mode          string        `toml:"mode"`       // single-line | agent-panel (future)
-	Format        string        `toml:"format"`
-	Justify       string        `toml:"justify"`         // left | center | right | absolute_center
-	MinBlockWidth int           `toml:"min_block_width"` // hide blocks narrower than this; 0 = disabled
-	Rows          []RowConfig   `toml:"row"`             // multi-line: one row per [[bar.row]] (takes precedence over Format)
-	Separator     string        `toml:"separator"`
-	Padding       int           `toml:"padding"`
-	Blocks        []BlockConfig `toml:"block"`
-
-	ShowInAlternateScreen bool `toml:"show_in_alternate_screen"` // reserved; post-MVP
+	Format        string      `toml:"format"`
+	Justify       string      `toml:"justify"`         // left | center | right | absolute_center
+	MinBlockWidth int         `toml:"min_block_width"` // hide blocks narrower than this; 0 = disabled
+	Rows          []RowConfig `toml:"row"`             // multi-line: one row per [[bar.row]] (takes precedence over Format)
+	Separator     string      `toml:"separator"`
+	Padding       int         `toml:"padding"`
 }
 
 // RowConfig is one row of a multi-line bar. Format uses the same placeholder
@@ -52,19 +40,6 @@ type RowConfig struct {
 	Format    string `toml:"format"`
 	Fill      string `toml:"fill"`
 	Separator string `toml:"separator"`
-}
-
-// BlockConfig is one layout block (spec §8.8).
-type BlockConfig struct {
-	Module   string `toml:"module"`
-	Anchor   string `toml:"anchor"` // left | center | right
-	Align    string `toml:"align"`  // left | center | right
-	Width    string `toml:"width"`  // auto | fill | N | N%
-	MinWidth string `toml:"min_width"`
-	MaxWidth string `toml:"max_width"`
-	Truncate string `toml:"truncate"` // left | right | middle | none
-	Priority int    `toml:"priority"`
-	Style    string `toml:"style"`
 }
 
 // ModuleConfig is the per-module configuration (spec §8.7).
@@ -100,7 +75,6 @@ type ThemeConfig struct {
 	Fallback    string            `toml:"fallback"`
 	Palette     map[string]string `toml:"palette"`
 	Status      map[string]string `toml:"status"`
-	Agent       map[string]string `toml:"agent"`
 }
 
 // IconsConfig controls icon preset and width handling (spec §8.10).

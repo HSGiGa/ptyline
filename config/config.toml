@@ -9,9 +9,6 @@ emoji_width = "auto"
 fallback = true
 
 [bar]
-height = 2
-mode = "single-line"
-format = "ssh: {ssh} hostname: {hostname} {cwd} || {time}"
 separator = " | "
 
 [[bar.row]]
@@ -19,7 +16,7 @@ format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-separator = " : "
+separator = ":"
 format = "{identity} || {env} | {runtime} | {shell} || {gh} | {time}"
 
 [module.identity]

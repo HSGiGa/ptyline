@@ -121,9 +121,9 @@ ticks, child exit, and signals. Key components and their boundaries:
   template in `shellintegration/templates/{bash,zsh,fish}.sh` that emits whitelisted OSC 777 metadata.
   `ptyline init <shell>` prints the template.
 - **Config (§13, §13.1):** TOML at `$XDG_CONFIG_HOME/ptyline/config.toml` (fallback `~/.config/...`),
-  `config_version` required. Bar layout is a structured block schema + a small placeholder template
-  (`"{cwd} {hostname} || {time}"`); `format` and `[[bar.block]]` are mutually exclusive; invalid config
-  is a startup error naming the key. Deliberately **not** Markdown.
+  `config_version` required. Bar layout uses `bar.format` (placeholder template, e.g.
+  `"{cwd} {hostname} || {time}"`) or `[[bar.row]]` for multi-line; invalid config is a startup error
+  naming the key. Deliberately **not** Markdown.
 - **Security (§17):** custom-command modules execute local shell commands and the config is trusted
   user input — but OSC messages must be parsed strictly and must never trigger arbitrary execution.
 

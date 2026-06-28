@@ -51,9 +51,6 @@ func VisualsFromConfig(cfg config.Config, mode theme.Mode, configPath string) (V
 	if err := mergePalette(palette, cfg.Theme.Status, "theme.status"); err != nil {
 		return Visuals{}, err
 	}
-	if err := mergePalette(palette, cfg.Theme.Agent, "theme.agent"); err != nil {
-		return Visuals{}, err
-	}
 	if err := mergeStyles(styles, cfg.Styles, "style", palette); err != nil {
 		return Visuals{}, err
 	}

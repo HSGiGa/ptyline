@@ -66,25 +66,9 @@
       "additionalProperties": false,
       "description": "Controls the reserved status bar area and layout.",
       "properties": {
-        "height": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Number of reserved rows. Must be 1 in the MVP.",
-          "default": 1
-        },
-        "max_height": {
-          "type": "integer",
-          "description": "Reserved for future multi-line bar support."
-        },
-        "mode": {
-          "type": "string",
-          "enum": ["single-line"],
-          "description": "Bar rendering mode.",
-          "default": "single-line"
-        },
         "format": {
           "type": "string",
-          "description": "Placeholder template, e.g. \"{hostname:<20} {cwd} || {git:^20} || {time:>8}\". Use || for sections and | for separator markers. Mutually exclusive with [[bar.block]].",
+          "description": "Placeholder template, e.g. \"{hostname:<20} {cwd} || {git:^20} || {time:>8}\". Use || for sections and | for separator markers.",
           "examples": ["{hostname} {cwd} || {time}", "{cwd:<30} || {git:^20} || {time:>8}"]
         },
         "justify": {
@@ -107,21 +91,11 @@
           "type": "integer",
           "description": "Global block padding in cells."
         },
-        "block": {
-          "type": "array",
-          "description": "Structured block layout. Mutually exclusive with format.",
-          "items": { "$ref": "#/definitions/BlockConfig" }
-        },
         "min_block_width": {
           "type": "integer",
           "minimum": 0,
           "description": "Minimum allocated width in cells for a block to be shown. Blocks narrower than this threshold are hidden completely instead of being truncated. 0 = disabled.",
           "default": 0
-        },
-        "show_in_alternate_screen": {
-          "type": "boolean",
-          "description": "Reserved for post-MVP: show bar while alternate screen is active.",
-          "default": false
         }
       }
     },
@@ -143,54 +117,6 @@
         "separator": {
           "type": "string",
           "description": "Text drawn for | separator markers in this row. Falls back to bar.separator."
-        }
-      }
-    },
-    "BlockConfig": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["module"],
-      "description": "One layout block in the structured bar.",
-      "properties": {
-        "module": {
-          "type": "string",
-          "description": "Module ID to render in this block."
-        },
-        "anchor": {
-          "type": "string",
-          "enum": ["left", "center", "right"],
-          "description": "Which side of the bar this block is anchored to.",
-          "default": "left"
-        },
-        "align": {
-          "type": "string",
-          "enum": ["left", "center", "right"],
-          "description": "Text alignment within the block.",
-          "default": "left"
-        },
-        "width": {
-          "$ref": "#/definitions/WidthValue",
-          "description": "Block width: auto, fill, N cells, or N%."
-        },
-        "min_width": {
-          "$ref": "#/definitions/WidthValue"
-        },
-        "max_width": {
-          "$ref": "#/definitions/WidthValue"
-        },
-        "truncate": {
-          "type": "string",
-          "enum": ["left", "right", "middle", "none"],
-          "description": "Truncation side when content exceeds width.",
-          "default": "right"
-        },
-        "priority": {
-          "type": "integer",
-          "description": "Drop priority when bar is too narrow (lower = dropped first)."
-        },
-        "style": {
-          "type": "string",
-          "description": "Style ID referencing a [style.<id>] entry."
         }
       }
     },
@@ -386,11 +312,6 @@
           "type": "object",
           "additionalProperties": { "type": "string" },
           "description": "Status level color overrides (ok, warn, error)."
-        },
-        "agent": {
-          "type": "object",
-          "additionalProperties": { "type": "string" },
-          "description": "Agent state color overrides."
         }
       }
     },
