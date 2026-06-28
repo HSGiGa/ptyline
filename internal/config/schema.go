@@ -44,13 +44,14 @@ type BarConfig struct {
 }
 
 // RowConfig is one row of a multi-line bar. Format uses the same placeholder
-// template as Bar.Format (`{name}` blocks, `||` splitting into left/center/right
-// anchors — at most three slots). Fill is the character drawn in the gaps and
-// caps around the blocks (default a space); set it to "-" for a dashes "border"
-// row like `--{left} --- {center} --- {right} --`.
+// template as Bar.Format: `{name}` blocks, `||` splitting into left/center/right
+// anchors, and `|` marking a separator rendered as Separator. Fill is the
+// character drawn in the gaps and caps around the blocks (default a space); set
+// it to "-" for a dashes "border" row like `--{left} --- {center} --- {right} --`.
 type RowConfig struct {
-	Format string `toml:"format"`
-	Fill   string `toml:"fill"`
+	Format    string `toml:"format"`
+	Fill      string `toml:"fill"`
+	Separator string `toml:"separator"`
 }
 
 // BlockConfig is one layout block (spec §8.8).
@@ -112,15 +113,15 @@ type IconsConfig struct {
 
 // StyleConfig is a per-block visual style (spec §8.9).
 type StyleConfig struct {
-	FG             string `toml:"fg"`
-	BG             string `toml:"bg"`
-	Bold           bool   `toml:"bold"`
-	Dim            bool   `toml:"dim"`
-	Italic         bool   `toml:"italic"`
-	Underline      bool   `toml:"underline"`
-	Shape          string `toml:"shape"`
-	LeftSeparator  string `toml:"left_separator"`
-	RightSeparator string `toml:"right_separator"`
-	PaddingLeft    int    `toml:"padding_left"`
-	PaddingRight   int    `toml:"padding_right"`
+	FG           string `toml:"fg"`
+	BG           string `toml:"bg"`
+	Bold         bool   `toml:"bold"`
+	Dim          bool   `toml:"dim"`
+	Italic       bool   `toml:"italic"`
+	Underline    bool   `toml:"underline"`
+	Shape        string `toml:"shape"`
+	LeftCap      string `toml:"left_cap"`
+	RightCap     string `toml:"right_cap"`
+	PaddingLeft  int    `toml:"padding_left"`
+	PaddingRight int    `toml:"padding_right"`
 }

@@ -10,7 +10,7 @@ import (
 // No-color mode (nil theme) emits plain text with padding and separators, never
 // an escape byte (spec §20.14, §20.15).
 func TestApplyNoColorPlain(t *testing.T) {
-	s := Style{FG: "accent", BG: "base.bg", Bold: true, PaddingLeft: 1, PaddingRight: 1, LeftSeparator: "[", RightSeparator: "]"}
+	s := Style{FG: "accent", BG: "base.bg", Bold: true, PaddingLeft: 1, PaddingRight: 1, LeftCap: "[", RightCap: "]"}
 	got := s.Apply("hi", nil)
 	if want := "[ hi ]"; got != want {
 		t.Fatalf("Apply no-color = %q, want %q", got, want)

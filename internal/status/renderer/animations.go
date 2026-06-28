@@ -32,7 +32,7 @@ const glintHalfWidth = 3
 func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 	body := strings.Repeat(" ", max(0, s.PaddingLeft)) + content + strings.Repeat(" ", max(0, s.PaddingRight))
 	if r.theme == nil || r.theme.Mode() == theme.NoColor {
-		return s.LeftSeparator + body + s.RightSeparator
+		return s.LeftCap + body + s.RightCap
 	}
 	runes := []rune(body)
 	if len(runes) == 0 {
@@ -40,7 +40,7 @@ func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 	}
 	base, ok := r.theme.Resolve(s.FG)
 	var b strings.Builder
-	b.WriteString(s.LeftSeparator)
+	b.WriteString(s.LeftCap)
 	b.WriteString(r.theme.BG(s.BG))
 	b.WriteString(styleAttrs(s))
 	if !ok {
@@ -75,7 +75,7 @@ func (r *Renderer) applyGlint(content string, s style.Style, phase int) string {
 		}
 	}
 	b.WriteString(theme.Reset)
-	b.WriteString(s.RightSeparator)
+	b.WriteString(s.RightCap)
 	return b.String()
 }
 
@@ -102,13 +102,13 @@ func (r *Renderer) applyPulse(content string, s style.Style, phase int) string {
 	blended := mixRGB(dim, base, t)
 	body := strings.Repeat(" ", max(0, s.PaddingLeft)) + content + strings.Repeat(" ", max(0, s.PaddingRight))
 	var b strings.Builder
-	b.WriteString(s.LeftSeparator)
+	b.WriteString(s.LeftCap)
 	b.WriteString(r.theme.BG(s.BG))
 	b.WriteString(styleAttrs(s))
 	b.WriteString(r.theme.FGRGB(blended))
 	b.WriteString(body)
 	b.WriteString(theme.Reset)
-	b.WriteString(s.RightSeparator)
+	b.WriteString(s.RightCap)
 	return b.String()
 }
 

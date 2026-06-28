@@ -16,8 +16,8 @@ fg = "accent"
 bg = "panel"
 bold = true
 shape = "box"
-left_separator = "["
-right_separator = "]"
+left_cap = "["
+right_cap = "]"
 padding_left = 1
 padding_right = 1
 
@@ -25,8 +25,8 @@ padding_right = 1
 fg = "muted"
 bg = "panel"
 shape = "box"
-left_separator = "["
-right_separator = "]"
+left_cap = "["
+right_cap = "]"
 padding_left = 1
 padding_right = 1
 
@@ -35,8 +35,8 @@ fg = "ok"
 bg = "panel"
 bold = true
 shape = "box"
-left_separator = "["
-right_separator = "]"
+left_cap = "["
+right_cap = "]"
 padding_left = 1
 padding_right = 1
 
@@ -44,8 +44,8 @@ padding_right = 1
 fg = "command"
 bg = "panel"
 shape = "box"
-left_separator = "["
-right_separator = "]"
+left_cap = "["
+right_cap = "]"
 padding_left = 1
 padding_right = 1
 
@@ -54,8 +54,8 @@ fg = "warn"
 bg = "panel"
 bold = true
 shape = "box"
-left_separator = "["
-right_separator = "]"
+left_cap = "["
+right_cap = "]"
 padding_left = 1
 padding_right = 1
 

@@ -46,6 +46,34 @@ ptyline --version
 Config lives at `$XDG_CONFIG_HOME/ptyline/config.toml` (TOML; see
 [`docs/config-reference.md`](docs/config-reference.md)).
 
+## Bar format
+
+Bar rows use a compact format string:
+
+```toml
+[bar]
+separator = " | "
+
+[[bar.row]]
+separator = " : "
+format = "{identity} || {env} | {runtime} | {shell} || {gh} | {time}"
+```
+
+Grammar:
+
+```text
+{module}  module placeholder
+||        section split: left / center / right; not drawn
+|         separator marker; draws the row separator
+\|        literal pipe character
+```
+
+In the example above, the marker `|` is rendered as ` : `, so the center section
+draws like `env : runtime : shell`. Empty neighboring modules collapse separator
+markers, avoiding dangling separators. `fill` is a row's empty-space filler, while
+style `left_cap` / `right_cap` wrap one styled block and `padding_left` /
+`padding_right` add space inside those caps.
+
 ## Documentation
 
 - [`docs/`](docs/) — deep-dive design docs (state model, event bus, terminal

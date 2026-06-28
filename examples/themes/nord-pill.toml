@@ -16,8 +16,8 @@ fg = "base.bg"
 bg = "accent"
 bold = true
 shape = "pill"
-left_separator = " "
-right_separator = " "
+left_cap = " "
+right_cap = " "
 padding_left = 1
 padding_right = 1
 
@@ -25,8 +25,8 @@ padding_right = 1
 fg = "#d8dee9"
 bg = "panel"
 shape = "pill"
-left_separator = " "
-right_separator = " "
+left_cap = " "
+right_cap = " "
 padding_left = 1
 padding_right = 1
 
@@ -35,8 +35,8 @@ fg = "base.bg"
 bg = "ok"
 bold = true
 shape = "pill"
-left_separator = " "
-right_separator = " "
+left_cap = " "
+right_cap = " "
 padding_left = 1
 padding_right = 1
 
@@ -44,8 +44,8 @@ padding_right = 1
 fg = "base.bg"
 bg = "command"
 shape = "pill"
-left_separator = " "
-right_separator = " "
+left_cap = " "
+right_cap = " "
 padding_left = 1
 padding_right = 1
 
@@ -54,8 +54,8 @@ fg = "base.bg"
 bg = "warn"
 bold = true
 shape = "pill"
-left_separator = " "
-right_separator = " "
+left_cap = " "
+right_cap = " "
 padding_left = 1
 padding_right = 1
 

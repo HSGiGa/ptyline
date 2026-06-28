@@ -19,7 +19,8 @@ format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-format = "{identity} || {env} {runtime} {shell} || {gh} || {time}"
+separator = " : "
+format = "{identity} || {env} | {runtime} | {shell} || {gh} | {time}"
 
 [module.identity]
 source = "template"

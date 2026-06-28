@@ -192,7 +192,7 @@ func Validate(cfg *Config) error {
 			continue
 		}
 		for _, b := range layout.ParseFormat(module.Format) {
-			if b.IsLiteral() {
+			if b.IsLiteral() || b.IsSeparator() {
 				continue
 			}
 			if b.ModuleID == id {
@@ -540,11 +540,11 @@ func mergeStyleConfig(base, overlay StyleConfig) StyleConfig {
 	if overlay.Shape != "" {
 		base.Shape = overlay.Shape
 	}
-	if overlay.LeftSeparator != "" {
-		base.LeftSeparator = overlay.LeftSeparator
+	if overlay.LeftCap != "" {
+		base.LeftCap = overlay.LeftCap
 	}
-	if overlay.RightSeparator != "" {
-		base.RightSeparator = overlay.RightSeparator
+	if overlay.RightCap != "" {
+		base.RightCap = overlay.RightCap
 	}
 	if overlay.PaddingLeft != 0 {
 		base.PaddingLeft = overlay.PaddingLeft

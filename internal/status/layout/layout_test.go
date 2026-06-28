@@ -120,6 +120,32 @@ func TestParseFormatPlaceholderInvalidSuffix(t *testing.T) {
 	}
 }
 
+func TestParseFormatSeparatorMarkers(t *testing.T) {
+	blocks := ParseFormat("{env} | {runtime}||{time}")
+	if len(blocks) != 4 {
+		t.Fatalf("block count = %d, want 4: %+v", len(blocks), blocks)
+	}
+	if !blocks[1].IsSeparator() {
+		t.Fatalf("second block = %+v, want separator marker", blocks[1])
+	}
+	if blocks[1].Anchor != AnchorLeft {
+		t.Fatalf("separator anchor = %q, want left", blocks[1].Anchor)
+	}
+	if blocks[3].ModuleID != "time" || blocks[3].Anchor != AnchorRight {
+		t.Fatalf("right section time block = %+v", blocks[3])
+	}
+}
+
+func TestParseFormatEscapedPipeLiteral(t *testing.T) {
+	blocks := ParseFormat(`{env} \| {runtime}`)
+	if len(blocks) != 3 {
+		t.Fatalf("block count = %d, want 3: %+v", len(blocks), blocks)
+	}
+	if !blocks[1].IsLiteral() || blocks[1].Text != " | " {
+		t.Fatalf("escaped pipe block = %+v, want literal pipe text", blocks[1])
+	}
+}
+
 func TestResolveWidthPercent(t *testing.T) {
 	e := New(100)
 	w := e.resolveWidth(Block{Width: Width{Kind: WidthPercent, Value: 25}}, 10)

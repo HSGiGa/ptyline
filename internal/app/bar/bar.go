@@ -20,8 +20,9 @@ import (
 
 // RowSpec is one resolved bar row: its parsed blocks and gap/cap fill rune.
 type RowSpec struct {
-	Blocks []layout.Block
-	Fill   rune
+	Blocks    []layout.Block
+	Fill      rune
+	Separator string
 }
 
 // BuildRows resolves the configured bar into RowSpec values. Multi-line
@@ -35,11 +36,15 @@ func BuildRows(cfg config.Config) []RowSpec {
 			if rc.Fill != "" {
 				fill = []rune(rc.Fill)[0]
 			}
-			rows[i] = RowSpec{Blocks: layout.ParseFormat(rc.Format), Fill: fill}
+			separator := cfg.Bar.Separator
+			if rc.Separator != "" {
+				separator = rc.Separator
+			}
+			rows[i] = RowSpec{Blocks: layout.ParseFormat(rc.Format), Fill: fill, Separator: separator}
 		}
 		return rows
 	}
-	return []RowSpec{{Blocks: layout.ParseFormat(cfg.Bar.Format), Fill: ' '}}
+	return []RowSpec{{Blocks: layout.ParseFormat(cfg.Bar.Format), Fill: ' ', Separator: cfg.Bar.Separator}}
 }
 
 // TemplateSpecs builds the map of pre-parsed template module specs from config.
@@ -128,7 +133,7 @@ func resolveModuleIcon(preset icons.Preset, fallbackEnabled bool, glyph, fallbac
 func Render(r *renderer.Renderer, st status.StatusState, rows []RowSpec) []string {
 	lines := make([]string, len(rows))
 	for i, row := range rows {
-		lines[i] = r.RenderRow(st, row.Blocks, row.Fill).Line
+		lines[i] = r.RenderRow(st, row.Blocks, row.Fill, row.Separator).Line
 	}
 	return lines
 }
