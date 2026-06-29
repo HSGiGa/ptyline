@@ -53,6 +53,31 @@ func Default() Config {
 				Enabled: true,
 				Env:     []string{},
 			},
+			"load": {
+				Enabled:    false,
+				IntervalMS: 5000,
+				TimeoutMS:  100,
+			},
+			"cpu": {
+				Enabled:    false,
+				IntervalMS: 2000,
+				TimeoutMS:  100,
+			},
+			"memory": {
+				Enabled:    false,
+				IntervalMS: 5000,
+				TimeoutMS:  100,
+			},
+			"battery": {
+				Enabled:    false,
+				IntervalMS: 30000,
+				TimeoutMS:  250,
+			},
+			"disk": {
+				Enabled:    false,
+				IntervalMS: 60000,
+				TimeoutMS:  250,
+			},
 		},
 	}
 }
