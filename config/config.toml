@@ -44,7 +44,7 @@ env = ["PTYLINE_ENV"]
 
 [module.git]
 icon = "left"
-format = "{branch} | {dirty} | {ahead}"
+format = "{branch}{dirty} | {ahead} | {behind} | {conflict}"
 separator = ":"
 
 [module.cwd]
