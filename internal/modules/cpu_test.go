@@ -42,6 +42,17 @@ func TestCPUPercent(t *testing.T) {
 	}
 }
 
+func TestCPUPercentNonMonotonic(t *testing.T) {
+	// next.Total < prev.Total (counter reset / hotplug) must not underflow.
+	got := cpuPercent(
+		cpuTimes{Idle: 90, Total: 200},
+		cpuTimes{Idle: 80, Total: 100},
+	)
+	if got.Percent != 0 {
+		t.Fatalf("cpuPercent() regressing total = %.2f, want 0", got.Percent)
+	}
+}
+
 func TestFormatCPU(t *testing.T) {
 	got := formatCPU(CPUSample{Percent: 12.4}, "cpu {percent}%")
 	if got != "cpu 12%" {

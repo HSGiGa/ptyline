@@ -99,10 +99,16 @@ func parseProcStatCPU(data string) (cpuTimes, error) {
 }
 
 func cpuPercent(prev, next cpuTimes) CPUSample {
-	totalDelta := next.Total - prev.Total
-	if totalDelta == 0 {
+	// Guard against a non-monotonic total (CPU hotplug changing the field set, or
+	// a counter reset across suspend): report no measurable delta rather than
+	// underflowing the uint64 subtraction into a bogus huge value. The == case
+	// (no jiffies elapsed) is folded in here too.
+	if next.Total <= prev.Total {
 		return CPUSample{}
 	}
+	totalDelta := next.Total - prev.Total
+	// idle can briefly regress on the same guard conditions; clamp so the busy
+	// fraction stays in [0, 100].
 	idleDelta := next.Idle - prev.Idle
 	if idleDelta > totalDelta {
 		idleDelta = totalDelta
