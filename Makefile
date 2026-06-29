@@ -10,6 +10,20 @@ LDFLAGS     := -s -w -X main.version=$(VERSION)
 GO_BUILD_FLAGS := -buildvcs=false
 
 GO          ?= go
+HOST_OS     := $(shell $(GO) env GOOS)
+HOST_ARCH   := $(shell $(GO) env GOARCH)
+
+# Builds are produced natively on each target platform — there is no
+# cross-compilation. The macOS system-metric modules (cpu/memory/load/battery)
+# call mach/IOKit through cgo, so darwin must build with CGO enabled; the
+# linux/windows paths are pure Go and build statically.
+ifeq ($(HOST_OS),darwin)
+CGO_ENABLED ?= 1
+else
+CGO_ENABLED ?= 0
+endif
+export CGO_ENABLED
+
 TOOLS_BIN   := $(CURDIR)/.tools/bin
 GOCACHE     ?= $(CURDIR)/.cache/go-build
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
@@ -33,16 +47,14 @@ tools: ## Install pinned local lint and formatting tools into .tools/bin
 	@test -x $(GOFUMPT) || GOBIN=$(TOOLS_BIN) $(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 
 .PHONY: build
-build: ## Build the binary for the host platform into dist/
+build: ## Build the binary for the host platform into dist/ (native; cgo on darwin)
 	@mkdir -p $(DIST)
 	$(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY) $(PKG)
 
-.PHONY: build-all
-build-all: ## Cross-compile linux, darwin, windows binaries
+.PHONY: dist
+dist: ## Build a release binary for the host platform, named ptyline-<os>-<arch> (no cross-compile)
 	@mkdir -p $(DIST)
-	GOOS=linux   GOARCH=amd64 $(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-amd64   $(PKG)
-	GOOS=darwin  GOARCH=arm64 $(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-darwin-arm64  $(PKG)
-	GOOS=windows GOARCH=amd64 $(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-windows-amd64.exe $(PKG)
+	$(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-$(HOST_OS)-$(HOST_ARCH) $(PKG)
 
 .PHONY: run
 run: build ## Build and run with fish integration (use ARGS="..." to override)
@@ -68,9 +80,26 @@ cover: ## Run tests with coverage and write coverage.txt
 vet: ## Run go vet
 	$(GO) vet ./...
 
+# Lint every target platform, not just the host. Build tags mean each GOOS
+# compiles a different set of *_linux.go / *_darwin.go / *_other.go files, so a
+# host-only lint (e.g. darwin) never sees issues in files that only build
+# elsewhere (e.g. an unused var on linux). The linux/windows paths are pure Go
+# and cross-lint from any host with CGO disabled; the darwin path uses cgo
+# (IOKit) and can only be linted natively on a darwin host. CI runs this same
+# target on a macOS runner so local and CI check the identical set of files.
+LINT_PLATFORMS := linux/amd64 windows/amd64
+ifeq ($(HOST_OS),darwin)
+LINT_PLATFORMS += darwin/arm64
+endif
+
 .PHONY: lint
-lint: tools ## Run the pinned local golangci-lint
-	$(GOLANGCI_LINT) run
+lint: tools ## Run the pinned golangci-lint across all target platforms (darwin requires a darwin host)
+	@for p in $(LINT_PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; \
+		if [ "$$os" = darwin ]; then cgo=1; else cgo=0; fi; \
+		echo "==> lint $$os/$$arch (CGO_ENABLED=$$cgo)"; \
+		GOOS=$$os GOARCH=$$arch CGO_ENABLED=$$cgo $(GOLANGCI_LINT) run || exit 1; \
+	done
 
 .PHONY: fmt
 fmt: tools ## Format the codebase with the pinned gofumpt

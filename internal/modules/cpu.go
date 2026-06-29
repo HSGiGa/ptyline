@@ -1,18 +1,14 @@
 package modules
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/status"
 )
-
-var errCPUUnavailable = errors.New("cpu provider unavailable")
 
 type cpuTimes struct {
 	Idle  uint64
@@ -27,49 +23,6 @@ type CPUSample struct {
 // NewCPU builds the {cpu} system module (total host CPU utilization).
 func NewCPU(interval time.Duration, format string) status.ProbeModule {
 	return newSystemModule("cpu", interval, format, "cpu {percent}%", newCPUProvider(), formatCPU)
-}
-
-// cpuProvider turns successive raw cpuTimes readings into a utilization
-// percentage. It keeps the previous reading; Probe primes it so the first Sample
-// yields a (near-zero) delta rather than hiding the module. read is the
-// platform-specific source of cpuTimes.
-//
-// mu guards prev/hasPrev because Refresh can run concurrently with the next
-// scheduled tick if a sample overruns its timeout (see scheduler).
-type cpuProvider struct {
-	mu      sync.Mutex
-	read    func(ctx context.Context) (cpuTimes, error)
-	prev    cpuTimes
-	hasPrev bool
-}
-
-func (p *cpuProvider) Probe(ctx context.Context) error {
-	t, err := p.read(ctx)
-	if err != nil {
-		return err
-	}
-	p.mu.Lock()
-	p.prev = t
-	p.hasPrev = true
-	p.mu.Unlock()
-	return nil
-}
-
-func (p *cpuProvider) Sample(ctx context.Context) (CPUSample, error) {
-	t, err := p.read(ctx)
-	if err != nil {
-		return CPUSample{}, err
-	}
-	p.mu.Lock()
-	prev, hasPrev := p.prev, p.hasPrev
-	p.prev = t
-	p.hasPrev = true
-	p.mu.Unlock()
-
-	if !hasPrev {
-		return CPUSample{}, nil
-	}
-	return cpuPercent(prev, t), nil
 }
 
 func parseProcStatCPU(data string) (cpuTimes, error) {

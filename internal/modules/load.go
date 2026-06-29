@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,8 +8,6 @@ import (
 
 	"github.com/hsgiga/ptyline/internal/status"
 )
-
-var errLoadUnavailable = errors.New("load provider unavailable")
 
 // LoadSample is one host load-average reading.
 type LoadSample struct {

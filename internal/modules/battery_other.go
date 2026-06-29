@@ -1,8 +1,13 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package modules
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var errBatteryUnavailable = errors.New("battery provider unavailable")
 
 type unavailableBatteryProvider struct{}
 

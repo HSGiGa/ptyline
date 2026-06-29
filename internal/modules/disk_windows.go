@@ -2,7 +2,12 @@
 
 package modules
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var errDiskUnavailable = errors.New("disk provider unavailable")
 
 type unavailableDiskProvider struct{}
 

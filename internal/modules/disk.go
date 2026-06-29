@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,8 +8,6 @@ import (
 
 	"github.com/hsgiga/ptyline/internal/status"
 )
-
-var errDiskUnavailable = errors.New("disk provider unavailable")
 
 // DiskSample is one filesystem usage reading in bytes.
 type DiskSample struct {

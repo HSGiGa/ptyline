@@ -27,6 +27,7 @@ format = "{user}@{hostname} {cwd}"
 [module.time]
 format = "%H:%M:%S"
 interval_ms = 1000
+icon = "left"
 
 [module.gh]
 source = "exec"
@@ -50,9 +51,11 @@ separator = ":"
 
 [module.cwd]
 mode = "shell-integration"
+icon = "left"
 
 [module.command]
 enabled = true
+icon = "left"
 format = "{active} {last} {exit} {duration}"
 max_width = 60
 # Commands shorter than this never appear, so instant commands (ls, cd) don't
@@ -75,25 +78,31 @@ animation_interval_ms = 250
 [module.cpu]
 enabled = true
 interval_ms = 2000
-format = "cpu {percent}%"
+format = "{percent}%"
+icon = "left"
 
 [module.memory]
 enabled = true
 interval_ms = 5000
-format = "mem {percent}%"
+format = "{percent}%"
+icon = "left"
 
 [module.disk]
 enabled = true
 interval_ms = 60000
-format = "disk {percent}%"
+format = "{percent}%"
+icon = "left"
 
 [module.load]
 enabled = true
 interval_ms = 5000
-format = "load {load1}"
+format = "{load1}"
+icon = "left"
 
 # Add {battery} to a bar.row format to show it; hidden when no battery exists.
+# {icon} is a dynamic Nerd Font glyph that changes with charge level and charging
+# state (so no static icon = "left" here).
 [module.battery]
 enabled = true
 interval_ms = 30000
-format = "bat {percent}% {state}"
+format = "{icon} {percent}%"

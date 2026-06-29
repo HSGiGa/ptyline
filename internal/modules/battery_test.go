@@ -49,3 +49,25 @@ func TestFormatBattery(t *testing.T) {
 		t.Fatalf("formatBattery() = %q, want %q", got, "bat 84% charging")
 	}
 }
+
+func TestBatteryIcon(t *testing.T) {
+	tests := []struct {
+		name   string
+		sample BatterySample
+		want   string
+	}{
+		{name: "full discharging", sample: BatterySample{Percent: 100, State: "discharging"}, want: batteryGlyphs[100]},
+		{name: "rounds to 40", sample: BatterySample{Percent: 37, State: "discharging"}, want: batteryGlyphs[40]},
+		{name: "empty", sample: BatterySample{Percent: 3, State: "discharging"}, want: batteryGlyphs[0]},
+		{name: "charging uses bolt", sample: BatterySample{Percent: 55, State: "charging"}, want: batteryChargingGlyphs[60]},
+		{name: "full state shows full", sample: BatterySample{Percent: 100, State: "full"}, want: batteryGlyphs[100]},
+		{name: "clamps over 100", sample: BatterySample{Percent: 120, State: "discharging"}, want: batteryGlyphs[100]},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := batteryIcon(tt.sample); got != tt.want {
+				t.Fatalf("batteryIcon(%+v) = %q, want %q", tt.sample, got, tt.want)
+			}
+		})
+	}
+}

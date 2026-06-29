@@ -95,6 +95,11 @@ type moduleIconDefaults struct {
 }
 
 var defaultModuleIcons = map[string]moduleIconDefaults{
+	"battery":  {glyph: "󰁹", fallback: "bat"},
+	"cpu":      {glyph: "󰻠", fallback: "cpu"},
+	"disk":     {glyph: "󰋊", fallback: "disk"},
+	"load":     {glyph: "󰓅", fallback: "load"},
+	"memory":   {glyph: "󰍛", fallback: "mem"},
 	"command":  {glyph: "󰘳"},
 	"cwd":      {glyph: "󰉋"},
 	"env":      {glyph: "󰘓"},

@@ -10,8 +10,6 @@ import (
 	"github.com/hsgiga/ptyline/internal/status"
 )
 
-var errMemoryUnavailable = errors.New("memory provider unavailable")
-
 // MemorySample is one host memory reading in bytes.
 type MemorySample struct {
 	Total     uint64

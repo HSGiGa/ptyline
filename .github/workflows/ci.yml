@@ -11,11 +11,23 @@ permissions:
 jobs:
   build:
     name: build (${{ matrix.goos }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
+      # Native per platform — no cross-compilation. linux/windows are pure Go and
+      # cross-build from ubuntu with cgo off; darwin's metric modules use cgo
+      # (mach/IOKit) and must build natively on macOS. See CLAUDE.md / Makefile.
       matrix:
-        goos: [linux, darwin, windows]
+        include:
+          - goos: linux
+            runner: ubuntu-latest
+            cgo: "0"
+          - goos: windows
+            runner: ubuntu-latest
+            cgo: "0"
+          - goos: darwin
+            runner: macos-latest
+            cgo: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -25,11 +37,18 @@ jobs:
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
+          CGO_ENABLED: ${{ matrix.cgo }}
         run: go build ./...
 
   test:
-    name: test & vet
-    runs-on: ubuntu-latest
+    name: test & vet (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      # Run natively on each host so build-tagged code (incl. the darwin cgo
+      # modules and *_darwin_test.go) is actually exercised.
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -41,7 +60,10 @@ jobs:
 
   lint:
     name: format & lint
-    runs-on: ubuntu-latest
+    # Runs on macOS so `make lint` can natively lint the darwin (cgo/IOKit)
+    # files and cross-lint the pure-Go linux/windows paths in one pass — the
+    # same command developers run locally. See the lint target in the Makefile.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
