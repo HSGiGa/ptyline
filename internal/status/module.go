@@ -21,6 +21,26 @@ type Module interface {
 	Refresh(ctx context.Context) ModuleSnapshot
 }
 
+// ProbeModule is implemented by modules that need startup discovery before
+// scheduling. If Probe reports unavailable, the app should hide the module and
+// not start its refresh ticker. Runtime errors after a successful probe are
+// represented by stale/error snapshots instead.
+type ProbeModule interface {
+	Module
+	Probe(ctx context.Context) ModuleProbe
+}
+
+// ModuleProbe describes whether a module can run in this process on this
+// platform/profile.
+type ModuleProbe struct {
+	Available bool
+	Err       error
+}
+
+func AvailableProbe() ModuleProbe { return ModuleProbe{Available: true} }
+
+func UnavailableProbe(err error) ModuleProbe { return ModuleProbe{Err: err} }
+
 // ModuleValueKind discriminates the typed module value (spec §24.3).
 type ModuleValueKind int
 

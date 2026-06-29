@@ -181,6 +181,7 @@ func oneOf(value string, values ...string) bool {
 var builtinModuleIDs = map[string]bool{
 	"time": true, "date": true, "hostname": true, "user": true, "runtime": true, "shell": true,
 	"env": true, "cwd": true, "ssh": true, "command": true,
+	"load": true, "cpu": true, "memory": true, "battery": true, "disk": true,
 	// git and all sub-module placeholders
 	"git": true, "git.branch": true,
 	"git.staged": true, "git.modified": true, "git.untracked": true, "git.conflict": true,

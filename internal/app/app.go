@@ -235,6 +235,7 @@ func run(opts options) int {
 		timeCancel   context.CancelFunc
 		dateCancel   context.CancelFunc
 		tickerCancel context.CancelFunc
+		probeMods    *probeModManager
 	)
 	userMods := map[string]*userModEntry{}
 	var execModules []*execModuleRuntime
@@ -363,6 +364,14 @@ func run(opts options) int {
 		scheduler.Start(dCtx, dateModule, 30*time.Second)
 		startGitTicker(gitCtx, gitMod)
 
+		// Probe-driven system modules ({load}, {cpu}, …) share one lifecycle
+		// manager that probes, schedules, and reconciles them on reload. Specs
+		// come from the package registry (registerProbeMod).
+		probeMods = newProbeModManager(ctx, scheduler, probeModDeps{
+			cwd: func() string { s, _ := cwdHolder.Load().(string); return s },
+		}, probeModRegistry)
+		probeMods.Reconcile(resolvedCfg)
+
 		for id, mcfg := range resolvedCfg.Modules {
 			if config.ModuleSource(id, mcfg) == "" {
 				continue // skip built-in IDs that have no user-defined source
@@ -420,6 +429,10 @@ func run(opts options) int {
 				state.UpdateModule(snap)
 			}
 		}
+
+		// Probe-driven system modules: one call starts/stops/restarts them all to
+		// match the new config (enabled toggles, interval/format changes).
+		probeMods.Reconcile(resolvedCfg)
 
 		// User-defined: build the desired set from new config.
 		newUserCfg := map[string]config.ModuleConfig{}
