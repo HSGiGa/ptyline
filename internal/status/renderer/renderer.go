@@ -414,8 +414,16 @@ func defaultStyleFor(block layout.Block) style.Style {
 		s.FG, s.Bold = "blue", true // 4 bold — matches bash \w (\e[01;34m)
 	case "time":
 		s.FG = "warn" // brightyellow 11
-	case "git":
-		s.FG, s.Bold = "ok", true // brightgreen 10; error/warn states are post-MVP
+	case "git", "git.branch", "git.dirty":
+		s.FG, s.Bold = "ok", true // brightgreen 10
+	case "git.staged", "git.modified", "git.untracked":
+		s.FG = "warn" // brightyellow 11 — pending changes
+	case "git.conflict", "git.state":
+		s.FG, s.Bold = "error", true // brightred 9 — needs attention
+	case "git.ahead":
+		s.FG = "ok" // brightgreen — local is ahead
+	case "git.behind":
+		s.FG = "warn" // brightyellow — upstream has commits
 	case "command":
 		// terminal default fg — command text blends with the frame line
 	case "exit_code":

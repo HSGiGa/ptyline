@@ -180,7 +180,12 @@ func oneOf(value string, values ...string) bool {
 
 var builtinModuleIDs = map[string]bool{
 	"time": true, "date": true, "hostname": true, "user": true, "runtime": true, "shell": true,
-	"env": true, "cwd": true, "ssh": true, "git": true, "command": true,
+	"env": true, "cwd": true, "ssh": true, "command": true,
+	// git and all sub-module placeholders
+	"git": true, "git.branch": true,
+	"git.staged": true, "git.modified": true, "git.untracked": true, "git.conflict": true,
+	"git.ahead": true, "git.behind": true,
+	"git.state": true, "git.dirty": true,
 }
 
 // IsBuiltinModuleID reports whether id is provided by ptyline itself.
