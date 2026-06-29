@@ -17,7 +17,7 @@ fill = "─"
 
 [[bar.row]]
 separator = ":"
-format = "{cwd} ||  || {gh} | {time}"
+format = "{cwd} || {cpu} {memory} {disk} {load} || {gh} | {time}"
 
 [module.identity]
 source = "template"
@@ -64,3 +64,32 @@ animation_interval_ms = 80
 enabled = true
 animation = "pulse"
 animation_interval_ms = 250
+
+# System metrics. Probe-driven: each is hidden if its source is unavailable on
+# this host (e.g. {battery} on a desktop/VM/WSL with no battery). Disabled by
+# default — enabled here so they show in the bar above.
+[module.cpu]
+enabled = true
+interval_ms = 2000
+format = "cpu {percent}%"
+
+[module.memory]
+enabled = true
+interval_ms = 5000
+format = "mem {percent}%"
+
+[module.disk]
+enabled = true
+interval_ms = 60000
+format = "disk {percent}%"
+
+[module.load]
+enabled = true
+interval_ms = 5000
+format = "load {load1}"
+
+# Add {battery} to a bar.row format to show it; hidden when no battery exists.
+[module.battery]
+enabled = true
+interval_ms = 30000
+format = "bat {percent}% {state}"
