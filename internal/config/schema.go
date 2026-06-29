@@ -60,6 +60,7 @@ type ModuleConfig struct {
 	IntervalMS          int              `toml:"interval_ms"`
 	TimeoutMS           int              `toml:"timeout_ms"`
 	MaxWidth            int              `toml:"max_width"`
+	ActiveMinDurationMS int              `toml:"active_min_duration_ms"`
 	DoneMinDurationMS   int              `toml:"done_min_duration_ms"`
 	DoneSuccessTTLMS    int              `toml:"done_success_ttl_ms"`
 	DoneFailureTTLMS    int              `toml:"done_failure_ttl_ms"`

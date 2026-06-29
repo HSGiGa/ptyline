@@ -55,6 +55,9 @@ mode = "shell-integration"
 enabled = true
 format = "{active} {last} {exit} {duration}"
 max_width = 60
+# Commands shorter than this never appear, so instant commands (ls, cd) don't
+# flash into the bar and straight back out. Default 200ms.
+active_min_duration_ms = 200
 done_min_duration_ms = 2000
 done_success_ttl_ms = 3000
 done_failure_ttl_ms = 0

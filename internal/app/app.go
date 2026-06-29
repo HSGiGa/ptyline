@@ -524,6 +524,10 @@ func run(opts options) int {
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
 	resizeDebouncer.Start(ctx, bus)
 	var pendingRefreshCommand string
+	// activeRevealTimer fires one Tick after the command-appearance grace so the
+	// tracker can reveal a still-running command even when no animation ticker is
+	// active. A command that finishes first is never shown (see Tracker grace).
+	var activeRevealTimer *time.Timer
 	loop.SetHandlers(proxy.Handlers{
 		WriteInput: func(data []byte) error {
 			if len(data) > 0 {
@@ -621,6 +625,19 @@ func run(opts options) int {
 			}
 			if snap := cmdTracker.ApplyShellMeta(key, &state); snap != nil {
 				state.UpdateModule(*snap)
+			}
+			if key == shellintegration.KeyCommand {
+				if activeRevealTimer != nil {
+					activeRevealTimer.Stop()
+					activeRevealTimer = nil
+				}
+				if state.Shell.ActiveCommand != "" {
+					if delay := cmdTracker.ActiveShowDelay(); delay > 0 {
+						activeRevealTimer = time.AfterFunc(delay, func() {
+							bus.SendCtx(ctx, event.Tick{})
+						})
+					}
+				}
 			}
 		},
 		ModuleUpdated: func(_ string, snapshot any) {

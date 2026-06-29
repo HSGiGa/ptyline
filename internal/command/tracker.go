@@ -30,6 +30,12 @@ const commandAnimationStartGrace = 3 * time.Second
 // command glint does not start.
 const keystrokeEchoWindow = 180 * time.Millisecond
 
+// commandActiveShowDelay suppresses the active-command display until the command
+// has been running this long, so instant commands (ls, cd, git status) never
+// flash into the bar and straight back out. Mirrors DoneMinDuration for the done
+// state; overridable via module config active_min_duration_ms.
+const commandActiveShowDelay = 200 * time.Millisecond
+
 // Tracker owns the command-animation lifecycle. It is created once and called
 // exclusively from the event-loop goroutine (except Animating, which may be
 // read by the ticker goroutine).
@@ -38,7 +44,11 @@ type Tracker struct {
 	startedAt    time.Time
 	lastActivity time.Time
 	lastStdin    time.Time
-	cfg          config.ModuleConfig
+	// activeShown reports whether the running command has cleared the appearance
+	// grace and is now rendered. Reset on every new command; flipped by Tick once
+	// commandActiveShowDelay has elapsed.
+	activeShown bool
+	cfg         config.ModuleConfig
 }
 
 // NewTracker creates a Tracker from the command module config.
@@ -49,6 +59,16 @@ func NewTracker(cfg config.ModuleConfig) *Tracker {
 // Animating returns the atomic flag readable by the ticker goroutine.
 func (t *Tracker) Animating() *atomic.Bool {
 	return &t.animating
+}
+
+// ActiveShowDelay is how long a command must run before its name appears in the
+// bar. Commands shorter than this never render, killing the flash on instant
+// commands. A configured active_min_duration_ms of 0 falls back to the default.
+func (t *Tracker) ActiveShowDelay() time.Duration {
+	if t.cfg.ActiveMinDurationMS > 0 {
+		return time.Duration(t.cfg.ActiveMinDurationMS) * time.Millisecond
+	}
+	return commandActiveShowDelay
 }
 
 // RecordKeystroke marks the most recent user keypress.
@@ -84,11 +104,20 @@ func (t *Tracker) ApplyShellMeta(key string, st *status.StatusState) *status.Mod
 			now := time.Now()
 			t.startedAt = now
 			t.lastActivity = now
-			st.ActiveCommandAnimating = true
+			t.activeShown = false
 			t.animating.Store(true)
+			if t.ActiveShowDelay() > 0 {
+				// Hold the name back through the appearance grace; a later Tick
+				// reveals it (and instant commands complete first, never shown).
+				st.ActiveCommandAnimating = false
+				return nil
+			}
+			t.activeShown = true
+			st.ActiveCommandAnimating = true
 		} else {
 			st.AnimationPhase = 0
 			st.ActiveCommandAnimating = false
+			t.activeShown = false
 			t.animating.Store(modules.ShouldTickDoneCommand(st.Shell, DisplayPolicy(t.cfg)))
 		}
 	}
@@ -115,6 +144,12 @@ func (t *Tracker) Tick(st *status.StatusState) *status.ModuleSnapshot {
 		return nil
 	}
 	now := time.Now()
+	if !t.activeShown {
+		if now.Sub(t.startedAt) < t.ActiveShowDelay() {
+			return nil // still within the appearance grace: stay hidden
+		}
+		t.activeShown = true
+	}
 	if !t.startedAt.IsZero() && now.Sub(t.startedAt) <= commandAnimationStartGrace {
 		st.ActiveCommandAnimating = true
 		t.animating.Store(true)
@@ -152,6 +187,14 @@ func DisplayPolicy(cfg config.ModuleConfig) modules.CommandDisplayPolicy {
 }
 
 func (t *Tracker) snapshot(shell status.ShellState, animating bool) status.ModuleSnapshot {
+	// During the appearance grace the active name must not render, even when this
+	// snapshot is emitted by an unrelated key (exit_code/duration_ms) that arrives
+	// while the command is still running. The command has not completed, so
+	// blanking ActiveCommand leaves the module empty rather than showing a stale
+	// done state.
+	if !t.activeShown && shell.ActiveCommand != "" {
+		shell.ActiveCommand = ""
+	}
 	text, active := modules.FormatCommand(shell, t.cfg.Format, t.cfg.MaxWidth, DisplayPolicy(t.cfg))
 	return status.ModuleSnapshot{
 		ID:                  "command",

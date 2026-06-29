@@ -123,6 +123,9 @@ func Validate(cfg *Config) error {
 		if module.MaxWidth < 0 {
 			return fmt.Errorf("module.%s.max_width must be >= 0", id)
 		}
+		if module.ActiveMinDurationMS < 0 {
+			return fmt.Errorf("module.%s.active_min_duration_ms must be >= 0", id)
+		}
 		if module.DoneMinDurationMS < 0 {
 			return fmt.Errorf("module.%s.done_min_duration_ms must be >= 0", id)
 		}
@@ -442,6 +445,9 @@ func mergeModuleConfig(base, overlay ModuleConfig, meta toml.MetaData, id string
 	}
 	if overlay.MaxWidth != 0 {
 		base.MaxWidth = overlay.MaxWidth
+	}
+	if overlay.ActiveMinDurationMS != 0 {
+		base.ActiveMinDurationMS = overlay.ActiveMinDurationMS
 	}
 	if meta.IsDefined("module", id, "animation") {
 		base.Animation = overlay.Animation
