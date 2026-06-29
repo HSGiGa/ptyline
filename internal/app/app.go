@@ -235,25 +235,54 @@ func run(opts options) int {
 	var execModules []*execModuleRuntime
 	var gitRefreshing atomic.Bool
 
-	// refreshGit captures the gitMod value at call time so the goroutine is
-	// free of data races even when gitMod is replaced during a reload.
-	// Safe to call from the event loop goroutine only.
-	refreshGit := func(expectedCWD string) {
+	// refreshGitMod runs RefreshAll on the given git module off the event loop and
+	// emits every sub-module snapshot. gm is passed explicitly so callers off the
+	// event loop (the ticker goroutine) never read the shared gitMod variable,
+	// which the loop rewrites on reload.
+	refreshGitMod := func(gm *modules.Git, expectedCWD string) {
 		if !gitRefreshing.CompareAndSwap(false, true) {
 			return
 		}
-		currentGit := gitMod // safe: event loop is single-threaded
 		go func() {
 			defer gitRefreshing.Store(false)
 			rctx, rcancel := context.WithTimeout(ctx, time.Second)
 			defer rcancel()
-			snap := currentGit.Refresh(rctx)
+			snaps := gm.RefreshAll(rctx)
 			if expectedCWD != "" {
 				if cur, _ := cwdHolder.Load().(string); cur != expectedCWD {
 					return
 				}
 			}
-			bus.SendCtx(ctx, event.ModuleUpdated{ID: "git", Snapshot: snap})
+			for _, snap := range snaps {
+				bus.SendCtx(ctx, event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
+			}
+		}()
+	}
+
+	// refreshGit triggers a git refresh against the current gitMod. It reads the
+	// shared gitMod variable, so it must be called from the event loop goroutine
+	// only (cwd/command events). The ticker uses refreshGitMod with a captured
+	// module instead.
+	refreshGit := func(expectedCWD string) {
+		refreshGitMod(gitMod, expectedCWD)
+	}
+
+	// startGitTicker launches a goroutine that refreshes gm on its own interval.
+	// gm is captured by value so the goroutine never touches the shared gitMod
+	// variable. Unlike the generic scheduler, it calls RefreshAll so all git
+	// sub-module snapshots are emitted on every tick.
+	startGitTicker := func(gCtx context.Context, gm *modules.Git) {
+		go func() {
+			ticker := time.NewTicker(gm.Interval())
+			defer ticker.Stop()
+			for {
+				select {
+				case <-gCtx.Done():
+					return
+				case <-ticker.C:
+					refreshGitMod(gm, "")
+				}
+			}
 		}()
 	}
 
@@ -305,8 +334,10 @@ func run(opts options) int {
 	initModules := func() {
 		timeModule = modules.NewTime(resolvedCfg.Modules["time"].Format, moduleInterval(resolvedCfg.Modules["time"], time.Second))
 		dateModule = modules.NewDate(resolvedCfg.Modules["date"].Format, moduleInterval(resolvedCfg.Modules["date"], time.Minute))
-		gitMod = modules.NewGit(moduleInterval(resolvedCfg.Modules["git"], 2*time.Second), time.Second,
-			func() string { s, _ := cwdHolder.Load().(string); return s })
+		gcfg := resolvedCfg.Modules["git"]
+		gitMod = modules.NewGit(moduleInterval(gcfg, 2*time.Second), time.Second,
+			func() string { s, _ := cwdHolder.Load().(string); return s }).
+			WithFormat(gcfg.Format, gcfg.Separator, gcfg.MaxWidth)
 
 		builtins := []status.Module{
 			timeModule, dateModule,
@@ -325,7 +356,7 @@ func run(opts options) int {
 		dCtx, dCancel := context.WithCancel(ctx)
 		dateCancel = dCancel
 		scheduler.Start(dCtx, dateModule, 30*time.Second)
-		scheduler.Start(gitCtx, gitMod, time.Second)
+		startGitTicker(gitCtx, gitMod)
 
 		for id, mcfg := range resolvedCfg.Modules {
 			if config.ModuleSource(id, mcfg) == "" {
@@ -369,16 +400,20 @@ func run(opts options) int {
 			state.UpdateModule(dateModule.Refresh(context.TODO()))
 		}
 
-		// Git: restart only when the polling interval changed (rare).
-		newGitInterval := moduleInterval(resolvedCfg.Modules["git"], 2*time.Second)
-		if newGitInterval != gitMod.Interval() {
+		// Git: restart when the polling interval or the composite format changed.
+		gcfg := resolvedCfg.Modules["git"]
+		newGitInterval := moduleInterval(gcfg, 2*time.Second)
+		if !gitMod.SameConfig(newGitInterval, gcfg.Format, gcfg.Separator, gcfg.MaxWidth) {
 			gitCancel()
 			gitMod = modules.NewGit(newGitInterval, time.Second,
-				func() string { s, _ := cwdHolder.Load().(string); return s })
+				func() string { s, _ := cwdHolder.Load().(string); return s }).
+				WithFormat(gcfg.Format, gcfg.Separator, gcfg.MaxWidth)
 			gitCtx, gCancel := context.WithCancel(ctx)
 			gitCancel = gCancel
-			scheduler.Start(gitCtx, gitMod, time.Second)
-			state.UpdateModule(gitMod.Refresh(context.TODO()))
+			startGitTicker(gitCtx, gitMod)
+			for _, snap := range gitMod.RefreshAll(context.TODO()) {
+				state.UpdateModule(snap)
+			}
 		}
 
 		// User-defined: build the desired set from new config.

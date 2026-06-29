@@ -9,7 +9,7 @@ emoji_width = "auto"
 fallback = true
 
 [bar]
-separator = " | "
+separator = "|"
 
 [[bar.row]]
 format = " {command} || || {git} "
@@ -44,6 +44,8 @@ env = ["PTYLINE_ENV"]
 
 [module.git]
 icon = "left"
+format = "{branch} | {dirty} | {ahead}"
+separator = ":"
 
 [module.cwd]
 mode = "shell-integration"
