@@ -83,11 +83,12 @@ vet: ## Run go vet
 # Lint every target platform, not just the host. Build tags mean each GOOS
 # compiles a different set of *_linux.go / *_darwin.go / *_other.go files, so a
 # host-only lint (e.g. darwin) never sees issues in files that only build
-# elsewhere (e.g. an unused var on linux). The linux/windows paths are pure Go
-# and cross-lint from any host with CGO disabled; the darwin path uses cgo
-# (IOKit) and can only be linted natively on a darwin host. CI runs this same
-# target on a macOS runner so local and CI check the identical set of files.
-LINT_PLATFORMS := linux/amd64 windows/amd64
+# elsewhere (e.g. an unused var on linux). The linux path is pure Go and
+# cross-lints from any host with CGO disabled; the darwin path uses cgo (IOKit)
+# and can only be linted natively on a darwin host. CI runs this same target on a
+# macOS runner so local and CI check the identical set of files. Windows (ConPTY)
+# is a deferred future feature, so its *_windows.go stubs are not linted here.
+LINT_PLATFORMS := linux/amd64
 ifeq ($(HOST_OS),darwin)
 LINT_PLATFORMS += darwin/arm64
 endif

@@ -14,15 +14,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      # Native per platform — no cross-compilation. linux/windows are pure Go and
-      # cross-build from ubuntu with cgo off; darwin's metric modules use cgo
-      # (mach/IOKit) and must build natively on macOS. See CLAUDE.md / Makefile.
+      # Native per platform — no cross-compilation. linux is pure Go and builds
+      # from ubuntu with cgo off; darwin's metric modules use cgo (mach/IOKit) and
+      # must build natively on macOS. Windows (ConPTY) is a deferred future feature
+      # and is intentionally not built here. See CLAUDE.md / Makefile.
       matrix:
         include:
           - goos: linux
-            runner: ubuntu-latest
-            cgo: "0"
-          - goos: windows
             runner: ubuntu-latest
             cgo: "0"
           - goos: darwin
