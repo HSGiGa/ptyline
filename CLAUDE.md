@@ -10,7 +10,7 @@ with real type/interface signatures and `TODO scaffold (plan NN)` bodies. Start 
 [`docs/plans/`](docs/plans/) (`00` … `16`, in dependency order).
 
 **The implementation language is Go** (spec §22), module `github.com/hsgiga/ptyline`, targeting Go
-1.23+. The Go toolchain lives at `/usr/local/go/bin` (not on `$PATH` by default — prepend it).
+1.26+. The Go toolchain lives at `/usr/local/go/bin` (not on `$PATH` by default — prepend it).
 
 Sources of truth, in order:
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — the one-page architecture map and the binding invariants.

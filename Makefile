@@ -1,5 +1,5 @@
 # ptyline — build & dev tasks
-# Requires the Go toolchain (go 1.23+). See README.md for installation.
+# Requires the Go toolchain (go 1.26+). See README.md for installation.
 
 BINARY      := ptyline
 CONFIG      ?= $(CURDIR)/config/config.toml

@@ -31,6 +31,11 @@ import (
 	"github.com/hsgiga/ptyline/internal/terminal"
 )
 
+// ptyDrainGrace bounds how long the ChildExited emitter waits for the PTY reader
+// to drain the child's final output after the shell is reaped. A lingering
+// grandchild can keep the slave open indefinitely, so this caps the wait.
+const ptyDrainGrace = 100 * time.Millisecond
+
 // userModEntry tracks a running user-defined module goroutine (exec or custom-time).
 type userModEntry struct {
 	cancel   context.CancelFunc
@@ -150,7 +155,7 @@ func run(opts options) int {
 
 	// sshBaseSnap is the env-based SSH snapshot (inbound SSH detection); stable
 	// for the session lifetime and NOT reset on config reload.
-	sshBaseSnap := modules.NewSSH().Refresh(context.TODO())
+	sshBaseSnap := modules.NewSSH().Refresh(context.Background())
 	state.UpdateModule(sshBaseSnap)
 	sshAnim := modules.NewSSHAnimator(sshBaseSnap)
 
@@ -317,12 +322,12 @@ func run(opts options) int {
 			}
 			em := newExecModuleRuntime(id, mcfg)
 			em.start(mCtx, bus)
-			state.UpdateModule(em.module.Refresh(context.TODO()))
+			state.UpdateModule(em.module.Refresh(context.Background()))
 			userMods[id] = &userModEntry{cancel: mCancel, command: mcfg.Command, interval: interval, exec: em}
 		case "time":
 			tm := modules.NewTimeWithID(id, mcfg.Format, interval)
 			scheduler.Start(mCtx, tm, 2*time.Second)
-			state.UpdateModule(tm.Refresh(context.TODO()))
+			state.UpdateModule(tm.Refresh(context.Background()))
 			userMods[id] = &userModEntry{cancel: mCancel, interval: interval}
 		default:
 			mCancel()
@@ -345,7 +350,7 @@ func run(opts options) int {
 			modules.NewShell(argv), modules.NewEnv(resolvedCfg.Modules["env"].Env),
 		}
 		for _, m := range builtins {
-			state.UpdateModule(m.Refresh(context.TODO()))
+			state.UpdateModule(m.Refresh(context.Background()))
 		}
 
 		gitCtx, gCancel := context.WithCancel(ctx)
@@ -384,7 +389,7 @@ func run(opts options) int {
 			tCtx, tCancel := context.WithCancel(ctx)
 			timeCancel = tCancel
 			scheduler.Start(tCtx, timeModule, 2*time.Second)
-			state.UpdateModule(timeModule.Refresh(context.TODO()))
+			state.UpdateModule(timeModule.Refresh(context.Background()))
 		}
 		newDateFmt := resolvedCfg.Modules["date"].Format
 		newDateInterval := moduleInterval(resolvedCfg.Modules["date"], time.Minute)
@@ -397,7 +402,7 @@ func run(opts options) int {
 			dCtx, dCancel := context.WithCancel(ctx)
 			dateCancel = dCancel
 			scheduler.Start(dCtx, dateModule, 30*time.Second)
-			state.UpdateModule(dateModule.Refresh(context.TODO()))
+			state.UpdateModule(dateModule.Refresh(context.Background()))
 		}
 
 		// Git: restart when the polling interval or the composite format changed.
@@ -411,7 +416,7 @@ func run(opts options) int {
 			gitCtx, gCancel := context.WithCancel(ctx)
 			gitCancel = gCancel
 			startGitTicker(gitCtx, gitMod)
-			for _, snap := range gitMod.RefreshAll(context.TODO()) {
+			for _, snap := range gitMod.RefreshAll(context.Background()) {
 				state.UpdateModule(snap)
 			}
 		}
@@ -461,7 +466,7 @@ func run(opts options) int {
 			modules.NewHostname(), modules.NewUser(),
 			modules.NewRuntime(profile), modules.NewShell(argv),
 		} {
-			state.UpdateModule(m.Refresh(context.TODO()))
+			state.UpdateModule(m.Refresh(context.Background()))
 		}
 	}
 
@@ -635,8 +640,19 @@ func run(opts options) int {
 	})
 	filter.SetAltHandler(altCoord.SetPending)
 	proxy.StartReader(ctx, bus, os.Stdin, func(data []byte) event.AppEvent { return event.StdinInput{Data: data} })
-	proxy.StartReader(ctx, bus, sup.PTY(), func(data []byte) event.AppEvent { return event.PtyOutput{Data: data} })
-	go func() { code, _ := sup.Wait(); bus.SendCtx(ctx, event.ChildExited{Code: code}) }()
+	ptyDrained := proxy.StartReader(ctx, bus, sup.PTY(), func(data []byte) event.AppEvent { return event.PtyOutput{Data: data} })
+	go func() {
+		code, _ := sup.Wait()
+		// Let the PTY reader drain and enqueue the child's final output before
+		// ChildExited (which ends the loop and would otherwise drop it). Bounded by
+		// a grace window so a lingering grandchild holding the slave open (e.g.
+		// `sh -c 'sleep 100 &'`) cannot hang the wrapper after the shell exits.
+		select {
+		case <-ptyDrained:
+		case <-time.After(ptyDrainGrace):
+		}
+		bus.SendCtx(ctx, event.ChildExited{Code: code})
+	}()
 	proxy.StartSignals(ctx, bus)
 	initModules()
 	refreshGit("")
