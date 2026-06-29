@@ -8,7 +8,7 @@ import (
 )
 
 // errNotImplemented is returned on Windows until ConPTY support is built (spec §19).
-var errNotImplemented = errors.New("Windows ConPTY backend not yet implemented (post-MVP)")
+var errNotImplemented = errors.New("windows ConPTY backend not yet implemented (post-MVP)")
 
 // start launches the child via the Windows ConPTY backend.
 //

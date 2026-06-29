@@ -28,6 +28,10 @@ type probeModSpec struct {
 	// manager computed, and runtime deps — so per-config state (format, cwd) is
 	// always fresh.
 	build func(cfg config.ModuleConfig, interval time.Duration, deps probeModDeps) status.ProbeModule
+	// refreshOnCWD asks the manager to take an extra sample when the shell's
+	// directory changes, for path-relative metrics like {disk} that would
+	// otherwise stay stale until the next interval tick.
+	refreshOnCWD bool
 }
 
 // probeModRegistry holds every registered system-module spec. Populated at
@@ -43,11 +47,16 @@ func registerProbeMod(spec probeModSpec) {
 }
 
 // probeModEntry is the running state of one managed module. interval+format are
-// the values its goroutine was started with, so Reconcile can detect changes.
+// the values its goroutine was started with, so Reconcile can detect changes;
+// mod/ctx/timeout let the manager trigger an extra off-loop refresh on demand
+// (see OnCWDChange).
 type probeModEntry struct {
 	cancel   context.CancelFunc
 	interval time.Duration
 	format   string
+	mod      status.ProbeModule
+	ctx      context.Context
+	timeout  time.Duration
 }
 
 // probeModManager reconciles the set of running probe-modules against config,
@@ -122,7 +131,14 @@ func (mgr *probeModManager) start(spec probeModSpec, mcfg config.ModuleConfig, i
 
 	mgr.scheduler.Start(mCtx, mod, timeout)
 	mgr.scheduler.RefreshOnce(mCtx, mod, timeout)
-	mgr.entries[spec.id] = &probeModEntry{cancel: cancel, interval: interval, format: mcfg.Format}
+	mgr.entries[spec.id] = &probeModEntry{
+		cancel:   cancel,
+		interval: interval,
+		format:   mcfg.Format,
+		mod:      mod,
+		ctx:      mCtx,
+		timeout:  timeout,
+	}
 }
 
 // stop cancels a running module's goroutines and forgets it. No-op if absent.
@@ -130,5 +146,20 @@ func (mgr *probeModManager) stop(id string) {
 	if e := mgr.entries[id]; e != nil {
 		e.cancel()
 		delete(mgr.entries, id)
+	}
+}
+
+// OnCWDChange takes an extra off-loop sample of every running module whose spec
+// has refreshOnCWD set, so path-relative metrics (e.g. {disk}) update promptly
+// after the shell changes directory instead of waiting for the next tick. A
+// disabled or unavailable module has no entry and is skipped.
+func (mgr *probeModManager) OnCWDChange() {
+	for _, spec := range mgr.specs {
+		if !spec.refreshOnCWD {
+			continue
+		}
+		if e := mgr.entries[spec.id]; e != nil {
+			mgr.scheduler.RefreshOnce(e.ctx, e.mod, e.timeout)
+		}
 	}
 }

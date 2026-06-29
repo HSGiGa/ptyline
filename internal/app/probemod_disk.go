@@ -13,6 +13,7 @@ func init() {
 		id:              "disk",
 		defaultInterval: time.Minute,
 		defaultTimeout:  250 * time.Millisecond,
+		refreshOnCWD:    true, // {disk} tracks the shell cwd; resample on cd
 		build: func(c config.ModuleConfig, iv time.Duration, deps probeModDeps) status.ProbeModule {
 			return modules.NewDisk(iv, c.Format, deps.cwd)
 		},

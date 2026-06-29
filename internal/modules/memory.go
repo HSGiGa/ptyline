@@ -10,8 +10,6 @@ import (
 	"github.com/hsgiga/ptyline/internal/status"
 )
 
-var errMemoryUnavailable = errors.New("memory provider unavailable")
-
 // MemorySample is one host memory reading in bytes.
 type MemorySample struct {
 	Total     uint64
@@ -44,12 +42,15 @@ func parseMeminfo(data string) (MemorySample, error) {
 		values[key] = value * multiplier
 	}
 
-	total := values["MemTotal"]
-	available := values["MemAvailable"]
-	if total == 0 {
+	total, okTotal := values["MemTotal"]
+	available, okAvail := values["MemAvailable"]
+	if !okTotal || total == 0 {
 		return MemorySample{}, errors.New("parse meminfo: missing MemTotal")
 	}
-	if available == 0 {
+	// MemAvailable must be present (it is, on every kernel >= 3.14 we target), but
+	// a value of 0 is legitimate under extreme memory pressure — treat it as
+	// "used ~= total", not as a parse failure.
+	if !okAvail {
 		return MemorySample{}, errors.New("parse meminfo: missing MemAvailable")
 	}
 	if available > total {

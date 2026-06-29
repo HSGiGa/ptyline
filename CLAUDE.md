@@ -30,8 +30,12 @@ make test-one PKG=./internal/reserved RUN=TestChildRows
 make vet          # go vet ./...
 make lint         # golangci-lint (must be installed separately)
 make fmt          # gofumpt/gofmt
-make build-all    # cross-compile linux/darwin/windows
+make dist         # native host release binary → dist/ptyline-<os>-<arch>
 ```
+
+Builds are **native per platform — no cross-compilation.** The macOS metric
+modules use cgo (mach/IOKit), so `make` enables `CGO_ENABLED=1` on darwin and
+keeps linux/windows pure-Go static. Build each platform on its own host.
 
 ### Code layout
 
@@ -100,12 +104,13 @@ ticks, child exit, and signals. Key components and their boundaries:
 
 ## Cross-cutting design decisions
 
-- **Platform model (§4):** **MVP targets Linux + WSL/WSL2 only**; macOS and Windows/ConPTY are
-  post-MVP (§19) and must not delay the MVP (`darwin`/`windows` files are build-tagged stubs). One
-  codebase, fan-out via `GOOS`. **WSL2 is a runtime branch inside the Linux binary, not a separate
-  target.** Detect the environment once into a normalized profile → capability flags (`unix_pty`,
-  `vt_sequences`, `linux_procfs`, …) → backend selection. **Components depend on capabilities, never on
-  raw OS-name checks.**
+- **Platform model (§4):** **MVP targets Linux + WSL/WSL2 only**; Windows/ConPTY is post-MVP (§19) and
+  must not delay the MVP (`windows` files are build-tagged stubs). macOS is supported: native PTY plus
+  real system-metric providers (`*_darwin.go`) via mach/IOKit (cgo). One codebase, fan-out via `GOOS`,
+  but **built natively per platform — no cross-compilation** (cgo on darwin). **WSL2 is a runtime branch
+  inside the Linux binary, not a separate target.** Detect the environment once into a normalized
+  profile → capability flags (`unix_pty`, `vt_sequences`, `linux_procfs`, …) → backend selection.
+  **Components depend on capabilities, never on raw OS-name checks.**
 - **Alternate screen (§11):** MVP policy is **hide the bar** — on entry, reset the scroll region and
   resize the child to full `rows`; on exit, resize to `rows-1`, restore the `1..rows-1` region, redraw.
   Not configurable in the MVP. The ANSI filter does **not** clamp margins while the alt screen is active.

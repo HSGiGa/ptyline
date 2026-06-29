@@ -1,8 +1,13 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package modules
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var errLoadUnavailable = errors.New("load provider unavailable")
 
 type unavailableLoadProvider struct{}
 

@@ -84,17 +84,27 @@ These corrupt the user's terminal if broken. Full detail in
 
 **MVP target: Linux and WSL/WSL2 only** (one Linux binary; WSL2 is a runtime
 branch, not a separate target). Native macOS and Windows/ConPTY are **post-MVP**
-(spec §4, §19) — the `darwin`/`windows` files are build-tagged stubs that must not
-delay the Linux/WSL MVP.
+(spec §4, §19); the `windows` files remain build-tagged stubs. macOS now has real
+system-metric providers (cpu/memory/load/battery) backed by mach/IOKit.
+
+Binaries are built **natively on each target platform — there is no
+cross-compilation.** The macOS metric providers call mach/IOKit through cgo, so
+the darwin build requires `CGO_ENABLED=1` (a C toolchain), which makes
+cross-compiling the darwin binary from another host impractical; building per
+platform sidesteps that. `make build` (host binary) and `make dist`
+(`ptyline-<os>-<arch>`) drive the host build; the Makefile enables cgo on darwin
+and keeps linux/windows pure-Go static builds.
 
 ```text
-GOOS=linux   → Linux binary  (Unix PTY backend + WSL2 runtime branch)   ← MVP
-GOOS=darwin  → macOS binary  (Unix PTY backend)                         ← post-MVP
-GOOS=windows → Windows binary (ConPTY backend)                          ← post-MVP
+GOOS=linux   → Linux binary  (Unix PTY backend + WSL2 runtime branch)   ← MVP, pure Go (static)
+GOOS=darwin  → macOS binary  (Unix PTY backend; metrics via mach/IOKit) ← cgo
+GOOS=windows → Windows binary (ConPTY backend)                          ← post-MVP, stubs
 ```
 
 Components depend on **capabilities** (`unix_pty`, `windows_conpty`, `vt_sequences`,
-`linux_procfs`, …) resolved once at startup, never on raw OS-name checks.
+`linux_procfs`, …) resolved once at startup, never on raw OS-name checks. System
+modules stay probe-driven: each hides itself when its source is unavailable (e.g.
+`battery` on a desktop Mac with no battery).
 
 ## Future-proofing already wired in
 

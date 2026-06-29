@@ -1,18 +1,14 @@
 package modules
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/status"
 )
-
-var errCPUUnavailable = errors.New("cpu provider unavailable")
 
 type cpuTimes struct {
 	Idle  uint64
@@ -27,49 +23,6 @@ type CPUSample struct {
 // NewCPU builds the {cpu} system module (total host CPU utilization).
 func NewCPU(interval time.Duration, format string) status.ProbeModule {
 	return newSystemModule("cpu", interval, format, "cpu {percent}%", newCPUProvider(), formatCPU)
-}
-
-// cpuProvider turns successive raw cpuTimes readings into a utilization
-// percentage. It keeps the previous reading; Probe primes it so the first Sample
-// yields a (near-zero) delta rather than hiding the module. read is the
-// platform-specific source of cpuTimes.
-//
-// mu guards prev/hasPrev because Refresh can run concurrently with the next
-// scheduled tick if a sample overruns its timeout (see scheduler).
-type cpuProvider struct {
-	mu      sync.Mutex
-	read    func(ctx context.Context) (cpuTimes, error)
-	prev    cpuTimes
-	hasPrev bool
-}
-
-func (p *cpuProvider) Probe(ctx context.Context) error {
-	t, err := p.read(ctx)
-	if err != nil {
-		return err
-	}
-	p.mu.Lock()
-	p.prev = t
-	p.hasPrev = true
-	p.mu.Unlock()
-	return nil
-}
-
-func (p *cpuProvider) Sample(ctx context.Context) (CPUSample, error) {
-	t, err := p.read(ctx)
-	if err != nil {
-		return CPUSample{}, err
-	}
-	p.mu.Lock()
-	prev, hasPrev := p.prev, p.hasPrev
-	p.prev = t
-	p.hasPrev = true
-	p.mu.Unlock()
-
-	if !hasPrev {
-		return CPUSample{}, nil
-	}
-	return cpuPercent(prev, t), nil
 }
 
 func parseProcStatCPU(data string) (cpuTimes, error) {
@@ -99,10 +52,16 @@ func parseProcStatCPU(data string) (cpuTimes, error) {
 }
 
 func cpuPercent(prev, next cpuTimes) CPUSample {
-	totalDelta := next.Total - prev.Total
-	if totalDelta == 0 {
+	// Guard against a non-monotonic total (CPU hotplug changing the field set, or
+	// a counter reset across suspend): report no measurable delta rather than
+	// underflowing the uint64 subtraction into a bogus huge value. The == case
+	// (no jiffies elapsed) is folded in here too.
+	if next.Total <= prev.Total {
 		return CPUSample{}
 	}
+	totalDelta := next.Total - prev.Total
+	// idle can briefly regress on the same guard conditions; clamp so the busy
+	// fraction stays in [0, 100].
 	idleDelta := next.Idle - prev.Idle
 	if idleDelta > totalDelta {
 		idleDelta = totalDelta

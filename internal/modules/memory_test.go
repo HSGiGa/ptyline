@@ -16,6 +16,17 @@ func TestParseMeminfo(t *testing.T) {
 	}
 }
 
+func TestParseMeminfoZeroAvailable(t *testing.T) {
+	// MemAvailable: 0 is valid (extreme pressure), not a parse error.
+	got, err := parseMeminfo("MemTotal: 1000 kB\nMemAvailable: 0 kB\n")
+	if err != nil {
+		t.Fatalf("parseMeminfo() error = %v, want nil", err)
+	}
+	if got.Available != 0 || got.Used != got.Total || got.Percent != 100 {
+		t.Fatalf("parseMeminfo() = %+v, want full usage", got)
+	}
+}
+
 func TestParseMeminfoErrors(t *testing.T) {
 	tests := []struct {
 		name  string

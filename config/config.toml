@@ -10,14 +10,15 @@ fallback = true
 
 [bar]
 separator = "|"
+justify = "absolute_center"
 
 [[bar.row]]
 format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-separator = ":"
-format = "{cwd} ||  || {gh} | {time}"
+separator = " · "
+format = "{cwd} || {cpu} | {memory} | {disk} | {load} {battery:>} || {gh} | {time}"
 
 [module.identity]
 source = "template"
@@ -26,6 +27,7 @@ format = "{user}@{hostname} {cwd}"
 [module.time]
 format = "%H:%M:%S"
 interval_ms = 1000
+icon = "left"
 
 [module.gh]
 source = "exec"
@@ -49,11 +51,16 @@ separator = ":"
 
 [module.cwd]
 mode = "shell-integration"
+icon = "left"
 
 [module.command]
 enabled = true
+icon = "left"
 format = "{active} {last} {exit} {duration}"
 max_width = 60
+# Commands shorter than this never appear, so instant commands (ls, cd) don't
+# flash into the bar and straight back out. Default 200ms.
+active_min_duration_ms = 200
 done_min_duration_ms = 2000
 done_success_ttl_ms = 3000
 done_failure_ttl_ms = 0
@@ -64,3 +71,38 @@ animation_interval_ms = 80
 enabled = true
 animation = "pulse"
 animation_interval_ms = 250
+
+# System metrics. Probe-driven: each is hidden if its source is unavailable on
+# this host (e.g. {battery} on a desktop/VM/WSL with no battery). Disabled by
+# default — enabled here so they show in the bar above.
+[module.cpu]
+enabled = true
+interval_ms = 2000
+format = "{percent}%"
+icon = "left"
+
+[module.memory]
+enabled = true
+interval_ms = 5000
+format = "{percent}%"
+icon = "left"
+
+[module.disk]
+enabled = true
+interval_ms = 60000
+format = "{percent}%"
+icon = "left"
+
+[module.load]
+enabled = true
+interval_ms = 5000
+format = "{load1}"
+icon = "left"
+
+# Add {battery} to a bar.row format to show it; hidden when no battery exists.
+# {icon} is a dynamic Nerd Font glyph that changes with charge level and charging
+# state (so no static icon = "left" here).
+[module.battery]
+enabled = true
+interval_ms = 30000
+format = "{icon} {percent}%"

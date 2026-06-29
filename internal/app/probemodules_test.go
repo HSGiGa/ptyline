@@ -78,3 +78,51 @@ func TestProbeModManagerReconcile(t *testing.T) {
 		t.Fatal("unavailable probe: nothing should be scheduled")
 	}
 }
+
+// TestProbeModManagerOnCWDChange checks that a cwd change resamples only the
+// modules that opt in via refreshOnCWD (e.g. {disk}), not every module.
+func TestProbeModManagerOnCWDChange(t *testing.T) {
+	got := make(chan status.ModuleSnapshot, 8)
+	scheduler := status.NewScheduler(func(s status.ModuleSnapshot) { got <- s })
+	mk := func(id string, onCWD bool) probeModSpec {
+		return probeModSpec{
+			id:              id,
+			defaultInterval: time.Second,
+			defaultTimeout:  10 * time.Millisecond,
+			refreshOnCWD:    onCWD,
+			build: func(config.ModuleConfig, time.Duration, probeModDeps) status.ProbeModule {
+				return fakeProbeMod{id: id, available: true}
+			},
+		}
+	}
+	mgr := newProbeModManager(context.Background(), scheduler,
+		probeModDeps{}, []probeModSpec{mk("disk", true), mk("load", false)})
+	mgr.Reconcile(config.Config{Modules: map[string]config.ModuleConfig{
+		"disk": {Enabled: true}, "load": {Enabled: true},
+	}})
+
+	// Drain the two initial refreshes (one per started module).
+	for i := 0; i < 2; i++ {
+		select {
+		case <-got:
+		case <-time.After(time.Second):
+			t.Fatal("missing initial refresh")
+		}
+	}
+
+	mgr.OnCWDChange()
+	select {
+	case s := <-got:
+		if s.ID != "disk" {
+			t.Fatalf("OnCWDChange refreshed %q, want disk", s.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("OnCWDChange did not refresh disk")
+	}
+	// No other module should have been refreshed.
+	select {
+	case s := <-got:
+		t.Fatalf("OnCWDChange refreshed unexpected module %q", s.ID)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
