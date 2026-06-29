@@ -70,5 +70,5 @@ func cpuPercent(prev, next cpuTimes) CPUSample {
 }
 
 func formatCPU(sample CPUSample, format string) string {
-	return strings.ReplaceAll(format, "{percent}", fmt.Sprintf("%.0f", sample.Percent))
+	return strings.ReplaceAll(format, "{percent}", formatPercent(sample.Percent))
 }

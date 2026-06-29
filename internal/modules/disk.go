@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +47,7 @@ func diskSample(total, free uint64) DiskSample {
 
 func formatDisk(sample DiskSample, format string) string {
 	replacer := strings.NewReplacer(
-		"{percent}", fmt.Sprintf("%.0f", sample.Percent),
+		"{percent}", formatPercent(sample.Percent),
 		"{used_gb}", strconv.FormatUint(sample.Used/1024/1024/1024, 10),
 		"{free_gb}", strconv.FormatUint(sample.Free/1024/1024/1024, 10),
 		"{total_gb}", strconv.FormatUint(sample.Total/1024/1024/1024, 10),

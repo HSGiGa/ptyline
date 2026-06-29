@@ -2,10 +2,36 @@ package modules
 
 import (
 	"context"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/hsgiga/ptyline/internal/status"
 )
+
+// percentWidth is the fixed cell width every {percent} value renders to, so the
+// bar never reflows as a metric crosses a digit boundary (e.g. 9% -> 10%).
+const percentWidth = 2
+
+// formatPercent renders a percentage at a fixed width so the bar stays steady.
+// The value is rounded and clamped to 0..99: capping at 99 keeps it two digits
+// (a momentary 100% would otherwise widen the field and shove the layout), and
+// 0..99 is enough resolution for an at-a-glance metric. The result is
+// space-padded on the left to percentWidth (" 0", " 9", "99").
+func formatPercent(v float64) string {
+	n := int(math.Round(v))
+	if n < 0 {
+		n = 0
+	}
+	if n > 99 {
+		n = 99
+	}
+	s := strconv.Itoa(n)
+	for len(s) < percentWidth {
+		s = " " + s
+	}
+	return s
+}
 
 // sampler is the platform-specific half of a system module: it reports whether
 // the metric is available on this host (Probe) and produces one typed reading

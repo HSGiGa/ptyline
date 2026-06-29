@@ -51,7 +51,7 @@ func normalizeBatteryState(s string) string {
 
 func formatBattery(sample BatterySample, format string) string {
 	replacer := strings.NewReplacer(
-		"{percent}", strconv.Itoa(sample.Percent),
+		"{percent}", formatPercent(float64(sample.Percent)),
 		"{state}", sample.State,
 		"{icon}", batteryIcon(sample),
 	)

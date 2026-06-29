@@ -67,7 +67,7 @@ func parseMeminfo(data string) (MemorySample, error) {
 
 func formatMemory(sample MemorySample, format string) string {
 	replacer := strings.NewReplacer(
-		"{percent}", fmt.Sprintf("%.0f", sample.Percent),
+		"{percent}", formatPercent(sample.Percent),
 		"{used_mb}", strconv.FormatUint(sample.Used/1024/1024, 10),
 		"{total_mb}", strconv.FormatUint(sample.Total/1024/1024, 10),
 		"{available_mb}", strconv.FormatUint(sample.Available/1024/1024, 10),
