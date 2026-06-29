@@ -124,7 +124,7 @@ func (f *AnsiFilter) Filter(in []byte) []byte {
 		n, complete := scanEscape(data[i:])
 		if !complete {
 			rest := data[i:]
-			if len(rest) > maxBufferedCSI {
+			if len(rest) > maxBufferedSeq(rest) {
 				// Oversized/malformed: stop buffering and pass through (spec §15).
 				f.diag(fmt.Sprintf("oversized escape sequence (%d bytes) passed through", len(rest)))
 				out = append(out, rest...)
@@ -140,6 +140,21 @@ func (f *AnsiFilter) Filter(in []byte) []byte {
 		i += n
 	}
 	return out
+}
+
+// maxBufferedSeq returns how many bytes of an incomplete escape sequence may be
+// buffered before it is treated as oversized. OSC/DCS-style string sequences can
+// legitimately carry up to maxOSCPayload (shell-integration metadata), so a 4–8
+// KiB OSC 777 must be buffered until complete and consumed rather than leaking
+// to the real terminal; CSI and simple escapes use the smaller maxBufferedCSI.
+func maxBufferedSeq(rest []byte) int {
+	if len(rest) >= 2 {
+		switch rest[1] {
+		case ']', 'P', 'X', '^', '_':
+			return maxOSCPayload
+		}
+	}
+	return maxBufferedCSI
 }
 
 // scanEscape, given a slice whose first byte is ESC, returns the length of a

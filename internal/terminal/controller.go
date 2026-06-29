@@ -14,9 +14,6 @@ type Controller struct {
 	tty *os.File // controlling terminal (typically os.Stdin/os.Stdout)
 	out io.Writer
 	raw rawState
-
-	scrollRegionSet bool
-	cursorHidden    bool
 }
 
 // New creates a Controller over the given tty and output writer.
