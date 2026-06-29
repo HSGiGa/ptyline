@@ -49,13 +49,14 @@ The application should remain a small PTY wrapper with a bottom bar.
 
 ## 4. Target Environment
 
-MVP target environment:
+Current readiness target environment:
 
 - Linux, with Ubuntu 24.04 as the reference distribution
 - WSL and WSL2, using the Linux binary
+- macOS, using the shared Unix PTY backend and native metric providers
 
-Native macOS and Windows binaries are post-MVP targets. Their backends must not delay
-or weaken the Linux/WSL MVP.
+Windows/ConPTY is deferred future work. Its backend must not delay or weaken
+Linux/WSL/macOS readiness.
 
 Terminal emulators expected to work:
 
@@ -1254,7 +1255,7 @@ Possible future features:
 - status update on shell events instead of timer
 - terminal emulator feature detection
 - tests with recorded PTY sessions
-- native macOS and Windows/ConPTY backends
+- Windows/ConPTY backend
 
 ## 20. Acceptance Criteria
 

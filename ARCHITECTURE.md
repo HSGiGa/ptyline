@@ -82,10 +82,11 @@ These corrupt the user's terminal if broken. Full detail in
 
 ## Platform scope & build matrix
 
-**MVP target: Linux and WSL/WSL2 only** (one Linux binary; WSL2 is a runtime
-branch, not a separate target). Native macOS and Windows/ConPTY are **post-MVP**
-(spec §4, §19); the `windows` files remain build-tagged stubs. macOS now has real
-system-metric providers (cpu/memory/load/battery) backed by mach/IOKit.
+**Current readiness target: Linux, Linux/WSL, and macOS.** WSL2 is a runtime
+branch of the Linux binary, not a separate target. macOS uses the shared Unix PTY
+backend and has native system-metric providers (cpu/memory/load/battery) backed
+by mach/IOKit. Windows/ConPTY is deferred future work; the `windows` files remain
+build-tagged stubs.
 
 Binaries are built **natively on each target platform — there is no
 cross-compilation.** The macOS metric providers call mach/IOKit through cgo, so
@@ -96,9 +97,9 @@ platform sidesteps that. `make build` (host binary) and `make dist`
 and keeps linux/windows pure-Go static builds.
 
 ```text
-GOOS=linux   → Linux binary  (Unix PTY backend + WSL2 runtime branch)   ← MVP, pure Go (static)
+GOOS=linux   → Linux binary  (Unix PTY backend + WSL2 runtime branch)   ← pure Go (static)
 GOOS=darwin  → macOS binary  (Unix PTY backend; metrics via mach/IOKit) ← cgo
-GOOS=windows → Windows binary (ConPTY backend)                          ← post-MVP, stubs
+GOOS=windows → Windows binary (ConPTY backend)                          ← deferred, stubs
 ```
 
 Components depend on **capabilities** (`unix_pty`, `windows_conpty`, `vt_sequences`,

@@ -1,8 +1,9 @@
 # Implementation Plans
 
-The build of ptyline broken into small, independently-executable slices. Each
-`NN-*.md` is self-contained and follows a fixed template. Work them roughly in
-order; the `Depends on` line is the real constraint.
+The build of ptyline broken into small, independently-executable slices. The
+current readiness focus is Linux, Linux/WSL, and macOS. Deferred work
+(Windows/ConPTY, Agents, diagnostics/replay tooling) is kept as reference only
+and does not block readiness.
 
 ## Template
 
@@ -40,20 +41,26 @@ tick boxes as you go.
 │                                                                ├─ 11 cli
 │                                                                ├─ 12 shell-integration adapters
 │                                                                ├─ 13 alt-screen & resize
-│                                                                └─ 14 diagnostics & replay
+│
 15 git module        (after 07/09 — exercises caching)
-16 agents stub       (after 07 — reserves types; post-MVP)
 ```
 
-**Platform scope:** the MVP is **Linux/WSL only** (spec §4). Native macOS and
-Windows/ConPTY backends are post-MVP — keep the `darwin`/`windows` build-tagged
-stubs compiling but do not let them block MVP plans.
+## Deferred reference plans
+
+- `14 diagnostics & replay` — QA/tooling only; not required for product
+  readiness.
+- `16 agents stub` — future feature; not required for product readiness.
+
+**Platform scope:** readiness targets Linux, Linux/WSL, and macOS. Windows/ConPTY
+is deferred future work; keep the Windows build-tagged stubs compiling, but do
+not let Windows block current plans.
 
 ## Milestones
 
 - **After 05** — ptyline is a transparent PTY pass-through (shell runs inside it).
 - **After 09** — a real (static) bar is pinned on the last row.
-- **After 13** — MVP per spec §18; check against the spec §20 acceptance criteria.
+- **After 13** — terminal-wrapper readiness for Linux/WSL/macOS; check against
+  the spec §20 acceptance criteria that apply to Unix PTY targets.
 
 ## Conventions
 

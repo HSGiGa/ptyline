@@ -25,7 +25,7 @@ make build        # build dist/ptyline
 make run ARGS='-- zsh' # run the wrapper around a command
 make test         # run unit tests
 make check        # format check, vet, tests, lint
-make build-all    # cross-compile linux/darwin/windows
+make dist         # build a release binary for the current host platform
 ```
 
 Run a single test:
@@ -86,11 +86,11 @@ style `left_cap` / `right_cap` wrap one styled block and `padding_left` /
 
 ## Platform support
 
-**Supported today: Linux and WSL2.** WSL2 is a **runtime branch of the Linux
-binary**, not a separate target.
+**Supported today: Linux, WSL2, and macOS.** WSL2 is a runtime branch of the
+Linux binary, not a separate target. Linux builds are pure Go; macOS builds use
+the shared Unix PTY backend and native system-metric providers backed by
+mach/IOKit, so they require a native macOS build with cgo enabled.
 
-macOS and Windows are **post-MVP** (spec §19): the `darwin`/`windows` files are
-build-tagged stubs, so those targets *compile* (CI cross-builds them) but the PTY
-backend is not implemented yet — the binary will not function there. One codebase
-fans out via `GOOS`; the native backends land later. See
-[`docs/platform-and-capabilities.md`](docs/platform-and-capabilities.md).
+Windows/ConPTY is deferred future work: the Windows files compile as stubs to
+keep the platform boundary explicit, but the binary is not functional there yet.
+See [`docs/platform-and-capabilities.md`](docs/platform-and-capabilities.md).

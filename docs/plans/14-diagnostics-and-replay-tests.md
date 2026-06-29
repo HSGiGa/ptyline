@@ -1,12 +1,12 @@
 # 14 — Diagnostics & Replay Test Harness
-Status: [ ] not started
+Status: [ ] deferred — QA/tooling only; not a readiness blocker
 Depends on: 05, 06
 Spec refs: spec §20, §20.1 (verification matrix); ARCHITECTURE.md §18, §19; docs/testing-and-replay.md
 
 ## Goal
 A deterministic record/replay harness for terminal behavior, plus a diagnostics
-layer that subsystems report into — enabling regression tests for the safety
-invariants and future `doctor`/`replay` commands.
+layer that subsystems report into. This is useful regression infrastructure for
+later hardening, but it is not required for Linux/WSL/macOS product readiness.
 
 ## Deliverables
 - A replay package (e.g. `internal/replay`): recording format + a driver that

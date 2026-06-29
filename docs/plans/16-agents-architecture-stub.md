@@ -1,5 +1,5 @@
 # 16 — Agents Architecture Stub
-Status: [ ] not started
+Status: [ ] deferred — future feature; not a readiness blocker
 Depends on: 07
 Spec refs: ARCHITECTURE.md §10–§12, §11.1, §20; docs/agents-future.md
 **Post-MVP. Reserve types and one ingestion path only — do not build full agent support.**

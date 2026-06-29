@@ -104,9 +104,9 @@ ticks, child exit, and signals. Key components and their boundaries:
 
 ## Cross-cutting design decisions
 
-- **Platform model (§4):** **MVP targets Linux + WSL/WSL2 only**; Windows/ConPTY is post-MVP (§19) and
-  must not delay the MVP (`windows` files are build-tagged stubs). macOS is supported: native PTY plus
-  real system-metric providers (`*_darwin.go`) via mach/IOKit (cgo). One codebase, fan-out via `GOOS`,
+- **Platform model (§4):** current readiness targets **Linux, Linux/WSL, and macOS**. Windows/ConPTY is
+  deferred future work and must not delay readiness (`windows` files are build-tagged stubs). macOS is
+  supported: native PTY plus real system-metric providers (`*_darwin.go`) via mach/IOKit (cgo). One codebase, fan-out via `GOOS`,
   but **built natively per platform — no cross-compilation** (cgo on darwin). **WSL2 is a runtime branch
   inside the Linux binary, not a separate target.** Detect the environment once into a normalized
   profile → capability flags (`unix_pty`, `vt_sequences`, `linux_procfs`, …) → backend selection.
@@ -134,13 +134,12 @@ ticks, child exit, and signals. Key components and their boundaries:
 
 ## MVP scope vs. later
 
-Build the MVP first (§18): run shell in PTY, raw mode, bidirectional proxy, reserved-rows sizing,
+Build the Unix-target wrapper first (§18): run shell in PTY, raw mode, bidirectional proxy, reserved-rows sizing,
 scroll region, one-line bar with left/center/right blocks (fixed + auto width), basic ANSI fg/bg, one
 default theme, ASCII-safe fallback, time/hostname/static-text modules, minimal ANSI filter, alt-screen
 detection (hide bar, give child full height; restore on exit), the serialized terminal writer, Unix
-session/process-group/signal handling, optional shell integration, **Linux/WSL only**. Defer git,
-command duration, battery, themes/presets, Powerline/Nerd-Font styling, mouse-aware blocks, and native
-macOS/Windows backends to post-MVP (§19).
+session/process-group/signal handling, optional shell integration, **Linux/WSL/macOS**. Windows/ConPTY,
+Agents, and diagnostics/replay tooling are deferred and do not block readiness.
 
 Acceptance criteria are enumerated in §20 (plus the §20.1 verification matrix) — treat them as the
 definition of done for the MVP.

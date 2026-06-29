@@ -2,25 +2,31 @@
 
 Source: `internal/platform`, `internal/runtimeenv`. Design: spec §4, §24.6.
 
-## MVP scope: Linux/WSL only
+## Supported scope: Linux, WSL, and macOS
 
-The **MVP targets Linux and WSL/WSL2 only** (reference distro: Ubuntu 24.04).
-Native **macOS and Windows/ConPTY are post-MVP** (spec §4, §19); their backends
-must not delay or weaken the Linux/WSL MVP. The `darwin.go` / `windows.go` /
-`spawn_windows.go` files exist as build-tagged stubs so the one codebase stays
-coherent, but they are not part of MVP acceptance.
+The current readiness target is Linux, Linux/WSL, and macOS. WSL/WSL2 is a
+runtime branch of the Linux binary. macOS uses the shared Unix PTY backend and
+native system-metric providers backed by mach/IOKit.
 
-## One codebase, three binaries (post-MVP fan-out)
+Windows/ConPTY is deferred future work. The Windows files remain build-tagged
+stubs so the platform boundary is explicit, but Windows is not part of current
+readiness.
+
+## One codebase, three platform paths
 
 ```text
-GOOS=linux   → Linux binary   (Unix PTY backend + WSL2 runtime branch)   ← MVP
-GOOS=darwin  → macOS binary   (Unix PTY backend)                         ← post-MVP
-GOOS=windows → Windows binary (ConPTY backend, selected/tested separately) ← post-MVP
+GOOS=linux   → Linux binary  (Unix PTY backend + WSL2 runtime branch)
+GOOS=darwin  → macOS binary  (Unix PTY backend + mach/IOKit metrics; cgo)
+GOOS=windows → Windows binary (ConPTY backend) ← deferred, stubs
 ```
 
 **WSL2 is not a separate build target.** It is a *runtime branch* inside the Linux
 binary (spec §4.1). OS-specific detection lives only in `internal/platform`
 (build-tagged `linux.go` / `wsl.go` / `darwin.go` / `windows.go`).
+
+Binaries are built natively on each target platform. Linux is pure Go; macOS
+requires `CGO_ENABLED=1` on a macOS host because the system-metric providers call
+mach/IOKit.
 
 ## Detect once, then depend on capabilities
 

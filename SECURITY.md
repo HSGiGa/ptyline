@@ -71,5 +71,5 @@ or OSC, command execution reachable from untrusted input (child stream or
 project overlays), and denial of service triggered by malformed input.
 
 Out of scope: arbitrary command execution that requires a malicious **base**
-config (that is the trusted-config model above), and the not-yet-functional
-macOS/Windows backends (post-MVP stubs, spec §19).
+config (that is the trusted-config model above), and the deferred Windows/ConPTY
+backend.

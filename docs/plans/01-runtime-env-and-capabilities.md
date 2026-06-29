@@ -35,6 +35,6 @@ Table tests for `classify` and `capabilitiesFor`; `isWSL` with a temp
 osrelease file and env var.
 
 ## Out of scope
-Terminal feature detection (plan 10). Battery/WSL-interop providers (post-MVP).
-Native macOS/Windows classification beyond build-tagged stubs — those targets are
-post-MVP (spec §4); the MVP exercises only `native_linux` / `wsl2`.
+Terminal feature detection (plan 10). Battery/WSL-interop providers (future).
+Windows/ConPTY behavior beyond build-tagged stubs is deferred. Current readiness
+covers `native_linux`, `wsl2`, and `macos`.
