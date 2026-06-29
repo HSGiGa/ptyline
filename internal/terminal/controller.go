@@ -9,7 +9,7 @@ import (
 
 // Controller manages the real terminal lifecycle. The cardinal rule: whatever it
 // changes, it must restore — on normal exit, signal, child exit, or init failure
-// after state was modified (spec §8.1, §15, docs/terminal-safety.md).
+// after state was modified.
 type Controller struct {
 	tty *os.File // controlling terminal (typically os.Stdin/os.Stdout)
 	out io.Writer

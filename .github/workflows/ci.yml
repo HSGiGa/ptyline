@@ -17,7 +17,7 @@ jobs:
       # Native per platform — no cross-compilation. linux is pure Go and builds
       # from ubuntu with cgo off; darwin's metric modules use cgo (mach/IOKit) and
       # must build natively on macOS. Windows (ConPTY) is a deferred future feature
-      # and is intentionally not built here. See CLAUDE.md / Makefile.
+      # and is intentionally not built here. See Makefile.
       matrix:
         include:
           - goos: linux

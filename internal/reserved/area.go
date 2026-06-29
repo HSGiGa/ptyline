@@ -1,8 +1,6 @@
 // Package reserved models the screen region ptyline reserves for its status
 // bar. All PTY sizing derives child height from terminal rows minus the reserved
 // rows, so multi-line and panel modes work later without touching PTY logic.
-//
-// See docs/terminal-safety.md and ARCHITECTURE.md §6.
 package reserved
 
 // Edge is the terminal edge the reserved area is anchored to.

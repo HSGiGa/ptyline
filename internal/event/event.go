@@ -4,7 +4,7 @@
 // in package proxy.
 //
 // Designing around a typed event stream from day one means new sources can be
-// added without rewriting the application core. See docs/event-bus.md, ARCHITECTURE.md §4.
+// added without rewriting the application core. See ARCHITECTURE.md.
 package event
 
 import "context"
@@ -78,7 +78,7 @@ func NewBus(buffer int) *Bus {
 
 // Send enqueues an event, blocking when the buffer is full. The blocking send is
 // the backpressure policy: a slow loop throttles its producers (notably high-rate
-// PtyOutput) instead of dropping or reordering bytes (docs/event-bus.md).
+// PtyOutput) instead of dropping or reordering bytes.
 func (b *Bus) Send(e AppEvent) { b.ch <- e }
 
 // SendCtx enqueues an event but returns false immediately when ctx is cancelled,

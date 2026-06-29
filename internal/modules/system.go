@@ -80,7 +80,7 @@ func (m *systemModule[S]) ID() status.ModuleID     { return m.id }
 func (m *systemModule[S]) Interval() time.Duration { return m.interval }
 
 // Probe reports availability. An unavailable probe tells the app to hide the
-// module and never poll it (spec §24, docs/features/system-modules.md).
+// module and never poll it.
 func (m *systemModule[S]) Probe(ctx context.Context) status.ModuleProbe {
 	if err := m.sampler.Probe(ctx); err != nil {
 		return status.UnavailableProbe(err)

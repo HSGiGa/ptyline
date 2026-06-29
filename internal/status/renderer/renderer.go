@@ -147,7 +147,7 @@ func (r *Renderer) SetJustify(j Justify) {
 
 // Render produces the bar line for the given state and blocks, space-filled.
 //
-// IMPORTANT (spec §8.6, docs/terminal-safety.md): the caller draws this with
+// IMPORTANT: the caller draws this with
 // absolute positioning — save cursor → move to bar row → clear line → write
 // Line → reset → restore cursor — and NEVER appends a newline.
 func (r *Renderer) Render(st status.StatusState, blocks []layout.Block) RenderedBar {

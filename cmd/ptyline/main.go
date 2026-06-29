@@ -1,5 +1,5 @@
 // Command ptyline runs a child shell inside a PTY and reserves the last
-// terminal row(s) for a configurable status bar. See docs/ARCHITECTURE-overview.md.
+// terminal row(s) for a configurable status bar. See ARCHITECTURE.md.
 package main
 
 import (
