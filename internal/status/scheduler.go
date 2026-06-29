@@ -42,6 +42,19 @@ func (s *Scheduler) Start(ctx context.Context, m Module, timeout time.Duration) 
 	}()
 }
 
+// RefreshOnce runs a single timed refresh off the caller's goroutine and emits
+// the resulting snapshot. It gives a module a fast first value at startup/reload
+// without the caller (the event loop) blocking on Refresh — important for
+// samplers whose I/O can stall (e.g. statfs on a dead mount). Like the ticker
+// path, an overrun yields a stale snapshot and the late result is discarded.
+func (s *Scheduler) RefreshOnce(ctx context.Context, m Module, timeout time.Duration) {
+	go func() {
+		cctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		s.emit(refreshWithTimeout(cctx, m))
+	}()
+}
+
 // refreshWithTimeout runs m.Refresh but never blocks past ctx's deadline. A module
 // that overruns yields a stale snapshot carrying ctx.Err(); its late result (if it
 // ever arrives) is discarded, and the next tick supersedes it. The renderer shows

@@ -45,3 +45,11 @@ func moduleInterval(cfg config.ModuleConfig, fallback time.Duration) time.Durati
 	}
 	return time.Duration(cfg.IntervalMS) * time.Millisecond
 }
+
+// moduleTimeout returns the configured per-refresh timeout or fallback.
+func moduleTimeout(cfg config.ModuleConfig, fallback time.Duration) time.Duration {
+	if cfg.TimeoutMS <= 0 {
+		return fallback
+	}
+	return time.Duration(cfg.TimeoutMS) * time.Millisecond
+}
