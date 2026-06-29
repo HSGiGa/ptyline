@@ -3,6 +3,7 @@ package modules
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -20,6 +21,11 @@ const (
 )
 
 const defaultExecMaxWidth = 60
+
+// execWaitDelay bounds how long cmd.Wait blocks after the deadline/cancel before
+// the process is killed and its pipes are force-closed, so a command that spawns
+// a backgrounded child holding stdout open cannot hang the refresh goroutine.
+const execWaitDelay = 2 * time.Second
 
 // Exec runs a shell command on a configurable interval and publishes the
 // captured stdout as a module snapshot. It is the canonical "user-defined"
@@ -71,6 +77,12 @@ func (m *Exec) Refresh(ctx context.Context) status.ModuleSnapshot {
 	cmd.Stdin = nil
 	cmd.Stdout = io.Writer(&limitWriter{buf: &stdoutBuf, limit: execStdoutLimit})
 	cmd.Stderr = io.Writer(&limitWriter{buf: &stderrBuf, limit: execStderrLimit})
+	// On a timeout, ctx cancellation kills only /bin/sh; setProcessGroup puts the
+	// child in its own group so the whole group can be killed (Unix), and WaitDelay
+	// force-closes the pipes if a grandchild keeps them open, so Run cannot hang
+	// past the deadline and leak this goroutine.
+	setProcessGroup(cmd)
+	cmd.WaitDelay = execWaitDelay
 
 	runErr := cmd.Run()
 
@@ -86,7 +98,8 @@ func (m *Exec) Refresh(ctx context.Context) status.ModuleSnapshot {
 
 	exitCode := 0
 	if runErr != nil {
-		if ee, ok := runErr.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(runErr, &ee) {
 			exitCode = ee.ExitCode()
 		}
 	}

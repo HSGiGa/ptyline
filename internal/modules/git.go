@@ -2,7 +2,6 @@ package modules
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -246,14 +245,11 @@ func parseBranchLine(s string, d *gitData) {
 			ab = ab[:end]
 		}
 		for _, part := range strings.Split(ab, ", ") {
-			n := 0
 			switch {
 			case strings.HasPrefix(part, "ahead "):
-				fmt.Sscanf(part[6:], "%d", &n)
-				d.Ahead = n
+				d.Ahead, _ = strconv.Atoi(strings.TrimSpace(part[6:]))
 			case strings.HasPrefix(part, "behind "):
-				fmt.Sscanf(part[7:], "%d", &n)
-				d.Behind = n
+				d.Behind, _ = strconv.Atoi(strings.TrimSpace(part[7:]))
 			}
 		}
 		s = strings.TrimSpace(s[:idx])
@@ -263,10 +259,7 @@ func parseBranchLine(s string, d *gitData) {
 		s = s[:idx]
 	}
 	// "No commits yet on <branch>".
-	const noCommits = "No commits yet on "
-	if strings.HasPrefix(s, noCommits) {
-		s = s[len(noCommits):]
-	}
+	s = strings.TrimPrefix(s, "No commits yet on ")
 	d.Branch = strings.TrimSpace(s)
 }
 

@@ -16,8 +16,8 @@ Terminal Emulator → ptyline → PTY → fish / bash / zsh / vim / htop / …
 
 ## Quickstart
 
-Requires **Go 1.26.1**. The required toolchain is declared in `go.mod`; use
-`go version` to verify the active installation.
+Requires **Go 1.26+** (the minimum is declared in `go.mod`; run `go version` to
+verify the active installation).
 
 ```sh
 make bootstrap    # install pinned local gofumpt and golangci-lint
@@ -86,6 +86,11 @@ style `left_cap` / `right_cap` wrap one styled block and `padding_left` /
 
 ## Platform support
 
-One codebase, three binaries (`GOOS=linux|darwin|windows`). WSL2 is a **runtime
-branch of the Linux binary**, not a separate target. Targets: Linux, WSL2,
-macOS, Windows. See [`docs/platform-and-capabilities.md`](docs/platform-and-capabilities.md).
+**Supported today: Linux and WSL2.** WSL2 is a **runtime branch of the Linux
+binary**, not a separate target.
+
+macOS and Windows are **post-MVP** (spec §19): the `darwin`/`windows` files are
+build-tagged stubs, so those targets *compile* (CI cross-builds them) but the PTY
+backend is not implemented yet — the binary will not function there. One codebase
+fans out via `GOOS`; the native backends land later. See
+[`docs/platform-and-capabilities.md`](docs/platform-and-capabilities.md).

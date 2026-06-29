@@ -29,10 +29,6 @@ linters:
       # Remove these exclusions as packages are implemented.
       - linters: [revive, unused, errcheck]
         text: "TODO scaffold"
-      # The terminal proxy and controller deliberately reserve parser/state fields
-      # for implementation plans that have not run yet.
-      - path: internal/(proxy|terminal)/
-        linters: [unused]
 
 formatters:
   enable:
