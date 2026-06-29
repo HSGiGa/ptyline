@@ -598,6 +598,7 @@ func run(opts options) int {
 					UpdatedAt: time.Now(),
 				})
 				refreshGit(state.Shell.CWD)
+				probeMods.OnCWDChange()
 				if !opts.NoProjectPtyline {
 					newPath, _ := config.FindProjectConfig(state.Shell.CWD)
 					reloadConfig(newPath, false)

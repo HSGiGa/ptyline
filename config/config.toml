@@ -10,14 +10,15 @@ fallback = true
 
 [bar]
 separator = "|"
+justify = "absolute_center"
 
 [[bar.row]]
 format = " {command} || || {git} "
 fill = "─"
 
 [[bar.row]]
-separator = ":"
-format = "{cwd} || {cpu} {memory} {disk} {load} || {gh} | {time}"
+separator = " · "
+format = "{cwd} || {cpu} | {memory} | {disk} | {load} {battery:>} || {gh} | {time}"
 
 [module.identity]
 source = "template"
