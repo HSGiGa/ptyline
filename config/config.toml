@@ -70,7 +70,6 @@ animation_interval_ms = 80
 [module.ssh]
 enabled = true
 animation = "pulse"
-animation_interval_ms = 250
 
 # System metrics. Probe-driven: each is hidden if its source is unavailable on
 # this host (e.g. {battery} on a desktop/VM/WSL with no battery). Disabled by

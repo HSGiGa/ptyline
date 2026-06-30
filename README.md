@@ -14,6 +14,20 @@ shell integration, built-in modules, project overlays, reload path, and CI check
 are implemented for Linux, WSL2, and macOS. Windows/ConPTY, Agents, and
 diagnostics/replay tooling are deferred.
 
+## Features
+
+- Transparent PTY wrapper: normal shell I/O, native scrollback, child exit code
+  propagation, signal handling, and terminal restoration.
+- Bottom status area with one or more rows, left/center/right sections,
+  conditional separators, width/alignment suffixes, themes, styles, icons, and
+  animations.
+- Shell integration for bash, zsh, and fish through OSC 777 metadata.
+- Built-in modules for cwd, env, command status, SSH state, git, time/date,
+  identity/runtime labels, and system metrics.
+- Custom local modules with bounded `source = "exec"` commands.
+- Config overlays: command-line overlays and nearest project `.ptyline` files.
+- Runtime reload with `ptyline --reload`.
+
 ## Quickstart
 
 Requires Go 1.26+.
@@ -43,6 +57,7 @@ ptyline -- bash                 # everything after -- is the child command
 ptyline -- ssh host.example     # run any command inside the wrapper
 ptyline --config ./config.toml  # use a specific config file
 ptyline --ptyline compact       # apply a visual overlay
+ptyline --no-project-ptyline    # ignore nearest project .ptyline overlays
 ptyline init fish               # print the fish shell-integration script
 ptyline --reload                # reload config in the running ptyline
 ptyline --version
@@ -52,6 +67,14 @@ Shell integration is optional; ptyline still works as a transparent wrapper
 without it. Integration scripts emit whitelisted OSC 777 metadata for cwd,
 environment, active/done command, exit code, duration, SSH state, and shell color
 sync. Supported templates are `bash`, `zsh`, and `fish`.
+
+Examples:
+
+```sh
+eval "$(ptyline init bash)"
+eval "$(ptyline init zsh)"
+ptyline init fish | source
+```
 
 ## Configuration
 
@@ -75,6 +98,27 @@ built-in defaults -> base config -> optional --ptyline overlay -> nearest projec
 Project `.ptyline` files are visual/profile overlays. They may change bar rows,
 module presentation, themes, icons, and styles, but they cannot choose child
 commands or define command-executing modules.
+
+Minimal config:
+
+```toml
+config_version = 1
+shell = "auto"
+
+[bar]
+format = "{cwd} || {git} || {time}"
+separator = " | "
+
+[module.time]
+format = "%H:%M:%S"
+interval_ms = 1000
+
+[module.cwd]
+mode = "shell-integration"
+
+[module.git]
+format = "{branch}{dirty}"
+```
 
 ## Bar Format
 
@@ -115,6 +159,23 @@ Built-in modules include:
 
 Slow modules publish cached snapshots on their own interval. Rendering reads only
 prepared state; it never shells out or probes the system directly.
+
+Custom command module example:
+
+```toml
+[bar]
+format = "{cwd} || {kube} || {time}"
+
+[module.kube]
+source = "exec"
+command = "kubectl config current-context"
+interval_ms = 10000
+timeout_ms = 200
+format = "{stdout}"
+refresh_on_command = ["kubectl config use-context"]
+```
+
+Exec modules run locally from trusted config and are always time-bounded.
 
 ## Platform Support
 
