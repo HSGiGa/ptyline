@@ -266,9 +266,34 @@ func (f *AnsiFilter) handleCSI(seq []byte) ([]byte, bool) {
 			return seq, false // alt screen: child owns every row
 		}
 		return f.clampCursorRow(seq, params), false
+	case 'J': // ED (erase in display)
+		if f.alt.Active {
+			return seq, false // alt screen: child owns every row
+		}
+		return f.rewriteEraseDisplay(seq, params), false
 	default:
 		return seq, false
 	}
+}
+
+// rewriteEraseDisplay stops a full-screen clear (CSI 2 J — what `clear` and
+// ncurses emit) from wiping the reserved bar. ED ignores the scroll region, so a
+// bare CSI 2 J erases the whole physical screen including the bar; the bar would
+// only flash back on the next redraw. Instead it is rewritten to erase just the
+// child region (rows 1..childRows), leaving the bar pixels untouched. The cursor
+// is homed afterwards, matching what `clear` (which prefixes CSI H) expects. Other
+// ED forms — erase-to-cursor/scrollback — pass through unchanged.
+func (f *AnsiFilter) rewriteEraseDisplay(seq []byte, params string) []byte {
+	if params != "2" {
+		return seq
+	}
+	bottom := f.bottom()
+	if bottom == 0 {
+		return seq
+	}
+	// Park at the far column of the last child row (the terminal clamps the column),
+	// erase from the top of the display up to there, then home.
+	return []byte(fmt.Sprintf("\x1b[%d;999H\x1b[1J\x1b[H", bottom))
 }
 
 // clampCursorRow rewrites an absolute vertical move (CUP/HVP `row;col`, VPA `row`)
