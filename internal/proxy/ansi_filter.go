@@ -261,9 +261,41 @@ func (f *AnsiFilter) handleCSI(seq []byte) ([]byte, bool) {
 			altChanged = f.trackAltScreen(params[1:], final == 'h')
 		}
 		return seq, altChanged
+	case 'H', 'f', 'd': // CUP / HVP / VPA — absolute vertical cursor positioning
+		if f.alt.Active {
+			return seq, false // alt screen: child owns every row
+		}
+		return f.clampCursorRow(seq, params), false
 	default:
 		return seq, false
 	}
+}
+
+// clampCursorRow rewrites an absolute vertical move (CUP/HVP `row;col`, VPA `row`)
+// whose row lands in the reserved bar area back to the last child row. Full-screen
+// programs such as top park the cursor at childRows+1 on exit (e.g. `ESC[60;1H`
+// with a 59-row child), relying on the terminal to clamp to its own height. The
+// real terminal is taller because of the reserved rows, so an absolute move —
+// which the scroll region does not constrain — would otherwise drop the cursor,
+// and the returning shell prompt, onto the status bar. Relative moves and line
+// feeds stay bounded by the scroll region instead (spec §8.4).
+func (f *AnsiFilter) clampCursorRow(seq []byte, params string) []byte {
+	bottom := f.bottom()
+	if bottom == 0 {
+		return seq
+	}
+	rowStr, rest := params, ""
+	if i := strings.IndexByte(params, ';'); i >= 0 {
+		rowStr, rest = params[:i], params[i:] // rest keeps ";col"
+	}
+	if rowStr == "" {
+		return seq // row defaults to 1; nothing to clamp
+	}
+	row, err := strconv.Atoi(rowStr)
+	if err != nil || row <= int(bottom) {
+		return seq
+	}
+	return []byte(fmt.Sprintf("\x1b[%d%s%c", bottom, rest, seq[len(seq)-1]))
 }
 
 // rewriteScrollRegion enforces that the normal-screen scroll region never
