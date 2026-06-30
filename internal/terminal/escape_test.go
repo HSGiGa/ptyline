@@ -32,6 +32,15 @@ func TestApplyScrollRegionExcludesReservedRow(t *testing.T) {
 	}
 }
 
+func TestApplyScrollRegionAtChildBottomMovesCursorOutOfBar(t *testing.T) {
+	var buf bytes.Buffer
+	c := New(nil, &buf)
+	c.ApplyScrollRegionAtChildBottom(Size{Cols: 80, Rows: 30}, reserved.Default())
+	if got, want := buf.String(), "\x1b[1;29r"+CursorTo(29, 1); got != want {
+		t.Fatalf("ApplyScrollRegionAtChildBottom wrote %q, want %q", got, want)
+	}
+}
+
 // Restore emits the exact cleanup order and is idempotent (spec §8.1, §15).
 func TestRestoreOrderIdempotent(t *testing.T) {
 	var buf bytes.Buffer

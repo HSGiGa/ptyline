@@ -17,6 +17,16 @@ func (c *Controller) ApplyScrollRegion(size Size, area reserved.Area) {
 	c.write(RestoreCursor)
 }
 
+// ApplyScrollRegionAtChildBottom sets the protected normal-screen scroll region
+// and places the cursor on the last child row. Use this after leaving the
+// alternate screen: full-screen programs can restore the cursor to the physical
+// last row, which is ptyline's reserved bar row in the normal screen.
+func (c *Controller) ApplyScrollRegionAtChildBottom(size Size, area reserved.Area) {
+	bottom := area.ChildRows(size.Rows)
+	c.write(SetScrollRegion(1, bottom))
+	c.write(CursorTo(bottom, 1))
+}
+
 // ResetScrollRegion clears scroll margins (used during cleanup).
 func (c *Controller) ResetScrollRegion() {
 	c.write(ResetScrollRegion)

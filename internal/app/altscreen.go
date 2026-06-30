@@ -54,8 +54,10 @@ func (c *altScreenCoordinator) Apply(active bool) {
 		return
 	}
 	// Leaving alt: terminal has just restored the normal screen and the pre-alt
-	// cursor; re-establish the child size and the protected region, then repaint.
+	// cursor. Full-screen programs such as top can leave that cursor on the
+	// physical last row; in normal mode that row belongs to ptyline, so force the
+	// cursor back into the child region before repainting the bar.
 	_ = c.sup.Resize(pty.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows})
-	c.ctrl.ApplyScrollRegion(terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}, *c.area)
+	c.ctrl.ApplyScrollRegionAtChildBottom(terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}, *c.area)
 	c.redraw()
 }

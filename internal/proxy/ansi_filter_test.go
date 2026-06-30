@@ -82,6 +82,25 @@ func TestAltScreenToggleVariants(t *testing.T) {
 	}
 }
 
+func TestAltScreenTransitionDefersFollowingBytes(t *testing.T) {
+	f := newFilter()
+	f.Filter([]byte("\x1b[?1049h"))
+
+	got := string(f.Filter([]byte("\x1b[?1049lPROMPT")))
+	if got != "\x1b[?1049l" {
+		t.Fatalf("first Filter = %q, want only alt-leave sequence", got)
+	}
+	if !f.HasDeferred() {
+		t.Fatal("expected bytes after alt-leave to be deferred")
+	}
+	if got := string(f.Filter(nil)); got != "PROMPT" {
+		t.Fatalf("deferred Filter = %q, want PROMPT", got)
+	}
+	if f.HasDeferred() {
+		t.Fatal("deferred bytes not drained")
+	}
+}
+
 // A sequence split across two reads must be reassembled via the tail buffer.
 func TestPartialSequenceReassembly(t *testing.T) {
 	f := newFilter()

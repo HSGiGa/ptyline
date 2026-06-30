@@ -61,6 +61,37 @@ func TestLoopAppliesFilterMetadataDuringPtyOutput(t *testing.T) {
 	}
 }
 
+func TestLoopSplitsPtyOutputAfterAltLeave(t *testing.T) {
+	bus := event.NewBus(3)
+	bus.Send(event.PtyOutput{Data: []byte("\x1b[?1049h")})
+	bus.Send(event.PtyOutput{Data: []byte("\x1b[?1049lPROMPT")})
+	bus.Send(event.ChildExited{Code: 0})
+
+	var chunks []string
+	filter := NewAnsiFilter(reserved.Default())
+	loop := NewLoop(bus, filter)
+	loop.SetHandlers(Handlers{
+		WriteOutput: func(b []byte) error {
+			chunks = append(chunks, string(b))
+			return nil
+		},
+	})
+
+	code, err := loop.Run()
+	if err != nil || code != 0 {
+		t.Fatalf("Run() = (%d, %v), want (0, nil)", code, err)
+	}
+	want := []string{"\x1b[?1049h", "\x1b[?1049l", "PROMPT"}
+	if len(chunks) != len(want) {
+		t.Fatalf("WriteOutput chunks = %#v, want %#v", chunks, want)
+	}
+	for i := range want {
+		if chunks[i] != want[i] {
+			t.Fatalf("chunk %d = %q, want %q (all chunks %#v)", i, chunks[i], want[i], chunks)
+		}
+	}
+}
+
 // A termination signal exits with the conventional 128+signo code and invokes the
 // Terminate handler with the canonical signal token.
 func TestLoopTerminationExitCode(t *testing.T) {
