@@ -1,55 +1,128 @@
 # ptyline
 
-A lightweight terminal wrapper that reserves the last row of your terminal for a
-configurable status bar — like tmux's status line, but **without** panes, tabs,
-sessions, copy mode, or full terminal emulation. You keep your native shell and
-native scrollback; ptyline just pins a bar at the bottom.
+A lightweight terminal wrapper that reserves the bottom row(s) of your terminal
+for a configurable status bar. It is intentionally smaller than tmux: no panes,
+tabs, sessions, copy mode, or full terminal emulation. You keep your native shell
+and native scrollback; ptyline pins a bar at the bottom.
 
 ```text
-Terminal Emulator → ptyline → PTY → fish / bash / zsh / vim / htop / …
+Terminal Emulator -> ptyline -> PTY -> fish / bash / zsh / vim / htop / ...
 ```
 
-> **Status: active implementation.** The core PTY wrapper, status rendering,
-> configuration, shell integration, modules, and CI checks are implemented.
-> The documents in [`docs/plans/`](docs/plans/) remain as historical slices and
-> planning notes for follow-up work.
+Status: active implementation. The PTY wrapper, status rendering, configuration,
+shell integration, built-in modules, project overlays, reload path, and CI checks
+are implemented for Linux, WSL2, and macOS. Windows/ConPTY, Agents, and
+diagnostics/replay tooling are deferred.
+
+## Features
+
+- Transparent PTY wrapper: normal shell I/O, native scrollback, child exit code
+  propagation, signal handling, and terminal restoration.
+- Bottom status area with one or more rows, left/center/right sections,
+  conditional separators, width/alignment suffixes, themes, styles, icons, and
+  animations.
+- Shell integration for bash, zsh, and fish through OSC 777 metadata.
+- Built-in modules for cwd, env, command status, SSH state, git, time/date,
+  identity/runtime labels, and system metrics.
+- Custom local modules with bounded `source = "exec"` commands.
+- Config overlays: command-line overlays and nearest project `.ptyline` files.
+- Runtime reload with `ptyline --reload`.
 
 ## Quickstart
 
-Requires **Go 1.26+** (the minimum is declared in `go.mod`; run `go version` to
-verify the active installation).
+Requires Go 1.26+.
 
 ```sh
-make bootstrap    # install pinned local gofumpt and golangci-lint
-make build        # build dist/ptyline
-make run ARGS='-- zsh' # run the wrapper around a command
-make test         # run unit tests
-make check        # format check, vet, tests, lint
-make build-all    # cross-compile linux/darwin/windows
+make bootstrap
+make build
+./dist/ptyline -- zsh
 ```
 
-Run a single test:
+Common development commands:
 
 ```sh
+make run ARGS='-- zsh'       # build and run with config/config.toml
+make test                    # run unit tests
+make check                   # format check, vet, tests, lint
+make dist                    # build ptyline-<os>-<arch> for the current host
 make test-one PKG=./internal/reserved RUN=TestChildRows
 ```
 
-## Intended CLI (see spec §14)
+## Usage
 
 ```sh
-ptyline                 # run the configured shell or $SHELL
-ptyline fish            # run fish inside the wrapper
-ptyline -- bash         # everything after -- is the child command
-ptyline init fish       # print the fish shell-integration script
+ptyline                         # run the configured shell or $SHELL
+ptyline fish                    # run fish inside the wrapper
+ptyline -- bash                 # everything after -- is the child command
+ptyline -- ssh host.example     # run any command inside the wrapper
+ptyline --config ./config.toml  # use a specific config file
+ptyline --ptyline compact       # apply a visual overlay
+ptyline --no-project-ptyline    # ignore nearest project .ptyline overlays
+ptyline init fish               # print the fish shell-integration script
+ptyline --reload                # reload config in the running ptyline
 ptyline --version
 ```
 
-Config lives at `$XDG_CONFIG_HOME/ptyline/config.toml` (TOML; see
-[`docs/config-reference.md`](docs/config-reference.md)).
+Shell integration is optional; ptyline still works as a transparent wrapper
+without it. Integration scripts emit whitelisted OSC 777 metadata for cwd,
+environment, active/done command, exit code, duration, SSH state, and shell color
+sync. Supported templates are `bash`, `zsh`, and `fish`.
 
-## Bar format
+Examples:
 
-Bar rows use a compact format string:
+```sh
+eval "$(ptyline init bash)"
+eval "$(ptyline init zsh)"
+ptyline init fish | source
+```
+
+## Configuration
+
+Config is TOML. The default path is:
+
+```text
+$XDG_CONFIG_HOME/ptyline/config.toml
+~/.config/ptyline/config.toml
+```
+
+The sample config lives at [config/config.toml](config/config.toml) and uses
+[config/config.schema.json](config/config.schema.json) for editor validation.
+The Go schema is defined in [internal/config/schema.go](internal/config/schema.go).
+
+The effective config is layered:
+
+```text
+built-in defaults -> base config -> optional --ptyline overlay -> nearest project .ptyline
+```
+
+Project `.ptyline` files are visual/profile overlays. They may change bar rows,
+module presentation, themes, icons, and styles, but they cannot choose child
+commands or define command-executing modules.
+
+Minimal config:
+
+```toml
+config_version = 1
+shell = "auto"
+
+[bar]
+format = "{cwd} || {git} || {time}"
+separator = " | "
+
+[module.time]
+format = "%H:%M:%S"
+interval_ms = 1000
+
+[module.cwd]
+mode = "shell-integration"
+
+[module.git]
+format = "{branch}{dirty}"
+```
+
+## Bar Format
+
+Bar rows use a compact placeholder format:
 
 ```toml
 [bar]
@@ -65,32 +138,59 @@ Grammar:
 ```text
 {module}  module placeholder
 ||        section split: left / center / right; not drawn
-|         separator marker; draws the row separator
+|         separator marker; draws the active row separator
 \|        literal pipe character
 ```
 
-In the example above, the marker `|` is rendered as ` : `, so the center section
-draws like `env : runtime : shell`. Empty neighboring modules collapse separator
-markers, avoiding dangling separators. `fill` is a row's empty-space filler, while
-style `left_cap` / `right_cap` wrap one styled block and `padding_left` /
-`padding_right` add space inside those caps.
+Placeholders can include width/alignment suffixes such as `{cwd:<30}`,
+`{git:^20}`, or `{time:>8}`. Empty neighboring modules collapse separator
+markers, so the bar does not leave dangling separators.
+
+## Modules
+
+Built-in modules include:
+
+- identity/runtime: `user`, `hostname`, `runtime`, `shell`, `cwd`, `env`;
+- time: `time`, `date`, and custom `source = "time"` modules;
+- shell state: `command`, `ssh`;
+- VCS: `git` and git sub-placeholders;
+- system metrics: `cpu`, `memory`, `disk`, `load`, `battery`;
+- custom/local: `source = "exec"` and `source = "template"`.
+
+Slow modules publish cached snapshots on their own interval. Rendering reads only
+prepared state; it never shells out or probes the system directly.
+
+Custom command module example:
+
+```toml
+[bar]
+format = "{cwd} || {kube} || {time}"
+
+[module.kube]
+source = "exec"
+command = "kubectl config current-context"
+interval_ms = 10000
+timeout_ms = 200
+format = "{stdout}"
+refresh_on_command = ["kubectl config use-context"]
+```
+
+Exec modules run locally from trusted config and are always time-bounded.
+
+## Platform Support
+
+Supported today:
+
+- Linux;
+- WSL2, as a runtime branch of the Linux binary;
+- macOS, via the shared Unix PTY backend and native mach/IOKit metric providers.
+
+Linux builds are pure Go. macOS builds require a native macOS host with cgo
+enabled. Windows/ConPTY is deferred; Windows files remain as build-tagged stubs
+to keep the platform boundary explicit.
 
 ## Documentation
 
-- [`docs/`](docs/) — deep-dive design docs (state model, event bus, terminal
-  safety, ANSI/OSC filter, layout, config, shell integration, platform, agents,
-  testing).
-- [`docs/plans/`](docs/plans/) — the implementation broken into small, ordered,
-  independently-executable plans (`00` … `16`).
-- [`ptyline-technical-spec.md`](ptyline-technical-spec.md) — the product/MVP spec.
-
-## Platform support
-
-**Supported today: Linux and WSL2.** WSL2 is a **runtime branch of the Linux
-binary**, not a separate target.
-
-macOS and Windows are **post-MVP** (spec §19): the `darwin`/`windows` files are
-build-tagged stubs, so those targets *compile* (CI cross-builds them) but the PTY
-backend is not implemented yet — the binary will not function there. One codebase
-fans out via `GOOS`; the native backends land later. See
-[`docs/platform-and-capabilities.md`](docs/platform-and-capabilities.md).
+- [ARCHITECTURE.md](ARCHITECTURE.md) - canonical package map and invariants.
+- [config/config.schema.json](config/config.schema.json) - editor schema for the
+  sample TOML config.

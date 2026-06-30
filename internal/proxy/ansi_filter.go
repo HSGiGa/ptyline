@@ -45,13 +45,14 @@ type AltScreenState struct {
 // It must handle partial sequences across read boundaries, so it buffers an
 // incomplete tail between calls (bounded by maxBufferedCSI).
 type AnsiFilter struct {
-	area   reserved.Area
-	rows   uint16 // current real-terminal rows
-	alt    AltScreenState
-	tail   []byte // buffered incomplete escape sequence
-	meta   []event.ShellMeta
-	onAlt  func(active bool)
-	onDiag func(msg string)
+	area     reserved.Area
+	rows     uint16 // current real-terminal rows
+	alt      AltScreenState
+	tail     []byte // buffered incomplete escape sequence
+	deferred []byte // bytes after an alt transition, replayed after the transition is applied
+	meta     []event.ShellMeta
+	onAlt    func(active bool)
+	onDiag   func(msg string)
 }
 
 // NewAnsiFilter creates a filter for the given reserved area.
@@ -75,6 +76,11 @@ func (f *AnsiFilter) SetArea(area reserved.Area) { f.area = area }
 
 // AltActive reports whether the child is currently in the alternate screen.
 func (f *AnsiFilter) AltActive() bool { return f.alt.Active }
+
+// HasDeferred reports whether Filter stopped at an alt-screen transition and
+// kept later bytes for a second pass. The event loop uses this to apply the
+// transition before writing the rest of the PTY chunk.
+func (f *AnsiFilter) HasDeferred() bool { return len(f.deferred) > 0 }
 
 // DrainMeta returns shell metadata consumed during Filter calls since the last
 // drain. The event loop applies these directly instead of sending them back
@@ -103,7 +109,10 @@ func (f *AnsiFilter) diag(msg string) {
 // transitions are tracked. Sequences split across reads are buffered in `tail`.
 func (f *AnsiFilter) Filter(in []byte) []byte {
 	var data []byte
-	if len(f.tail) > 0 {
+	if len(f.deferred) > 0 {
+		data = append(f.deferred, in...)
+		f.deferred = nil
+	} else if len(f.tail) > 0 {
 		data = append(f.tail, in...)
 		f.tail = nil
 	} else {
@@ -136,8 +145,13 @@ func (f *AnsiFilter) Filter(in []byte) []byte {
 		}
 
 		seq := data[i : i+n]
-		out = f.handleSequence(seq, out)
+		var altChanged bool
+		out, altChanged = f.handleSequence(seq, out)
 		i += n
+		if altChanged && i < len(data) {
+			f.deferred = append(f.deferred[:0], data[i:]...)
+			break
+		}
 	}
 	return out
 }
@@ -212,41 +226,76 @@ func scanString(b []byte) (n int, complete bool) {
 }
 
 // handleSequence dispatches one complete escape sequence, appending the bytes to
-// forward (possibly rewritten, possibly nothing) to out.
-func (f *AnsiFilter) handleSequence(seq, out []byte) []byte {
+// forward (possibly rewritten, possibly nothing) to out. altChanged reports that
+// the sequence entered or left the alternate screen.
+func (f *AnsiFilter) handleSequence(seq, out []byte) ([]byte, bool) {
 	if len(seq) < 2 {
-		return append(out, seq...)
+		return append(out, seq...), false
 	}
 	switch seq[1] {
 	case '[':
-		return append(out, f.handleCSI(seq)...)
+		forward, altChanged := f.handleCSI(seq)
+		return append(out, forward...), altChanged
 	case ']':
-		return f.handleOSC(seq, out)
+		return f.handleOSC(seq, out), false
 	default:
-		return append(out, seq...)
+		return append(out, seq...), false
 	}
 }
 
 // handleCSI rewrites/clamps DECSTBM and tracks alt-screen toggles. It returns the
 // bytes to forward (unchanged for everything it does not touch).
-func (f *AnsiFilter) handleCSI(seq []byte) []byte {
+func (f *AnsiFilter) handleCSI(seq []byte) ([]byte, bool) {
 	final := seq[len(seq)-1]
 	params := string(seq[2 : len(seq)-1]) // between "ESC[" and the final byte
 
 	switch final {
 	case 'r': // DECSTBM (set scroll region)
 		if f.alt.Active || strings.HasPrefix(params, "?") {
-			return seq // alt screen: child owns every row; private 'r' is unrelated
+			return seq, false // alt screen: child owns every row; private 'r' is unrelated
 		}
-		return f.rewriteScrollRegion(params)
+		return f.rewriteScrollRegion(params), false
 	case 'h', 'l':
+		altChanged := false
 		if strings.HasPrefix(params, "?") {
-			f.trackAltScreen(params[1:], final == 'h')
+			altChanged = f.trackAltScreen(params[1:], final == 'h')
 		}
-		return seq
+		return seq, altChanged
+	case 'H', 'f', 'd': // CUP / HVP / VPA — absolute vertical cursor positioning
+		if f.alt.Active {
+			return seq, false // alt screen: child owns every row
+		}
+		return f.clampCursorRow(seq, params), false
 	default:
+		return seq, false
+	}
+}
+
+// clampCursorRow rewrites an absolute vertical move (CUP/HVP `row;col`, VPA `row`)
+// whose row lands in the reserved bar area back to the last child row. Full-screen
+// programs such as top park the cursor at childRows+1 on exit (e.g. `ESC[60;1H`
+// with a 59-row child), relying on the terminal to clamp to its own height. The
+// real terminal is taller because of the reserved rows, so an absolute move —
+// which the scroll region does not constrain — would otherwise drop the cursor,
+// and the returning shell prompt, onto the status bar. Relative moves and line
+// feeds stay bounded by the scroll region instead (spec §8.4).
+func (f *AnsiFilter) clampCursorRow(seq []byte, params string) []byte {
+	bottom := f.bottom()
+	if bottom == 0 {
 		return seq
 	}
+	rowStr, rest := params, ""
+	if i := strings.IndexByte(params, ';'); i >= 0 {
+		rowStr, rest = params[:i], params[i:] // rest keeps ";col"
+	}
+	if rowStr == "" {
+		return seq // row defaults to 1; nothing to clamp
+	}
+	row, err := strconv.Atoi(rowStr)
+	if err != nil || row <= int(bottom) {
+		return seq
+	}
+	return []byte(fmt.Sprintf("\x1b[%d%s%c", bottom, rest, seq[len(seq)-1]))
 }
 
 // rewriteScrollRegion enforces that the normal-screen scroll region never
@@ -274,22 +323,24 @@ func (f *AnsiFilter) rewriteScrollRegion(params string) []byte {
 	return []byte(fmt.Sprintf("\x1b[%d;%dr", top, bot))
 }
 
-// trackAltScreen toggles alternate-screen state on ?1049/?1047/?47 h/l and
-// notifies the handler when the state actually changes (spec §11).
-func (f *AnsiFilter) trackAltScreen(numbers string, set bool) {
+// trackAltScreen toggles alternate-screen state on ?1049/?1047/?47 h/l,
+// notifies the handler when the state actually changes, and reports whether a
+// change happened.
+func (f *AnsiFilter) trackAltScreen(numbers string, set bool) bool {
 	for _, ns := range strings.Split(numbers, ";") {
 		switch ns {
 		case "1049", "1047", "47":
 			if f.alt.Active == set {
-				return
+				return false
 			}
 			f.alt.Active = set
 			if f.onAlt != nil {
 				f.onAlt(set)
 			}
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // handleOSC consumes whitelisted OSC 777 shell-integration messages (never

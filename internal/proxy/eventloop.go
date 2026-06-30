@@ -62,13 +62,20 @@ func (l *Loop) Run() (exitCode int, err error) {
 				}
 			}
 		case event.PtyOutput:
-			output := l.filter.Filter(e.Data)
-			if l.h.WriteOutput != nil {
-				if err := l.h.WriteOutput(output); err != nil {
-					return 1, err
+			data := e.Data
+			for {
+				output := l.filter.Filter(data)
+				if l.h.WriteOutput != nil {
+					if err := l.h.WriteOutput(output); err != nil {
+						return 1, err
+					}
 				}
+				l.applyFilterMeta()
+				if !l.filter.HasDeferred() {
+					break
+				}
+				data = nil
 			}
-			l.applyFilterMeta()
 			if l.h.Redraw != nil {
 				l.h.Redraw()
 			}

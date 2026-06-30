@@ -1,6 +1,6 @@
 // Package terminal owns the *real* terminal: raw mode, size, scroll region,
 // cursor, and — most importantly — guaranteed state restoration on exit or
-// signal. See docs/terminal-safety.md and spec §8.1.
+// signal.
 package terminal
 
 import "fmt"

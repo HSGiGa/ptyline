@@ -113,7 +113,7 @@ func (w *TerminalWriter) ClearBar() error {
 // FlushBarFrame emits a complete bar frame (all reserved rows) if one is pending,
 // the alternate screen is inactive, the rate limit allows it, and the content
 // changed. The frame uses absolute positioning and carries NO trailing newline,
-// which would scroll the bar into history (spec §8.6, docs/terminal-safety.md).
+// which would scroll the bar into history.
 // When the terminal is too short to show every row (barCount < len(lines)), the
 // BOTTOM rows are kept — the content nearest the prompt — and the top decorative
 // rows are dropped, so a short terminal never paints past its last row.

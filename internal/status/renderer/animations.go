@@ -124,8 +124,19 @@ func (r *Renderer) glintForegroundColor(s style.Style) (theme.RGB, bool) {
 	if base, ok := r.theme.Resolve("base.fg"); ok {
 		return base, true
 	}
-	return theme.RGB{}, false
+	// The terminal-native default theme exposes no base.fg (the terminal's own
+	// default foreground is used as-is), so a module with no explicit FG — notably
+	// {command} — would leave glint with no concrete RGB to shimmer toward and the
+	// effect would silently degrade to plain text. Fall back to a neutral gray-white
+	// so the shimmer stays visible and theme-agnostic: glintDimColor takes it down to
+	// a mid gray, giving a grayscale white↔gray sweep.
+	return glintFallbackColor, true
 }
+
+// glintFallbackColor is the highlight glint shimmers toward when neither the
+// module's FG nor base.fg resolves to a concrete color (e.g. the terminal-native
+// default theme). A light gray-white reads as a neutral shimmer on any background.
+var glintFallbackColor = theme.RGB{R: 0xcc, G: 0xcc, B: 0xcc}
 
 func glintDimColor(base theme.RGB) theme.RGB {
 	return theme.RGB{

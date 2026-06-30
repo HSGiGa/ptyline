@@ -29,6 +29,39 @@ func TestNormalScreenScrollRegionRewrite(t *testing.T) {
 	}
 }
 
+// A normal-screen CUP/HVP whose row lands in the reserved bar area is clamped to
+// the last child row. Full-screen programs such as top park the cursor at
+// childRows+1 on exit (here ESC[30;1H with bottom=29), which would otherwise drop
+// the returning shell prompt onto the status bar.
+func TestNormalScreenCursorRowClamped(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"\x1b[30;1H", "\x1b[29;1H"}, // top's exit park → last child row
+		{"\x1b[31H", "\x1b[29H"},     // row-only form clamped, col defaults to 1
+		{"\x1b[10;5H", "\x1b[10;5H"}, // already inside child area → unchanged
+		{"\x1b[H", "\x1b[H"},         // home → unchanged
+		{"\x1b[;40H", "\x1b[;40H"},   // row defaults to 1 → unchanged
+		{"\x1b[29;1f", "\x1b[29;1f"}, // HVP at last child row → unchanged
+		{"\x1b[30d", "\x1b[29d"},     // VPA into the bar → clamped
+		{"\x1b[10d", "\x1b[10d"},     // VPA inside child area → unchanged
+	}
+	for _, c := range cases {
+		f := newFilter()
+		if got := string(f.Filter([]byte(c.in))); got != c.want {
+			t.Fatalf("Filter(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// In the alternate screen the child owns every row, so a CUP into the bottom rows
+// must pass through unchanged.
+func TestAltScreenCursorRowPassesThrough(t *testing.T) {
+	f := newFilter()
+	f.Filter([]byte("\x1b[?1049h"))
+	if got := string(f.Filter([]byte("\x1b[30;1H"))); got != "\x1b[30;1H" {
+		t.Fatalf("alt-screen CUP = %q, want pass-through", got)
+	}
+}
+
 // In the alternate screen the child owns every row, so the filter must NOT clamp
 // scroll margins (spec §8.4, §11).
 func TestAltScreenScrollRegionPassesThrough(t *testing.T) {
@@ -79,6 +112,25 @@ func TestAltScreenToggleVariants(t *testing.T) {
 				t.Fatalf("%s handler calls = %d, want 2", code, calls)
 			}
 		})
+	}
+}
+
+func TestAltScreenTransitionDefersFollowingBytes(t *testing.T) {
+	f := newFilter()
+	f.Filter([]byte("\x1b[?1049h"))
+
+	got := string(f.Filter([]byte("\x1b[?1049lPROMPT")))
+	if got != "\x1b[?1049l" {
+		t.Fatalf("first Filter = %q, want only alt-leave sequence", got)
+	}
+	if !f.HasDeferred() {
+		t.Fatal("expected bytes after alt-leave to be deferred")
+	}
+	if got := string(f.Filter(nil)); got != "PROMPT" {
+		t.Fatalf("deferred Filter = %q, want PROMPT", got)
+	}
+	if f.HasDeferred() {
+		t.Fatal("deferred bytes not drained")
 	}
 }
 
