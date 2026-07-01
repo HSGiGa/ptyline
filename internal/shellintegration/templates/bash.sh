@@ -33,6 +33,43 @@ __ptyline_emit_env() {
     done
     __ptyline_emit env "$__ptyline_out"
 }
+# Mirror selected exported variables to ptyline so exec modules ({gh}, …) run with
+# the shell's live environment. Each pattern is an exact name or a NAME* prefix;
+# values are base64-encoded (so ';'/'='/control chars can't corrupt the frame) and
+# the whole frame carries $PTYLINE_NONCE so injected bytes can't forge it.
+__ptyline_emit_exec_env() {
+    [ -z "$PTYLINE_EXEC_ENV_NAMES" ] && return
+    [ -z "$PTYLINE_NONCE" ] && return
+    local __ptyline_patterns __ptyline_pat __ptyline_names __ptyline_name __ptyline_value __ptyline_b64 __ptyline_out
+    IFS=',' read -r -a __ptyline_patterns <<< "$PTYLINE_EXEC_ENV_NAMES"
+    __ptyline_out=
+    for __ptyline_pat in "${__ptyline_patterns[@]}"; do
+        case "$__ptyline_pat" in
+        ""|*[!A-Za-z0-9_*]*|[0-9]*) continue ;;
+        esac
+        case "$__ptyline_pat" in
+        *"*")
+            __ptyline_names=$(compgen -e -- "${__ptyline_pat%\*}" 2>/dev/null)
+            ;;
+        *)
+            # Exact name: mirror only if it is exported (matching the wildcard branch,
+            # which uses `compgen -e`). declare -p prints `declare -x NAME=…` for an
+            # exported variable and errors for an unset one.
+            case "$(declare -p "$__ptyline_pat" 2>/dev/null)" in
+            "declare -x "*) __ptyline_names=$__ptyline_pat ;;
+            *) __ptyline_names= ;;
+            esac
+            ;;
+        esac
+        for __ptyline_name in $__ptyline_names; do
+            __ptyline_value=${!__ptyline_name}
+            [ -z "$__ptyline_value" ] && continue
+            __ptyline_b64=$(printf '%s' "$__ptyline_value" | base64 | tr -d '\n')
+            __ptyline_out="${__ptyline_out:+$__ptyline_out;}$__ptyline_name=$__ptyline_b64"
+        done
+    done
+    __ptyline_emit exec_env "$PTYLINE_NONCE:$__ptyline_out"
+}
 
 # DEBUG fires before each command; capture the first command of the line and its
 # start time, ignoring our own precmd hook.
@@ -46,6 +83,7 @@ __ptyline_preexec() {
     __ptyline_start=$(__ptyline_now_ms)
     __ptyline_emit command "$__ptyline_cmd"
     __ptyline_emit_env
+    __ptyline_emit_exec_env
 }
 
 # PROMPT_COMMAND runs before each prompt; report exit code, cwd, and (if a command
@@ -59,6 +97,7 @@ __ptyline_precmd() {
     __ptyline_emit exit_code "$__ptyline_exit"
     __ptyline_emit cwd "$PWD"
     __ptyline_emit_env
+    __ptyline_emit_exec_env
     __ptyline_emit command ""
 }
 
@@ -69,6 +108,7 @@ case "$PROMPT_COMMAND" in
 esac
 
 __ptyline_emit_env
+__ptyline_emit_exec_env
 
 # Wrap ssh to report outbound connections to the ptyline status bar.
 # Use `command ssh` to bypass this wrapper when needed.

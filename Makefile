@@ -24,6 +24,20 @@ CGO_ENABLED ?= 0
 endif
 export CGO_ENABLED
 
+# Install destination. Default to a user-writable directory so `make install`
+# never needs sudo:
+#   - macOS + Homebrew: the brew prefix bin (/opt/homebrew/bin on Apple Silicon,
+#     /usr/local/bin on Intel) — user-owned and already on $PATH.
+#   - otherwise ~/.local/bin (XDG convention; add it to $PATH if missing).
+# Override with `make install BINDIR=/usr/local/bin` (needs sudo) or set DESTDIR
+# for packaging.
+BREW_BIN := $(shell brew --prefix 2>/dev/null)/bin
+ifneq ($(wildcard $(BREW_BIN)/.),)
+BINDIR ?= $(BREW_BIN)
+else
+BINDIR ?= $(HOME)/.local/bin
+endif
+
 TOOLS_BIN   := $(CURDIR)/.tools/bin
 GOCACHE     ?= $(CURDIR)/.cache/go-build
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
@@ -116,6 +130,16 @@ check: fmt-check vet test lint ## Run the local development validation suite
 .PHONY: tidy
 tidy: ## Sync go.mod / go.sum
 	$(GO) mod tidy
+
+.PHONY: install
+install: build ## Install the binary into $(DESTDIR)$(BINDIR) (user-writable, no sudo)
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 0755 $(DIST)/$(BINARY) $(DESTDIR)$(BINDIR)/$(BINARY)
+	@echo "installed $(BINARY) -> $(DESTDIR)$(BINDIR)/$(BINARY)"
+
+.PHONY: uninstall
+uninstall: ## Remove the installed binary from $(DESTDIR)$(BINDIR)
+	rm -f $(DESTDIR)$(BINDIR)/$(BINARY)
 
 .PHONY: clean
 clean: ## Remove build artifacts

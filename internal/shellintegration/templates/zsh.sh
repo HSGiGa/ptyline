@@ -34,6 +34,37 @@ __ptyline_emit_env() {
     done
     __ptyline_emit env "$__ptyline_out"
 }
+# The exec_env mirror below reads the $parameters association from the zsh/parameter
+# module to enumerate exported variables; it is not loaded by default, so pull it in
+# here (a no-op if already loaded or unavailable).
+zmodload zsh/parameter 2>/dev/null
+
+# Mirror selected exported variables to ptyline so exec modules ({gh}, …) run with
+# the shell's live environment. Each pattern is an exact name or a NAME* prefix;
+# values are base64-encoded (so ';'/'='/control chars can't corrupt the frame) and
+# the whole frame carries $PTYLINE_NONCE so injected bytes can't forge it.
+__ptyline_emit_exec_env() {
+    [ -z "$PTYLINE_EXEC_ENV_NAMES" ] && return
+    [ -z "$PTYLINE_NONCE" ] && return
+    local __ptyline_pat __ptyline_name __ptyline_value __ptyline_b64 __ptyline_out
+    local -a __ptyline_patterns
+    __ptyline_patterns=("${(@s:,:)PTYLINE_EXEC_ENV_NAMES}")
+    __ptyline_out=
+    for __ptyline_pat in "${__ptyline_patterns[@]}"; do
+        case "$__ptyline_pat" in
+        ""|*[!A-Za-z0-9_*]*|[0-9]*) continue ;;
+        esac
+        for __ptyline_name in ${(k)parameters}; do
+            [[ $__ptyline_name == ${~__ptyline_pat} ]] || continue
+            [[ ${(t)parameters[$__ptyline_name]} == *export* ]] || continue
+            __ptyline_value="${(P)__ptyline_name}"
+            [ -z "$__ptyline_value" ] && continue
+            __ptyline_b64=$(printf '%s' "$__ptyline_value" | base64 | tr -d '\n')
+            __ptyline_out="${__ptyline_out:+$__ptyline_out;}$__ptyline_name=$__ptyline_b64"
+        done
+    done
+    __ptyline_emit exec_env "$PTYLINE_NONCE:$__ptyline_out"
+}
 
 # preexec receives the full command line; record it and the start time.
 __ptyline_preexec() {
@@ -41,6 +72,7 @@ __ptyline_preexec() {
     __ptyline_start=$(__ptyline_now_ms)
     __ptyline_emit command "$__ptyline_cmd"
     __ptyline_emit_env
+    __ptyline_emit_exec_env
 }
 
 # precmd runs before each prompt; report exit code, cwd, and the previous
@@ -54,6 +86,7 @@ __ptyline_precmd() {
     __ptyline_emit exit_code "$__ptyline_exit"
     __ptyline_emit cwd "$PWD"
     __ptyline_emit_env
+    __ptyline_emit_exec_env
     __ptyline_emit command ""
 }
 
@@ -62,6 +95,7 @@ add-zsh-hook preexec __ptyline_preexec
 add-zsh-hook precmd __ptyline_precmd
 
 __ptyline_emit_env
+__ptyline_emit_exec_env
 
 # Wrap ssh to report outbound connections to the ptyline status bar.
 # Use `command ssh` to bypass this wrapper when needed.

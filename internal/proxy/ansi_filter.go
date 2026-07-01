@@ -45,14 +45,15 @@ type AltScreenState struct {
 // It must handle partial sequences across read boundaries, so it buffers an
 // incomplete tail between calls (bounded by maxBufferedCSI).
 type AnsiFilter struct {
-	area     reserved.Area
-	rows     uint16 // current real-terminal rows
-	alt      AltScreenState
-	tail     []byte // buffered incomplete escape sequence
-	deferred []byte // bytes after an alt transition, replayed after the transition is applied
-	meta     []event.ShellMeta
-	onAlt    func(active bool)
-	onDiag   func(msg string)
+	area         reserved.Area
+	rows         uint16 // current real-terminal rows
+	alt          AltScreenState
+	tail         []byte // buffered incomplete escape sequence
+	deferred     []byte // bytes after an alt transition, replayed after the transition is applied
+	meta         []event.ShellMeta
+	barClobbered bool // child emitted an erase that may have wiped the reserved bar rows
+	onAlt        func(active bool)
+	onDiag       func(msg string)
 }
 
 // NewAnsiFilter creates a filter for the given reserved area.
@@ -76,6 +77,19 @@ func (f *AnsiFilter) SetArea(area reserved.Area) { f.area = area }
 
 // AltActive reports whether the child is currently in the alternate screen.
 func (f *AnsiFilter) AltActive() bool { return f.alt.Active }
+
+// TakeBarClobbered reports whether child output since the last call emitted an
+// erase that ignores the scroll region and may have wiped the reserved bar rows
+// (a cursor-to-end CSI 0 J), then resets the flag. The event loop uses it to force
+// an immediate bar repaint so the bar does not stay blank until the next content
+// change (spec §8.4; e.g. fish redrawing a multiline command on history steps).
+func (f *AnsiFilter) TakeBarClobbered() bool {
+	if !f.barClobbered {
+		return false
+	}
+	f.barClobbered = false
+	return true
+}
 
 // HasDeferred reports whether Filter stopped at an alt-screen transition and
 // kept later bytes for a second pass. The event loop uses this to apply the
@@ -266,8 +280,41 @@ func (f *AnsiFilter) handleCSI(seq []byte) ([]byte, bool) {
 			return seq, false // alt screen: child owns every row
 		}
 		return f.clampCursorRow(seq, params), false
+	case 'J': // ED (erase in display)
+		if f.alt.Active {
+			return seq, false // alt screen: child owns every row
+		}
+		return f.rewriteEraseDisplay(seq, params), false
 	default:
 		return seq, false
+	}
+}
+
+// rewriteEraseDisplay keeps ED (erase in display) from wiping the reserved bar,
+// which the scroll region does not protect against. CSI 2 J (what `clear`/ncurses
+// emit) erases the whole physical screen, so it is rewritten to erase only the
+// child region (rows 1..childRows), homing the cursor afterwards to match what
+// `clear` (which prefixes CSI H) expects. CSI 0 J / CSI J (erase from cursor to
+// end — what fish emits when redrawing a multiline command or stepping through
+// history) also erases down through the bar rows; its extent depends on the cursor
+// row, which we do not track, so it is forwarded as-is and the bar is flagged for
+// an immediate repaint. Erase-to-cursor (CSI 1 J, above the clamped cursor) and
+// scrollback (CSI 3 J) cannot touch the visible bar and pass through unchanged.
+func (f *AnsiFilter) rewriteEraseDisplay(seq []byte, params string) []byte {
+	bottom := f.bottom()
+	if bottom == 0 {
+		return seq
+	}
+	switch params {
+	case "2":
+		// Park at the far column of the last child row (the terminal clamps the
+		// column), erase from the top of the display up to there, then home.
+		return []byte(fmt.Sprintf("\x1b[%d;999H\x1b[1J\x1b[H", bottom))
+	case "", "0":
+		f.barClobbered = true
+		return seq
+	default:
+		return seq
 	}
 }
 

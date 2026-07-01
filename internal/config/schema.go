@@ -56,6 +56,7 @@ type ModuleConfig struct {
 	Provider            string           `toml:"provider"` // command | osc | socket (future)
 	Command             string           `toml:"command"`
 	RefreshOnCommand    []string         `toml:"refresh_on_command"`
+	RefreshOnCWD        bool             `toml:"refresh_on_cwd"` // exec: re-run when the shell's directory changes
 	Env                 []string         `toml:"env"`
 	IntervalMS          int              `toml:"interval_ms"`
 	TimeoutMS           int              `toml:"timeout_ms"`

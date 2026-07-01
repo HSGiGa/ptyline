@@ -7,16 +7,21 @@ import (
 // Handlers contain the side effects owned by the application wiring. Loop keeps
 // dispatch ordering serialized while platform-specific IO stays at the edge.
 type Handlers struct {
-	WriteInput    func([]byte) error
-	WriteOutput   func([]byte) error
-	ResizeRequest func(cols, rows uint16)
-	ResizeCommit  func(cols, rows uint16)
-	ShellMeta     func(key, value string)
-	ModuleUpdated func(id string, snapshot any)
-	Tick          func()
-	Redraw        func()
-	Terminate     func(signal string)
-	ConfigReload  func()
+	WriteInput  func([]byte) error
+	WriteOutput func([]byte) error
+	// WriteOutputFramed writes child output that erased the reserved bar rows,
+	// bracketing it with the bar repaint in one synchronized update so the bar does
+	// not blink blank for a frame. Falls back to WriteOutput when nil.
+	WriteOutputFramed func([]byte) error
+	ResizeRequest     func(cols, rows uint16)
+	ResizeCommit      func(cols, rows uint16)
+	ShellMeta         func(key, value string)
+	ModuleUpdated     func(id string, snapshot any)
+	Tick              func()
+	Redraw            func()
+	InvalidateBar     func()
+	Terminate         func(signal string)
+	ConfigReload      func()
 }
 
 // Loop is the single select-driven event loop. It multiplexes every input source
@@ -65,13 +70,30 @@ func (l *Loop) Run() (exitCode int, err error) {
 			data := e.Data
 			for {
 				output := l.filter.Filter(data)
-				if l.h.WriteOutput != nil {
-					if err := l.h.WriteOutput(output); err != nil {
+				deferred := l.filter.HasDeferred()
+				// Child output may have erased the reserved bar rows (e.g. fish's
+				// cursor-to-end erase on a multiline history step). When that happens
+				// on a single-pass chunk, write the output and the bar repaint as one
+				// synchronized frame so the bar never renders blank. In the rare mid
+				// alt-screen-transition case, fall back to a plain write plus an
+				// invalidate so the redraw below still restores the bar.
+				clobbered := l.filter.TakeBarClobbered()
+				if clobbered && !deferred && l.h.WriteOutputFramed != nil {
+					if err := l.h.WriteOutputFramed(output); err != nil {
 						return 1, err
+					}
+				} else {
+					if l.h.WriteOutput != nil {
+						if err := l.h.WriteOutput(output); err != nil {
+							return 1, err
+						}
+					}
+					if clobbered && l.h.InvalidateBar != nil {
+						l.h.InvalidateBar()
 					}
 				}
 				l.applyFilterMeta()
-				if !l.filter.HasDeferred() {
+				if !deferred {
 					break
 				}
 				data = nil

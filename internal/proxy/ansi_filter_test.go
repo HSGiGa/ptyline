@@ -52,6 +52,59 @@ func TestNormalScreenCursorRowClamped(t *testing.T) {
 	}
 }
 
+// CSI 2 J (full-display erase, what `clear` emits) is rewritten to erase only the
+// child region so the reserved bar is never wiped — no clear-then-redraw blink.
+// Other ED forms pass through unchanged.
+func TestNormalScreenFullClearSparesBar(t *testing.T) {
+	if got := string(newFilter().Filter([]byte("\x1b[2J"))); got != "\x1b[29;999H\x1b[1J\x1b[H" {
+		t.Fatalf("CSI 2 J = %q, want child-region erase", got)
+	}
+	for _, in := range []string{"\x1b[J", "\x1b[0J", "\x1b[1J", "\x1b[3J"} {
+		if got := string(newFilter().Filter([]byte(in))); got != in {
+			t.Fatalf("Filter(%q) = %q, want pass-through", in, got)
+		}
+	}
+}
+
+// CSI 0 J / CSI J (erase from cursor to end) ignores the scroll region and can wipe
+// the bar rows; it passes through but flags a clobber so the loop repaints the bar.
+// Other ED forms, and the alternate screen, must not flag.
+func TestCursorToEndEraseFlagsBarClobber(t *testing.T) {
+	for _, in := range []string{"\x1b[J", "\x1b[0J"} {
+		f := newFilter()
+		f.Filter([]byte(in))
+		if !f.TakeBarClobbered() {
+			t.Fatalf("Filter(%q) did not flag bar clobber", in)
+		}
+		if f.TakeBarClobbered() {
+			t.Fatalf("TakeBarClobbered(%q) did not reset the flag", in)
+		}
+	}
+	for _, in := range []string{"\x1b[2J", "\x1b[1J", "\x1b[3J"} {
+		f := newFilter()
+		f.Filter([]byte(in))
+		if f.TakeBarClobbered() {
+			t.Fatalf("Filter(%q) should not flag bar clobber", in)
+		}
+	}
+	// Alt screen: the child owns every row, so no clobber bookkeeping.
+	f := newFilter()
+	f.Filter([]byte("\x1b[?1049h"))
+	f.Filter([]byte("\x1b[0J"))
+	if f.TakeBarClobbered() {
+		t.Fatal("alt-screen CSI 0 J should not flag bar clobber")
+	}
+}
+
+// In the alternate screen the child owns every row, so a full clear passes through.
+func TestAltScreenFullClearPassesThrough(t *testing.T) {
+	f := newFilter()
+	f.Filter([]byte("\x1b[?1049h"))
+	if got := string(f.Filter([]byte("\x1b[2J"))); got != "\x1b[2J" {
+		t.Fatalf("alt-screen CSI 2 J = %q, want pass-through", got)
+	}
+}
+
 // In the alternate screen the child owns every row, so a CUP into the bottom rows
 // must pass through unchanged.
 func TestAltScreenCursorRowPassesThrough(t *testing.T) {

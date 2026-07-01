@@ -48,6 +48,32 @@ function __ptyline_emit_env
     __ptyline_emit env (string join ' ' $out)
 end
 
+# Mirror selected exported variables to ptyline so exec modules ({gh}, …) run with
+# the shell's live environment. Each pattern is an exact name or a NAME* prefix;
+# values are base64-encoded (so ';'/'='/control chars can't corrupt the frame) and
+# the whole frame carries $PTYLINE_NONCE so injected bytes can't forge it.
+function __ptyline_emit_exec_env
+    if test -z "$PTYLINE_EXEC_ENV_NAMES"; or test -z "$PTYLINE_NONCE"
+        return
+    end
+    set -l patterns (string split , -- "$PTYLINE_EXEC_ENV_NAMES")
+    set -l out
+    for pat in $patterns
+        if not string match -rq '^[A-Za-z_][A-Za-z0-9_]*\*?$' -- "$pat"
+            continue
+        end
+        for name in (set --names)
+            string match -q -- "$pat" "$name"; or continue
+            set -qx $name; or continue
+            set -l value (string join ':' -- $$name)
+            test -z "$value"; and continue
+            set -l b64 (printf '%s' "$value" | base64 | tr -d '\n')
+            set -a out "$name=$b64"
+        end
+    end
+    __ptyline_emit exec_env "$PTYLINE_NONCE:"(string join ';' $out)
+end
+
 # Returns current time as an integer number of milliseconds.
 # Uses $EPOCHREALTIME (fish ≥ 3.4) with the decimal point normalized to '.' so
 # the result is correct regardless of the system locale (e.g. Russian locale uses
@@ -67,6 +93,7 @@ function __ptyline_preexec --on-event fish_preexec
     set -g __ptyline_start (__ptyline_ms_now)
     __ptyline_emit command "$__ptyline_cmd"
     __ptyline_emit_env
+    __ptyline_emit_exec_env
 end
 
 function __ptyline_postexec --on-event fish_postexec
@@ -78,6 +105,7 @@ function __ptyline_postexec --on-event fish_postexec
     __ptyline_emit exit_code $code
     __ptyline_emit cwd "$PWD"
     __ptyline_emit_env
+    __ptyline_emit_exec_env
     __ptyline_emit command ""
 end
 
@@ -98,3 +126,4 @@ end
 __ptyline_emit_colors
 __ptyline_emit_cwd
 __ptyline_emit_env
+__ptyline_emit_exec_env

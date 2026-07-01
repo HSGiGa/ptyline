@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ type Exec struct {
 	format    string
 	separator string
 	maxWidth  int
+	env       []string
 }
 
 // NewExec creates an Exec module. id is the bar placeholder name (e.g. "gh").
@@ -59,10 +61,28 @@ func (m *Exec) ID() status.ModuleID     { return m.id }
 func (m *Exec) Interval() time.Duration { return m.interval }
 func (m *Exec) Timeout() time.Duration  { return m.timeout }
 
+func (m *Exec) WithEnv(names []string) *Exec {
+	m.env = append([]string(nil), names...)
+	return m
+}
+
+func (m *Exec) EnvNames() []string {
+	return append([]string(nil), m.env...)
+}
+
 // Refresh executes the configured shell command under ctx's deadline, sanitizes
 // stdout, and returns a snapshot. Timeouts yield Stale; non-zero exits set Err
 // but still populate Value so the renderer can show the last formatted output.
 func (m *Exec) Refresh(ctx context.Context) status.ModuleSnapshot {
+	return m.RefreshWithEnv(ctx, nil, "")
+}
+
+// RefreshWithEnv runs the command with env overlaid on the process environment and,
+// when dir is a real directory, from that working directory (the interactive
+// shell's cwd) so directory-sensitive tools (git, gh, mise) see the same context
+// the user does. A missing or invalid dir falls back to ptyline's own cwd rather
+// than failing the command.
+func (m *Exec) RefreshWithEnv(ctx context.Context, env []string, dir string) status.ModuleSnapshot {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -74,6 +94,14 @@ func (m *Exec) Refresh(ctx context.Context) status.ModuleSnapshot {
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", m.command)
+	if len(env) > 0 {
+		cmd.Env = mergeEnv(os.Environ(), env)
+	}
+	if dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			cmd.Dir = dir
+		}
+	}
 	cmd.Stdin = nil
 	cmd.Stdout = io.Writer(&limitWriter{buf: &stdoutBuf, limit: execStdoutLimit})
 	cmd.Stderr = io.Writer(&limitWriter{buf: &stderrBuf, limit: execStderrLimit})
@@ -161,4 +189,27 @@ func (w *limitWriter) Write(p []byte) (int, error) {
 		p = p[:remaining]
 	}
 	return w.buf.Write(p)
+}
+
+func mergeEnv(base, overlay []string) []string {
+	out := append([]string(nil), base...)
+	for _, entry := range overlay {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			continue
+		}
+		replaced := false
+		prefix := key + "="
+		for i, current := range out {
+			if strings.HasPrefix(current, prefix) {
+				out[i] = entry
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			out = append(out, entry)
+		}
+	}
+	return out
 }

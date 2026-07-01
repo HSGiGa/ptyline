@@ -28,14 +28,50 @@ diagnostics/replay tooling are deferred.
 - Config overlays: command-line overlays and nearest project `.ptyline` files.
 - Runtime reload with `ptyline --reload`.
 
-## Quickstart
+## Installation
 
-Requires Go 1.26+.
+**Requirements:** **Go 1.26+** and a Linux, WSL2, or macOS host. Verify your
+toolchain with `go version`.
+
+On **macOS** the system-metric modules use cgo (mach/IOKit), so you also need the
+Xcode Command Line Tools (`xcode-select --install`); `make build` enables
+`CGO_ENABLED=1` automatically on darwin.
+
+### From source (recommended)
 
 ```sh
-make bootstrap
-make build
-./dist/ptyline -- zsh
+git clone https://github.com/hsgiga/ptyline.git
+cd ptyline
+make install         # build + install into a user-writable dir (no sudo)
+```
+
+`make install` picks a default `BINDIR` that is already on your `$PATH` and needs
+no root:
+
+- **macOS + Homebrew** → the brew prefix (`/opt/homebrew/bin` on Apple Silicon,
+  `/usr/local/bin` on Intel).
+- **otherwise** → `~/.local/bin` (add it to `$PATH` if it isn't already).
+
+Override the destination if you prefer a system-wide install or are packaging:
+
+```sh
+make install BINDIR=/usr/local/bin   # system-wide (needs sudo)
+make install DESTDIR=/tmp/pkg        # staging root for a package
+make uninstall                       # remove the installed binary
+```
+
+Confirm it works:
+
+```sh
+ptyline --version
+```
+
+### With `go install`
+
+If your `$GOBIN` (or `$(go env GOPATH)/bin`) is on your `$PATH`:
+
+```sh
+go install github.com/hsgiga/ptyline/cmd/ptyline@latest
 ```
 
 Common development commands:
@@ -83,6 +119,15 @@ Config is TOML. The default path is:
 ```text
 $XDG_CONFIG_HOME/ptyline/config.toml
 ~/.config/ptyline/config.toml
+```
+
+ptyline also runs with **no config file** — a minimal built-in default (a rule and
+a clock) is used when none is found. To start from the richer example layout in
+this repo, copy it once (installation never touches your config):
+
+```sh
+mkdir -p ~/.config/ptyline
+cp config/config.toml ~/.config/ptyline/config.toml
 ```
 
 The sample config lives at [config/config.toml](config/config.toml) and uses
@@ -169,13 +214,90 @@ format = "{cwd} || {kube} || {time}"
 [module.kube]
 source = "exec"
 command = "kubectl config current-context"
+env = ["KUBECONFIG", "PATH"]
 interval_ms = 10000
 timeout_ms = 200
 format = "{stdout}"
 refresh_on_command = ["kubectl config use-context"]
 ```
 
-Exec modules run locally from trusted config and are always time-bounded.
+Exec modules run locally from trusted config and are always time-bounded. By
+default, a command inherits the environment of the `ptyline` process. If a tool
+depends on environment that changes inside the interactive shell after startup
+(for example `mise`, `direnv`, `aws-vault`, or project-local authentication),
+declare the variables on that exec module:
+
+```toml
+[module.gh]
+source = "exec"
+command = "gh api user --jq .login"
+env = ["GH_*", "GITHUB_*", "PATH", "XDG_CONFIG_HOME"]
+refresh_on_command = ["gh auth login", "gh auth logout", "gh auth refresh"]
+
+[module.aws]
+source = "exec"
+command = "aws sts get-caller-identity --query Account --output text"
+env = ["AWS_*", "PATH"]
+refresh_on_command = ["aws sso login", "aws-vault exec"]
+```
+
+The `env` list is a per-module allowlist, not a display setting. Each entry is
+either an exact name (`GH_TOKEN`) or a prefix with a trailing `*` (`GH_*`); the
+wildcard matches every currently-exported variable with that prefix. With shell
+integration enabled, the shell reports the matching variables through the OSC 777
+metadata channel on prompt updates and before/after commands, and the exec
+command additionally runs from the shell's current directory. `ptyline` applies
+the shell's latest snapshot when that exec module runs, so a later refresh sees
+the active shell environment and cwd — this is what lets modules follow
+directory-scoped tools such as `.mise.toml` or `direnv` without sending the
+entire shell environment back to the wrapper. Values are base64-encoded and each
+report carries a per-session nonce, so injected terminal bytes cannot forge them.
+Because the report is a full snapshot, a variable that becomes unset (e.g. on
+leaving a directory) is dropped on the next prompt.
+
+Updates happen on the next normal module interval, and can happen immediately
+after successful matching commands listed in `refresh_on_command`. For directory
+changes that alter environment through prompt hooks, the new values are visible
+after the shell integration emits its next prompt/preexec metadata. The list of
+requested names is passed to the child shell when `ptyline` starts; restart the
+wrapper after changing `env = [...]` entries.
+
+Setting `refresh_on_cwd = true` re-runs an exec module the moment the shell's
+directory changes. Because the command runs from that directory, this pairs well
+with directory-scoped launchers that resolve the environment themselves — for
+example `mise exec --`, which computes the directory's environment fresh at run
+time (use it *instead of* `env = [...]` for that module, not alongside, so a
+lagging mirrored value can't override what the launcher resolves):
+
+```toml
+[module.gh]
+source = "exec"
+command = "mise exec -- gh auth status --json hosts --jq '.hosts[][] | select(.active) | .login'"
+refresh_on_cwd = true
+```
+
+### Multiline commands
+
+`command` is passed verbatim to `/bin/sh -c`, so it can be a multiline shell
+script. Use a TOML literal string (`'''…'''`) — it performs no escape processing,
+so single quotes and backslashes (common in `jq`/`awk` snippets) pass through
+untouched. TOML trims a newline immediately after the opening `'''`, so the
+script can start on the next line:
+
+```toml
+[module.gh]
+source = "exec"
+command = '''
+set -e
+acct=$(mise exec -- gh auth status --json hosts --jq '.hosts[][] | select(.active) | .login')
+printf '%s' "$acct"
+'''
+refresh_on_cwd = true
+```
+
+A trailing `\` continues a line at the shell level (TOML leaves it in place; `sh`
+joins the lines). Basic multiline strings (`"""…"""`) also work but process
+`\n`, `\t`, and `\"`, which is usually inconvenient for shell snippets.
 
 ## Platform Support
 
