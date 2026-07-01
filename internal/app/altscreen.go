@@ -53,11 +53,15 @@ func (c *altScreenCoordinator) Apply(active bool) {
 		_ = c.sup.ResizeFull(pty.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows})
 		return
 	}
-	// Leaving alt: terminal has just restored the normal screen and the pre-alt
-	// cursor. Full-screen programs such as top can leave that cursor on the
-	// physical last row; in normal mode that row belongs to ptyline, so force the
-	// cursor back into the child region before repainting the bar.
+	// Leaving alt: the ?1049l has already restored the normal screen and the
+	// pre-alt cursor. Because the normal-screen scroll region confined the child
+	// to rows 1..childBottom, that restored cursor is always inside the child
+	// region (never on the reserved bar row), so we only need to re-establish the
+	// scroll region — with save/restore so DECSTBM's homing side effect doesn't
+	// move the cursor. Pinning it to the last child row here (as an earlier fix
+	// did) is wrong for shells that merely probe the alt screen at startup, e.g.
+	// fish's terminal-capability query: it forced their first prompt to the bottom.
 	_ = c.sup.Resize(pty.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows})
-	c.ctrl.ApplyScrollRegionAtChildBottom(terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}, *c.area)
+	c.ctrl.ApplyScrollRegion(terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}, *c.area)
 	c.redraw()
 }
