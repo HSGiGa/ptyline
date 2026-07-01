@@ -28,14 +28,50 @@ diagnostics/replay tooling are deferred.
 - Config overlays: command-line overlays and nearest project `.ptyline` files.
 - Runtime reload with `ptyline --reload`.
 
-## Quickstart
+## Installation
 
-Requires Go 1.26+.
+**Requirements:** **Go 1.26+** and a Linux, WSL2, or macOS host. Verify your
+toolchain with `go version`.
+
+On **macOS** the system-metric modules use cgo (mach/IOKit), so you also need the
+Xcode Command Line Tools (`xcode-select --install`); `make build` enables
+`CGO_ENABLED=1` automatically on darwin.
+
+### From source (recommended)
 
 ```sh
-make bootstrap
-make build
-./dist/ptyline -- zsh
+git clone https://github.com/hsgiga/ptyline.git
+cd ptyline
+make install         # build + install into a user-writable dir (no sudo)
+```
+
+`make install` picks a default `BINDIR` that is already on your `$PATH` and needs
+no root:
+
+- **macOS + Homebrew** → the brew prefix (`/opt/homebrew/bin` on Apple Silicon,
+  `/usr/local/bin` on Intel).
+- **otherwise** → `~/.local/bin` (add it to `$PATH` if it isn't already).
+
+Override the destination if you prefer a system-wide install or are packaging:
+
+```sh
+make install BINDIR=/usr/local/bin   # system-wide (needs sudo)
+make install DESTDIR=/tmp/pkg        # staging root for a package
+make uninstall                       # remove the installed binary
+```
+
+Confirm it works:
+
+```sh
+ptyline --version
+```
+
+### With `go install`
+
+If your `$GOBIN` (or `$(go env GOPATH)/bin`) is on your `$PATH`:
+
+```sh
+go install github.com/hsgiga/ptyline/cmd/ptyline@latest
 ```
 
 Common development commands:
@@ -83,6 +119,15 @@ Config is TOML. The default path is:
 ```text
 $XDG_CONFIG_HOME/ptyline/config.toml
 ~/.config/ptyline/config.toml
+```
+
+ptyline also runs with **no config file** — a minimal built-in default (a rule and
+a clock) is used when none is found. To start from the richer example layout in
+this repo, copy it once (installation never touches your config):
+
+```sh
+mkdir -p ~/.config/ptyline
+cp config/config.toml ~/.config/ptyline/config.toml
 ```
 
 The sample config lives at [config/config.toml](config/config.toml) and uses
