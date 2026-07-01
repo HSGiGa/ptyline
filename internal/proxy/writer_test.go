@@ -2,8 +2,62 @@ package proxy
 
 import (
 	"bytes"
+	"strings"
 	"testing"
+
+	"github.com/hsgiga/ptyline/internal/terminal"
 )
+
+// WriteChildFrame brackets the child output and the bar repaint in ONE synchronized
+// update so a child erase that wiped the bar and the repaint render as one frame.
+func TestWriteChildFrameIsAtomic(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewTerminalWriter(&buf)
+	w.SetBarRows(30, 1)
+
+	child := []byte("cmd\x1b[0J") // child output that erases to end (clobbers the bar)
+	if err := w.WriteChildFrame(child, []string{"bar"}); err != nil {
+		t.Fatalf("WriteChildFrame: %v", err)
+	}
+	out := buf.String()
+
+	// Exactly one synchronized-update span, opened before the child bytes and closed
+	// after the bar repaint — so the terminal never renders the cleared bar alone.
+	if strings.Count(out, terminal.BeginSyncUpdate) != 1 || strings.Count(out, terminal.EndSyncUpdate) != 1 {
+		t.Fatalf("want one sync span, got %q", out)
+	}
+	begin := strings.Index(out, terminal.BeginSyncUpdate)
+	childAt := strings.Index(out, "cmd\x1b[0J")
+	barAt := strings.Index(out, "bar")
+	end := strings.Index(out, terminal.EndSyncUpdate)
+	if !(begin < childAt && childAt < barAt && barAt < end) {
+		t.Fatalf("order should be sync-begin < child < bar < sync-end, got %q", out)
+	}
+
+	// Having painted "bar", an identical subsequent flush is a no-op.
+	buf.Reset()
+	w.RequestRedraw()
+	if err := w.FlushBarFrame([]string{"bar"}); err != nil {
+		t.Fatalf("FlushBarFrame: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("WriteChildFrame should have recorded the painted bar; re-flush wrote %q", buf.Bytes())
+	}
+}
+
+// With no reserved bar (or on the alt screen) WriteChildFrame degrades to a plain
+// child write with no synchronized-update wrapping.
+func TestWriteChildFrameNoBarPlainWrite(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewTerminalWriter(&buf)
+	// barTop/barCount unset → no bar.
+	if err := w.WriteChildFrame([]byte("cmd"), []string{"bar"}); err != nil {
+		t.Fatalf("WriteChildFrame: %v", err)
+	}
+	if out := buf.String(); out != "cmd" {
+		t.Fatalf("no-bar write = %q, want plain %q", out, "cmd")
+	}
+}
 
 func TestWriterFlushAndSkipUnchanged(t *testing.T) {
 	var buf bytes.Buffer

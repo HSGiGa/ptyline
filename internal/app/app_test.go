@@ -2,6 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -137,6 +142,151 @@ func TestCommandMatches(t *testing.T) {
 	}
 }
 
+func TestExecEnvNames(t *testing.T) {
+	cfg := config.Default()
+	cfg.Modules = map[string]config.ModuleConfig{
+		"env": {
+			Env: []string{"DISPLAY_ONLY"},
+		},
+		"gh": {
+			Source:  "exec",
+			Command: "gh api user --jq .login",
+			Env:     []string{"GH_HOST", "GH_TOKEN", "PATH"},
+		},
+		"aws": {
+			Command: "aws sts get-caller-identity",
+			Env:     []string{"AWS_PROFILE", "PATH"},
+		},
+		"time_local": {
+			Source: "time",
+			Env:    []string{"IGNORED"},
+		},
+	}
+
+	want := []string{"AWS_PROFILE", "GH_HOST", "GH_TOKEN", "PATH"}
+	if got := execEnvNames(cfg); !reflect.DeepEqual(got, want) {
+		t.Fatalf("execEnvNames() = %v, want %v", got, want)
+	}
+}
+
+func TestExecEnvNamesWildcardAndRejection(t *testing.T) {
+	cfg := config.Default()
+	cfg.Modules = map[string]config.ModuleConfig{
+		"gh": {
+			Source:  "exec",
+			Command: "gh api user --jq .login",
+			// Valid: exact + trailing-* prefix. Invalid: bare *, mid-*, leading
+			// digit, non-identifier chars — all dropped.
+			Env: []string{"GH_*", "PATH", "*", "G*H", "1BAD", "BAD-NAME"},
+		},
+	}
+	want := []string{"GH_*", "PATH"}
+	if got := execEnvNames(cfg); !reflect.DeepEqual(got, want) {
+		t.Fatalf("execEnvNames() = %v, want %v", got, want)
+	}
+}
+
+func TestParseExecEnv(t *testing.T) {
+	const nonce = "deadbeef"
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	// Value carries ';' and '=' — base64 keeps them from corrupting the frame.
+	frame := nonce + ":GH_HOST=" + b64("github.example") + ";GH_TOKEN=" + b64("a;b=c")
+
+	got := parseExecEnv(frame, nonce)
+	want := map[string]string{"GH_HOST": "github.example", "GH_TOKEN": "a;b=c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseExecEnv() = %v, want %v", got, want)
+	}
+
+	if got := parseExecEnv(frame, "wrongnonce"); got != nil {
+		t.Fatalf("parseExecEnv with wrong nonce = %v, want nil", got)
+	}
+	if got := parseExecEnv("nocolon", nonce); got != nil {
+		t.Fatalf("parseExecEnv with malformed frame = %v, want nil", got)
+	}
+	if got := parseExecEnv(nonce+":", nonce); got == nil || len(got) != 0 {
+		t.Fatalf("parseExecEnv empty snapshot = %v, want empty non-nil map", got)
+	}
+	// A bad base64 entry is skipped, not fatal.
+	if got := parseExecEnv(nonce+":GH_HOST=@@@;GH_TOKEN="+b64("ok"), nonce); !reflect.DeepEqual(got, map[string]string{"GH_TOKEN": "ok"}) {
+		t.Fatalf("parseExecEnv skipping bad base64 = %v", got)
+	}
+}
+
+func TestChangedEnvNames(t *testing.T) {
+	old := map[string]string{"A": "1", "B": "2", "GONE": "x"}
+	next := map[string]string{"A": "1", "B": "changed", "NEW": "y"}
+	got := changedEnvNames(old, next)
+	sort.Strings(got)
+	want := []string{"B", "GONE", "NEW"} // changed, removed, added; unchanged A omitted
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("changedEnvNames() = %v, want %v", got, want)
+	}
+	if got := changedEnvNames(old, old); len(got) != 0 {
+		t.Fatalf("changedEnvNames(equal) = %v, want none", got)
+	}
+}
+
+func TestExecModuleRuntimeCoalescesRefresh(t *testing.T) {
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "count")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus := event.NewBus(16)
+	m := newExecModuleRuntime("exec", config.ModuleConfig{
+		Command:   "sleep 0.1; printf x >> " + counter,
+		TimeoutMS: 2000,
+	}, nil)
+
+	m.refresh(ctx, bus)               // becomes the worker, then sleeps
+	time.Sleep(20 * time.Millisecond) // ensure it is mid-run
+	m.refresh(ctx, bus)               // in-flight: must coalesce, not drop
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if data, _ := os.ReadFile(counter); len(data) >= 2 {
+			return // both runs happened
+		}
+		select {
+		case <-deadline:
+			data, _ := os.ReadFile(counter)
+			t.Fatalf("expected 2 coalesced runs, got %d", len(data))
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func TestExecModuleRuntimeMirrorsAny(t *testing.T) {
+	m := newExecModuleRuntime("gh", config.ModuleConfig{
+		Command: "printf ok",
+		Env:     []string{"GH_*", "PATH"},
+	}, nil)
+	if !m.mirrorsAny([]string{"AWS_PROFILE", "GH_TOKEN"}) {
+		t.Fatal("expected mirrorsAny to match GH_TOKEN via GH_*")
+	}
+	if m.mirrorsAny([]string{"AWS_PROFILE", "HOME"}) {
+		t.Fatal("expected mirrorsAny to ignore unrelated names")
+	}
+}
+
+func TestEnvNameMatches(t *testing.T) {
+	cases := []struct {
+		name, pattern string
+		want          bool
+	}{
+		{"GH_TOKEN", "GH_*", true},
+		{"GITHUB_TOKEN", "GH_*", false},
+		{"PATH", "PATH", true},
+		{"PATH2", "PATH", false},
+		{"GH_", "GH_*", true},
+	}
+	for _, c := range cases {
+		if got := envNameMatches(c.name, c.pattern); got != c.want {
+			t.Errorf("envNameMatches(%q, %q) = %v, want %v", c.name, c.pattern, got, c.want)
+		}
+	}
+}
+
 func TestExecModuleRuntimeRefreshAfterCommand(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -145,7 +295,7 @@ func TestExecModuleRuntimeRefreshAfterCommand(t *testing.T) {
 		Command:          "printf ok",
 		RefreshOnCommand: []string{"gh auth login"},
 		TimeoutMS:        1000,
-	})
+	}, nil)
 
 	module.refreshAfterCommand(ctx, bus, " gh auth login --web ")
 
@@ -164,6 +314,38 @@ func TestExecModuleRuntimeRefreshAfterCommand(t *testing.T) {
 	}
 }
 
+func TestExecModuleRuntimeUsesEnvProvider(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus := event.NewBus(4)
+	module := newExecModuleRuntime("exec", config.ModuleConfig{
+		Command:   `printf '%s:%s' "$A" "$B"`,
+		Env:       []string{"A", "B"},
+		TimeoutMS: 1000,
+	}, &execRuntimeDeps{env: func(names []string) []string {
+		if !reflect.DeepEqual(names, []string{"A", "B"}) {
+			t.Fatalf("env names = %v, want [A B]", names)
+		}
+		return []string{"A=one", "B=two"}
+	}})
+
+	module.refresh(ctx, bus)
+
+	select {
+	case got := <-bus.Events():
+		update, ok := got.(event.ModuleUpdated)
+		if !ok {
+			t.Fatalf("event = %T, want ModuleUpdated", got)
+		}
+		snap, ok := update.Snapshot.(status.ModuleSnapshot)
+		if !ok || snap.ID != "exec" || snap.Value.Text != "one:two" {
+			t.Fatalf("snapshot = %#v, want exec=one:two", update.Snapshot)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("exec refresh did not emit ModuleUpdated")
+	}
+}
+
 func TestExecModuleRuntimeRefreshAfterCommandNoMatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -172,7 +354,7 @@ func TestExecModuleRuntimeRefreshAfterCommandNoMatch(t *testing.T) {
 		Command:          "printf ok",
 		RefreshOnCommand: []string{"gh auth login"},
 		TimeoutMS:        1000,
-	})
+	}, nil)
 
 	module.refreshAfterCommand(ctx, bus, "gh pr list")
 
@@ -191,7 +373,7 @@ func TestExecModuleRuntimeRefreshCancelledContext(t *testing.T) {
 		Command:          "printf ok",
 		RefreshOnCommand: []string{"gh auth login"},
 		TimeoutMS:        1000,
-	})
+	}, nil)
 
 	module.refreshAfterCommand(ctx, bus, "gh auth login")
 

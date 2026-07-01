@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -119,7 +120,13 @@ func run(opts options) int {
 
 	// --- Child PTY sized to rows-minus-reserved (spec §8.2). ---
 	sup := pty.New(argv, area)
+	// execEnvNonce authenticates exec_env frames from the shell integration so a
+	// program that only injects bytes into the stream (e.g. a malicious file cat)
+	// cannot forge the environment we run exec-module commands with.
+	execEnvNonce := newNonce()
 	sup.SetEnv("PTYLINE_ENV_NAMES", strings.Join(resolvedCfg.Modules["env"].Env, ","))
+	sup.SetEnv("PTYLINE_EXEC_ENV_NAMES", strings.Join(execEnvNames(resolvedCfg), ","))
+	sup.SetEnv("PTYLINE_NONCE", execEnvNonce)
 	sup.SetEnv("PTYLINE_PID", strconv.Itoa(os.Getpid()))
 	if err := sup.Start(pty.Size{Cols: size.Cols, Rows: size.Rows}); err != nil {
 		fmt.Fprintln(os.Stderr, "ptyline: pty:", err)
@@ -240,6 +247,30 @@ func run(opts options) int {
 	userMods := map[string]*userModEntry{}
 	var execModules []*execModuleRuntime
 	var gitRefreshing atomic.Bool
+	var execEnvMu sync.RWMutex
+	execEnv := map[string]string{}
+
+	// execEnvFor resolves a module's env patterns (exact names or GH_* prefixes)
+	// against the shell's last reported snapshot.
+	execEnvFor := func(patterns []string) []string {
+		execEnvMu.RLock()
+		defer execEnvMu.RUnlock()
+		var env []string
+		for name, value := range execEnv {
+			for _, pattern := range patterns {
+				if envNameMatches(name, pattern) {
+					env = append(env, name+"="+value)
+					break
+				}
+			}
+		}
+		return env
+	}
+
+	execDeps := &execRuntimeDeps{
+		env: execEnvFor,
+		cwd: func() string { s, _ := cwdHolder.Load().(string); return s },
+	}
 
 	// refreshGitMod runs RefreshAll on the given git module off the event loop and
 	// emits every sub-module snapshot. gm is passed explicitly so callers off the
@@ -321,9 +352,9 @@ func run(opts options) int {
 				mCancel()
 				return
 			}
-			em := newExecModuleRuntime(id, mcfg)
+			em := newExecModuleRuntime(id, mcfg, execDeps)
 			em.start(mCtx, bus)
-			state.UpdateModule(em.module.Refresh(context.Background()))
+			state.UpdateModule(em.refreshSnapshot(context.Background()))
 			userMods[id] = &userModEntry{cancel: mCancel, command: mcfg.Command, interval: interval, exec: em}
 		case "time":
 			tm := modules.NewTimeWithID(id, mcfg.Format, interval)
@@ -545,7 +576,21 @@ func run(opts options) int {
 					state.ActiveCommandAnimating = true
 				}
 			}
-			writer.InvalidateBar()
+			altCoord.FlushPending()
+			return nil
+		},
+		// WriteOutputFramed handles child output that erased the reserved rows: it
+		// writes the output and repaints the bar in one synchronized frame so the
+		// bar never blinks blank (spec §8.4).
+		WriteOutputFramed: func(data []byte) error {
+			if err := writer.WriteChildFrame(data, renderFn()); err != nil {
+				return err
+			}
+			if len(data) > 0 {
+				if changed := cmdTracker.RecordOutput(&state.Shell); changed {
+					state.ActiveCommandAnimating = true
+				}
+			}
 			altCoord.FlushPending()
 			return nil
 		},
@@ -603,6 +648,16 @@ func run(opts options) int {
 				})
 				refreshGit(state.Shell.CWD)
 				probeMods.OnCWDChange()
+				// Modules with refresh_on_cwd re-run right when the directory changes.
+				// They run from the shell's cwd, so a `mise exec`/`direnv exec`-wrapped
+				// command sees the new directory's environment and the bar updates
+				// immediately — cwd arrives without the one-prompt lag that mirrored env
+				// has under mise.
+				for _, m := range execModules {
+					if m.refreshOnCWD {
+						m.refresh(ctx, bus)
+					}
+				}
 				if !opts.NoProjectPtyline {
 					newPath, _ := config.FindProjectConfig(state.Shell.CWD)
 					reloadConfig(newPath, false)
@@ -614,6 +669,29 @@ func run(opts options) int {
 					Value:     status.Text(value),
 					UpdatedAt: time.Now(),
 				})
+			}
+			if key == shellintegration.KeyExecEnv {
+				// A valid frame is the shell's complete current snapshot, so replace
+				// the map wholesale — variables unset since the last prompt vanish.
+				// A nil result (missing/forged nonce) leaves state untouched.
+				if snapshot := parseExecEnv(value, execEnvNonce); snapshot != nil {
+					execEnvMu.Lock()
+					changed := changedEnvNames(execEnv, snapshot)
+					execEnv = snapshot
+					execEnvMu.Unlock()
+					// Refresh right when the mirrored environment actually changes
+					// (e.g. cd into a mise/direnv directory) instead of waiting for
+					// the module's interval, so the bar reflects the new context
+					// immediately and reliably. Scoped to modules that mirror a
+					// changed variable, and only on change, so it never storms.
+					if len(changed) > 0 {
+						for _, m := range execModules {
+							if m.mirrorsAny(changed) {
+								m.refresh(ctx, bus)
+							}
+						}
+					}
+				}
 			}
 			if key == shellintegration.KeyExitCode {
 				if shouldRefreshAfterExit(value, pendingRefreshCommand, state.Shell.LastCommand) {
@@ -654,8 +732,9 @@ func run(opts options) int {
 				state.UpdateModule(*snap)
 			}
 		},
-		Redraw:    redraw,
-		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
+		Redraw:        redraw,
+		InvalidateBar: writer.InvalidateBar,
+		Terminate:     func(sig string) { _ = sup.TerminateGroup(sig) },
 		ConfigReload: func() {
 			newBase, err := config.Load(opts.ConfigPath)
 			if err != nil {

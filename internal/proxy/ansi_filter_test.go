@@ -66,6 +66,36 @@ func TestNormalScreenFullClearSparesBar(t *testing.T) {
 	}
 }
 
+// CSI 0 J / CSI J (erase from cursor to end) ignores the scroll region and can wipe
+// the bar rows; it passes through but flags a clobber so the loop repaints the bar.
+// Other ED forms, and the alternate screen, must not flag.
+func TestCursorToEndEraseFlagsBarClobber(t *testing.T) {
+	for _, in := range []string{"\x1b[J", "\x1b[0J"} {
+		f := newFilter()
+		f.Filter([]byte(in))
+		if !f.TakeBarClobbered() {
+			t.Fatalf("Filter(%q) did not flag bar clobber", in)
+		}
+		if f.TakeBarClobbered() {
+			t.Fatalf("TakeBarClobbered(%q) did not reset the flag", in)
+		}
+	}
+	for _, in := range []string{"\x1b[2J", "\x1b[1J", "\x1b[3J"} {
+		f := newFilter()
+		f.Filter([]byte(in))
+		if f.TakeBarClobbered() {
+			t.Fatalf("Filter(%q) should not flag bar clobber", in)
+		}
+	}
+	// Alt screen: the child owns every row, so no clobber bookkeeping.
+	f := newFilter()
+	f.Filter([]byte("\x1b[?1049h"))
+	f.Filter([]byte("\x1b[0J"))
+	if f.TakeBarClobbered() {
+		t.Fatal("alt-screen CSI 0 J should not flag bar clobber")
+	}
+}
+
 // In the alternate screen the child owns every row, so a full clear passes through.
 func TestAltScreenFullClearPassesThrough(t *testing.T) {
 	f := newFilter()

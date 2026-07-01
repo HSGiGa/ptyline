@@ -135,8 +135,11 @@ func Validate(cfg *Config) error {
 		if module.DoneFailureTTLMS < 0 {
 			return fmt.Errorf("module.%s.done_failure_ttl_ms must be >= 0", id)
 		}
+		// Exec modules mirror matching shell variables, so they may use a trailing
+		// '*' prefix pattern (GH_*); the env display module needs exact names.
+		allowEnvPattern := ModuleSource(id, module) == "exec"
 		for _, name := range module.Env {
-			if !validEnvName(name) {
+			if !validEnvNameOrPattern(name, allowEnvPattern) {
 				return fmt.Errorf("module.%s.env has invalid value %q", id, name)
 			}
 		}
@@ -219,6 +222,17 @@ var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validEnvName(name string) bool {
 	return envName.MatchString(name)
+}
+
+// validEnvNameOrPattern accepts an exact env name and, when allowPattern is set,
+// a non-empty prefix followed by a single trailing '*' (GH_*).
+func validEnvNameOrPattern(name string, allowPattern bool) bool {
+	if allowPattern {
+		if prefix, ok := strings.CutSuffix(name, "*"); ok {
+			return validEnvName(prefix)
+		}
+	}
+	return validEnvName(name)
 }
 
 // DefaultPath returns $XDG_CONFIG_HOME/ptyline/config.toml, falling back to

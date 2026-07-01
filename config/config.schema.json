@@ -175,11 +175,16 @@
           "description": "Foreground command prefixes that trigger an immediate refresh after exit_code is reported.",
           "examples": [["gh auth login", "gh auth logout"]]
         },
+        "refresh_on_cwd": {
+          "type": "boolean",
+          "description": "Exec modules only: re-run the command immediately when the shell's working directory changes. Useful with directory-scoped tooling (mise, direnv) so the module reflects the new directory without waiting for the interval.",
+          "examples": [true]
+        },
         "env": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Environment variable names to display (env module).",
-          "examples": [["PTYLINE_ENV", "NODE_ENV"]]
+          "description": "Environment variable names. For the env module, these names are displayed. For exec modules, matching variables are inherited from the active shell (via shell integration) when the command runs; entries may be an exact name (GH_TOKEN) or a prefix with a trailing '*' (GH_*).",
+          "examples": [["PTYLINE_ENV", "NODE_ENV"], ["GH_*", "GITHUB_*", "PATH"]]
         },
         "interval_ms": {
           "type": "integer",

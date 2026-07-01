@@ -92,9 +92,14 @@ func (w *TerminalWriter) SetBarRows(top uint16, count int) {
 func (w *TerminalWriter) RequestRedraw() { w.pendingFrame = true }
 
 // InvalidateBar marks the terminal copy of the bar as unknown. Child output may
-// have cleared or overwritten the reserved rows (for example fish's `clear`), so
-// the next redraw must repaint even when the rendered lines are unchanged.
-func (w *TerminalWriter) InvalidateBar() { w.lastBars = nil }
+// have cleared or overwritten the reserved rows (for example fish's `clear` or a
+// cursor-to-end erase), so the next redraw must repaint even when the rendered
+// lines are unchanged. The rate-limit clock is also reset so the restore is not
+// deferred — a missing bar must not wait up to the redraw interval to reappear.
+func (w *TerminalWriter) InvalidateBar() {
+	w.lastBars = nil
+	w.lastBarAt = time.Time{}
+}
 
 // ClearBar removes the rendered bar (all reserved rows) while preserving the
 // user's cursor position. Called during wrapper shutdown before restoration.
@@ -151,23 +156,58 @@ func (w *TerminalWriter) flushBarFrame(lines []string) error {
 		w.lastBarAt = time.Now()
 		return nil
 	}
-	// Keep the last barCount lines; drop the leading (top) ones when space is tight.
+	frame := terminal.BeginSyncUpdate + w.barPaintBody(lines) + terminal.EndSyncUpdate
+	if err := w.writeAll([]byte(frame)); err != nil {
+		return err
+	}
+	w.markPainted(lines)
+	return nil
+}
+
+// WriteChildFrame writes child output and an immediate bar repaint inside ONE
+// synchronized update. It is used when the child output erased the reserved rows
+// (a cursor-to-end CSI 0 J, e.g. fish redrawing a multiline command or stepping
+// through history): forwarding the erase and repainting in separate terminal
+// frames makes the bar blink blank for a frame, so the two are bracketed together
+// and the bar never renders empty. With no bar (or on the alt screen) it degrades
+// to a plain child write.
+func (w *TerminalWriter) WriteChildFrame(child []byte, lines []string) error {
+	if w.altActive || w.barTop == 0 || w.barCount == 0 {
+		return w.WriteChild(child)
+	}
+	if err := w.writeAll([]byte(terminal.BeginSyncUpdate)); err != nil {
+		return err
+	}
+	if err := w.writeAll(child); err != nil {
+		return err
+	}
+	if err := w.writeAll([]byte(w.barPaintBody(lines) + terminal.EndSyncUpdate)); err != nil {
+		return err
+	}
+	w.markPainted(lines)
+	return nil
+}
+
+// barPaintBody renders the reserved rows between a saved and restored cursor,
+// without the surrounding synchronized-update markers so callers can compose it.
+// When the terminal is too short (barCount < len(lines)), the BOTTOM rows are kept
+// — the content nearest the prompt — and the top decorative rows are dropped.
+func (w *TerminalWriter) barPaintBody(lines []string) string {
 	start := len(lines) - w.barCount
 	if start < 0 {
 		start = 0
 	}
-	frame := terminal.BeginSyncUpdate + terminal.SaveCursor
+	body := terminal.SaveCursor
 	for i := 0; i < w.barCount && start+i < len(lines); i++ {
-		frame += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine + lines[start+i] + terminal.ResetAttrs
+		body += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine + lines[start+i] + terminal.ResetAttrs
 	}
-	frame += terminal.RestoreCursor + terminal.EndSyncUpdate
-	if err := w.writeAll([]byte(frame)); err != nil {
-		return err
-	}
+	return body + terminal.RestoreCursor
+}
+
+func (w *TerminalWriter) markPainted(lines []string) {
 	w.lastBars = append(w.lastBars[:0], lines...)
 	w.lastBarAt = time.Now()
 	w.pendingFrame = false
-	return nil
 }
 
 // equalLines reports whether two rendered bar frames are identical.
