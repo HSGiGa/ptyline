@@ -3,6 +3,13 @@ config_version = 1
 shell = "auto"
 refresh_interval_ms = 1000
 
+[theme]
+# "default" resolves per shell: fish/zsh/bash -> fish/zsh/bash-default palette,
+# powerline for zsh and flat otherwise. Set an explicit name (e.g. "dracula",
+# "catppuccin-mocha", "gruvbox-dark") to pin it regardless of shell.
+color_scheme = "default"
+style = "default"
+
 [icons]
 preset = "nerd-font"
 emoji_width = "auto"
