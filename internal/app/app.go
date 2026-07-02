@@ -590,7 +590,12 @@ func run(opts options) int {
 				return
 			}
 			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
-			ctrl.ApplyScrollRegion(terminal.Size{Cols: cols, Rows: rows}, area)
+			// ApplyScrollRegionAtChildBottom instead of ApplyScrollRegion: on macOS,
+			// shrinking the terminal clamps the cursor into the reserved bar rows.
+			// SaveCursor/RestoreCursor would restore that clamped position right back
+			// into the bar; placing the cursor at the last child row is always safe
+			// and shells reposition the prompt after SIGWINCH regardless.
+			ctrl.ApplyScrollRegionAtChildBottom(terminal.Size{Cols: cols, Rows: rows}, area)
 			_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 		},
 		ShellMeta: func(key, value string) {
