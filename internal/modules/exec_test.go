@@ -141,7 +141,7 @@ func TestExecRefreshWithEnv(t *testing.T) {
 func TestExecRefreshWithDir(t *testing.T) {
 	dir := t.TempDir()
 
-	m := NewExec("exec", "pwd -P", time.Second, time.Second, "{stdout}", "", 0)
+	m := NewExec("exec", "pwd -P", time.Second, time.Second, "{stdout}", "", 512)
 
 	// A real directory becomes the command's cwd (matches the shell's cwd).
 	real, err := filepath.EvalSymlinks(dir)

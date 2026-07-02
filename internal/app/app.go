@@ -17,6 +17,7 @@ import (
 	"github.com/hsgiga/ptyline/internal/app/bar"
 	"github.com/hsgiga/ptyline/internal/command"
 	"github.com/hsgiga/ptyline/internal/config"
+	"github.com/hsgiga/ptyline/internal/diagnostics"
 	"github.com/hsgiga/ptyline/internal/event"
 	"github.com/hsgiga/ptyline/internal/modules"
 	"github.com/hsgiga/ptyline/internal/proxy"
@@ -25,6 +26,7 @@ import (
 	"github.com/hsgiga/ptyline/internal/runtimeenv"
 	"github.com/hsgiga/ptyline/internal/shellintegration"
 	"github.com/hsgiga/ptyline/internal/shellintegration/shellcolors"
+	"github.com/hsgiga/ptyline/internal/snapshot"
 	"github.com/hsgiga/ptyline/internal/status"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
@@ -39,10 +41,18 @@ const ptyDrainGrace = 100 * time.Millisecond
 
 // userModEntry tracks a running user-defined module goroutine (exec or custom-time).
 type userModEntry struct {
-	cancel   context.CancelFunc
-	command  string             // non-empty for exec; used to detect restarts
-	interval time.Duration      // used to detect restarts
-	exec     *execModuleRuntime // nil for custom-time modules
+	cancel    context.CancelFunc
+	configKey string             // serialized ModuleConfig; used to detect restarts
+	exec      *execModuleRuntime // nil for custom-time modules
+}
+
+// modConfigKey returns a deterministic string that changes whenever any field
+// of a ModuleConfig that affects the exec module's behavior changes. Reload
+// compares this key to decide whether to restart the goroutine.
+func modConfigKey(id string, mcfg config.ModuleConfig) string {
+	return fmt.Sprintf("%s|%s|%d|%s|%s|%d|%d|%v|%v|%v",
+		id, mcfg.Command, mcfg.IntervalMS, mcfg.Format, mcfg.Separator,
+		mcfg.MaxWidth, mcfg.TimeoutMS, mcfg.Env, mcfg.RefreshOnCommand, mcfg.RefreshOnCWD)
 }
 
 // Run is the program entrypoint. It returns the process exit code, which for the
@@ -123,6 +133,16 @@ func run(opts options) int {
 	// execEnvNonce authenticates exec_env frames from the shell integration so a
 	// program that only injects bytes into the stream (e.g. a malicious file cat)
 	// cannot forge the environment we run exec-module commands with.
+	//
+	// Threat model: exec_env carries base64-encoded env vars (e.g. tokens for GH_TOKEN,
+	// AWS_SECRET_ACCESS_KEY) that are passed to exec module subprocesses. A nonce in the
+	// frame prevents injection: an attacker printing an OSC 777 exec_env=<payload> from
+	// a file or command output cannot supply the nonce, so the frame is dropped.
+	//
+	// Not protected by the nonce: cwd, command, exit_code, env — these affect only the
+	// status bar display, not the environment that commands run in, so forging them is a
+	// display-only attack (worst case: wrong branch or directory in the bar). Extending
+	// nonce coverage to those keys is a future improvement once the nonce is per-key.
 	execEnvNonce := newNonce()
 	sup.SetEnv("PTYLINE_ENV_NAMES", strings.Join(resolvedCfg.Modules["env"].Env, ","))
 	sup.SetEnv("PTYLINE_EXEC_ENV_NAMES", strings.Join(execEnvNames(resolvedCfg), ","))
@@ -139,6 +159,9 @@ func run(opts options) int {
 	bus := event.NewBus(256)
 	filter := proxy.NewAnsiFilter(area)
 	filter.SetRows(size.Rows)
+	diagState := diagnostics.New()
+	openDebugLog(diagState)
+	filter.SetDiagHandler(func(msg string) { diagState.RecordAnsiWarning(msg) })
 	loop := proxy.NewLoop(bus, filter)
 	writer := proxy.NewTerminalWriter(os.Stdout)
 	top, count := bar.Geometry(area, size.Rows, len(barRows))
@@ -199,14 +222,25 @@ func run(opts options) int {
 	}
 	render := renderer.New(newEngine(int(size.Cols)), visuals.Theme)
 	configureRenderer(render)
+	// animState survives renderer recreations on resize/reload so in-progress
+	// change pulses and glints are not interrupted.
+	var animState *renderer.AnimationState
 	var resizePending bool
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
 		if resizePending {
 			return
 		}
+		state.Diagnostics = diagState.Snapshot()
 		writer.RequestRedraw()
-		_ = writer.FlushBarFrameLazy(renderFn)
+		alt := filter.AltActive()
+		_ = writer.FlushBarFrameLazy(renderFn, alt)
+		// If the frame was deferred by rate-limiting, schedule a one-shot Tick so
+		// the bar is redrawn as soon as the window expires without waiting for the
+		// next user event or module update.
+		if due := writer.PendingRedrawDue(alt); due > 0 {
+			time.AfterFunc(due, func() { bus.SendCtx(ctx, event.Tick{}) })
+		}
 	}
 	altCoord := &altScreenCoordinator{
 		ctrl: ctrl, sup: sup, writer: writer, state: &state, area: &area, redraw: redraw,
@@ -216,6 +250,11 @@ func run(opts options) int {
 	// when cwd changes but the nearest overlay is the same file.
 	var projectOverlayPath atomic.Value
 	projectOverlayPath.Store(initProjectOverlay)
+
+	// projectConfigCache avoids walking parent directories on every cwd change.
+	// Keyed by cwd; cleared on reload so stale entries don't survive a config change.
+	// Accessed only from the event loop goroutine — no locking needed.
+	projectConfigCache := map[string]string{}
 
 	// --- Module lifecycle ---
 	//
@@ -244,9 +283,8 @@ func run(opts options) int {
 		tickerCancel context.CancelFunc
 		probeMods    *probeModManager
 	)
-	userMods := map[string]*userModEntry{}
-	var execModules []*execModuleRuntime
 	var gitRefreshing atomic.Bool
+	var gitPending atomic.Bool
 	var execEnvMu sync.RWMutex
 	execEnv := map[string]string{}
 
@@ -271,28 +309,38 @@ func run(opts options) int {
 		env: execEnvFor,
 		cwd: func() string { s, _ := cwdHolder.Load().(string); return s },
 	}
+	userMods := newUserModSet(ctx, scheduler, &state, bus, execDeps)
 
 	// refreshGitMod runs RefreshAll on the given git module off the event loop and
 	// emits every sub-module snapshot. gm is passed explicitly so callers off the
 	// event loop (the ticker goroutine) never read the shared gitMod variable,
 	// which the loop rewrites on reload.
 	refreshGitMod := func(gm *modules.Git, expectedCWD string) {
+		gitPending.Store(true)
 		if !gitRefreshing.CompareAndSwap(false, true) {
-			return
+			return // worker already running; it will see gitPending when done
 		}
 		go func() {
-			defer gitRefreshing.Store(false)
-			rctx, rcancel := context.WithTimeout(ctx, time.Second)
-			defer rcancel()
-			snaps := gm.RefreshAll(rctx)
-			if expectedCWD != "" {
-				if cur, _ := cwdHolder.Load().(string); cur != expectedCWD {
-					return
+			for gitPending.CompareAndSwap(true, false) {
+				// Re-read expectedCWD on each iteration from the caller's last value.
+				// Since pendingCWD races, use cwdHolder as the freshest source.
+				cwdAtStart, _ := cwdHolder.Load().(string)
+				rctx, rcancel := context.WithTimeout(ctx, time.Second)
+				snaps := gm.RefreshAll(rctx)
+				rcancel()
+				// Discard stale results: if the cwd changed while we were running,
+				// keep pending so the loop runs once more with the current directory.
+				if expectedCWD != "" {
+					if cur, _ := cwdHolder.Load().(string); cur != cwdAtStart {
+						gitPending.Store(true)
+						continue
+					}
+				}
+				for _, snap := range snaps {
+					bus.SendCtx(ctx, event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
 				}
 			}
-			for _, snap := range snaps {
-				bus.SendCtx(ctx, event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
-			}
+			gitRefreshing.Store(false)
 		}()
 	}
 
@@ -332,40 +380,6 @@ func run(opts options) int {
 		bar.StartTicker(tCtx, bus, resolvedCfg.Modules, cmdTracker.Animating(), &changeAnimating)
 	}
 
-	rebuildExecModules := func() {
-		var em []*execModuleRuntime
-		for _, entry := range userMods {
-			if entry.exec != nil {
-				em = append(em, entry.exec)
-			}
-		}
-		execModules = em
-	}
-
-	startUserMod := func(id string, mcfg config.ModuleConfig) {
-		src := config.ModuleSource(id, mcfg)
-		interval := moduleInterval(mcfg, time.Second)
-		mCtx, mCancel := context.WithCancel(ctx)
-		switch src {
-		case "exec":
-			if mcfg.Command == "" {
-				mCancel()
-				return
-			}
-			em := newExecModuleRuntime(id, mcfg, execDeps)
-			em.start(mCtx, bus)
-			state.UpdateModule(em.refreshSnapshot(context.Background()))
-			userMods[id] = &userModEntry{cancel: mCancel, command: mcfg.Command, interval: interval, exec: em}
-		case "time":
-			tm := modules.NewTimeWithID(id, mcfg.Format, interval)
-			scheduler.Start(mCtx, tm, 2*time.Second)
-			state.UpdateModule(tm.Refresh(context.Background()))
-			userMods[id] = &userModEntry{cancel: mCancel, interval: interval}
-		default:
-			mCancel()
-		}
-	}
-
 	// initModules creates the built-in modules and starts all goroutines. Called
 	// exactly once at startup.
 	initModules := func() {
@@ -403,13 +417,8 @@ func run(opts options) int {
 		}, probeModRegistry)
 		probeMods.Reconcile(resolvedCfg)
 
-		for id, mcfg := range resolvedCfg.Modules {
-			if config.ModuleSource(id, mcfg) == "" {
-				continue // skip built-in IDs that have no user-defined source
-			}
-			startUserMod(id, mcfg)
-		}
-		rebuildExecModules()
+		// User-defined exec and custom-time modules.
+		userMods.Reconcile(resolvedCfg)
 		restartTicker()
 	}
 
@@ -465,42 +474,12 @@ func run(opts options) int {
 		// match the new config (enabled toggles, interval/format changes).
 		probeMods.Reconcile(resolvedCfg)
 
-		// User-defined: build the desired set from new config.
-		newUserCfg := map[string]config.ModuleConfig{}
-		for id, mcfg := range resolvedCfg.Modules {
-			src := config.ModuleSource(id, mcfg)
-			if (src == "exec" && mcfg.Command != "") || src == "time" {
-				newUserCfg[id] = mcfg
-			}
-		}
+		// User-defined exec and custom-time modules: diff by ID + full config key.
+		userMods.Reconcile(resolvedCfg)
 
-		// Cancel goroutines for removed modules.
-		for id, entry := range userMods {
-			if _, stillExists := newUserCfg[id]; !stillExists {
-				entry.cancel()
-				delete(userMods, id)
-			}
-		}
-
-		// Update existing modules or start new ones.
-		for id, mcfg := range newUserCfg {
-			newInterval := moduleInterval(mcfg, time.Second)
-			if existing, exists := userMods[id]; exists {
-				needsRestart := newInterval != existing.interval
-				if config.ModuleSource(id, mcfg) == "exec" {
-					needsRestart = needsRestart || mcfg.Command != existing.command
-				}
-				if !needsRestart {
-					// Goroutine keeps running; format changes are picked up via
-					// configureRenderer (templates/animations) on the next redraw.
-					continue
-				}
-				existing.cancel()
-				delete(userMods, id)
-			}
-			startUserMod(id, mcfg)
-		}
-		rebuildExecModules()
+		// Rebuild cmdTracker so animation/threshold config from the new resolvedCfg
+		// takes effect immediately (it is only read/written from the event loop).
+		cmdTracker = command.NewTracker(resolvedCfg.Modules["command"])
 
 		// Ticker needs the updated animation config.
 		restartTicker()
@@ -514,42 +493,33 @@ func run(opts options) int {
 		}
 	}
 
-	// reloadConfig rebuilds the resolved config and bar. force=true skips the
-	// project-path equality guard (used on explicit --reload). Returns true when
-	// the config was successfully applied. Called from the event loop goroutine,
-	// so no locking is needed for closure-captured variables.
-	reloadConfig := func(newProjectPath string, force bool) bool {
-		old, _ := projectOverlayPath.Load().(string)
-		if !force && old == newProjectPath {
-			return false
-		}
-		projectOverlayPath.Store(newProjectPath)
-		newCfg, err := config.ApplyOverlays(cfg, cliOverlay, newProjectPath)
-		if err != nil {
-			return false // keep running with old config on parse error
-		}
-		resolvedCfg = newCfg
-		newBarRows := bar.BuildRows(resolvedCfg)
-		newArea := reserved.Area{Edge: reserved.Bottom, Rows: uint16(len(newBarRows))}
-		if newArea.Rows != area.Rows {
-			curSize := terminal.Size{Cols: state.Terminal.Cols, Rows: state.Terminal.Rows}
-			_ = writer.ClearBar()
-			area = newArea
-			filter.SetArea(area)
-			sup.SetArea(area)
-			top, count := bar.Geometry(area, curSize.Rows, len(newBarRows))
-			writer.SetBarRows(top, count)
-			_ = sup.Resize(pty.Size{Cols: curSize.Cols, Rows: curSize.Rows})
-			ctrl.ApplyScrollRegion(curSize, area)
-		}
-		barRows = newBarRows
-		if newVisuals, err := bar.VisualsFromConfig(resolvedCfg, colorMode(profile.Capabilities.Color), opts.ConfigPath); err == nil {
-			visuals = newVisuals
-		}
-		render = renderer.New(newEngine(int(state.Terminal.Cols)), visuals.Theme)
-		configureRenderer(render)
-		updateModules()
-		return true
+	// as bundles pointers to the mutable variables captured by closures so that
+	// reloadConfig can be a testable method on appState rather than a 40-line
+	// closure. The pointers share the same backing storage as the locals above,
+	// so existing closures continue to read/write the local variables directly
+	// while the method updates them through the pointers (ARCHITECTURE.md §A1).
+	as := &appState{
+		cfg:                cfg,
+		cliOverlay:         cliOverlay,
+		resolvedCfg:        &resolvedCfg,
+		area:               &area,
+		barRows:            &barRows,
+		visuals:            &visuals,
+		render:             &render,
+		animState:          &animState,
+		projectOverlayPath: &projectOverlayPath,
+		projectConfigCache: &projectConfigCache,
+		diagState:          diagState,
+		writer:             writer,
+		filter:             filter,
+		ctrl:               ctrl,
+		sup:                sup,
+		profile:            profile,
+		opts:               opts,
+		termState:          &state,
+		newEngine:          newEngine,
+		configureRenderer:  configureRenderer,
+		updateModules:      updateModules,
 	}
 
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -583,7 +553,7 @@ func run(opts options) int {
 		// writes the output and repaints the bar in one synchronized frame so the
 		// bar never blinks blank (spec §8.4).
 		WriteOutputFramed: func(data []byte) error {
-			if err := writer.WriteChildFrame(data, renderFn()); err != nil {
+			if err := writer.WriteChildFrame(data, renderFn(), filter.AltActive()); err != nil {
 				return err
 			}
 			if len(data) > 0 {
@@ -610,7 +580,8 @@ func run(opts options) int {
 			state.Resize(cols, rows, alt)
 			top, count := bar.Geometry(area, rows, len(barRows))
 			writer.SetBarRows(top, count)
-			render = renderer.New(newEngine(int(cols)), visuals.Theme)
+			animState = render.TakeAnimationState()
+			render = renderer.NewWithState(newEngine(int(cols)), visuals.Theme, animState)
 			configureRenderer(render)
 			if alt {
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
@@ -653,14 +624,18 @@ func run(opts options) int {
 				// command sees the new directory's environment and the bar updates
 				// immediately — cwd arrives without the one-prompt lag that mirrored env
 				// has under mise.
-				for _, m := range execModules {
+				for _, m := range userMods.ExecModules() {
 					if m.refreshOnCWD {
 						m.refresh(ctx, bus)
 					}
 				}
 				if !opts.NoProjectPtyline {
-					newPath, _ := config.FindProjectConfig(state.Shell.CWD)
-					reloadConfig(newPath, false)
+					newPath, cached := projectConfigCache[state.Shell.CWD]
+					if !cached {
+						newPath, _ = config.FindProjectConfig(state.Shell.CWD)
+						projectConfigCache[state.Shell.CWD] = newPath
+					}
+					as.reloadConfig(newPath, false)
 				}
 			}
 			if key == shellintegration.KeyEnv {
@@ -685,7 +660,7 @@ func run(opts options) int {
 					// immediately and reliably. Scoped to modules that mirror a
 					// changed variable, and only on change, so it never storms.
 					if len(changed) > 0 {
-						for _, m := range execModules {
+						for _, m := range userMods.ExecModules() {
 							if m.mirrorsAny(changed) {
 								m.refresh(ctx, bus)
 							}
@@ -695,7 +670,7 @@ func run(opts options) int {
 			}
 			if key == shellintegration.KeyExitCode {
 				if shouldRefreshAfterExit(value, pendingRefreshCommand, state.Shell.LastCommand) {
-					for _, m := range execModules {
+					for _, m := range userMods.ExecModules() {
 						m.refreshAfterCommand(ctx, bus, pendingRefreshCommand)
 					}
 				}
@@ -718,10 +693,8 @@ func run(opts options) int {
 				}
 			}
 		},
-		ModuleUpdated: func(_ string, snapshot any) {
-			if snap, ok := snapshot.(status.ModuleSnapshot); ok {
-				state.UpdateModule(snap)
-			}
+		ModuleUpdated: func(_ string, snap snapshot.ModuleSnapshot) {
+			state.UpdateModule(snap)
 		},
 		Tick: func() {
 			state.AnimationPhase++
@@ -734,17 +707,25 @@ func run(opts options) int {
 		},
 		Redraw:        redraw,
 		InvalidateBar: writer.InvalidateBar,
-		Terminate:     func(sig string) { _ = sup.TerminateGroup(sig) },
+		ScrollReset: func() {
+			// ESC c / CSI ! p: filter already substituted a clear-child-area sequence;
+			// now re-establish the scroll region so the bar rows stay protected.
+			size := terminal.Size{Cols: state.Terminal.Cols, Rows: state.Terminal.Rows}
+			ctrl.ApplyScrollRegion(size, area)
+			writer.InvalidateBar()
+		},
+		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
 		ConfigReload: func() {
 			newBase, err := config.Load(opts.ConfigPath)
 			if err != nil {
+				diagState.RecordConfigWarning(fmt.Sprintf("reload %s: %v", opts.ConfigPath, err))
 				return // keep running on bad config
 			}
-			prevCfg := cfg
-			cfg = newBase
-			currentPath, _ := projectOverlayPath.Load().(string)
-			if !reloadConfig(currentPath, true) {
-				cfg = prevCfg // ApplyOverlays failed: restore base to stay consistent
+			prevCfg := as.cfg
+			as.cfg = newBase
+			currentPath, _ := as.projectOverlayPath.Load().(string)
+			if !as.reloadConfig(currentPath, true) {
+				as.cfg = prevCfg // ApplyOverlays failed: restore base to stay consistent
 			}
 		},
 	})

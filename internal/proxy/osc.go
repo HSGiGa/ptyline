@@ -30,7 +30,9 @@ const (
 var oscAllowedKeys = shellintegration.AllowedSet()
 
 // parseOSC777 splits and validates a "key=value" payload. It rejects unknown
-// keys, oversized payloads, and any value containing control characters (spec §9).
+// keys and oversized payloads. Values with control characters are rejected
+// except for the "command" key, where newlines and tabs are collapsed to spaces
+// so multiline shell commands are tracked rather than dropped (spec §9).
 // It is called from the filter's OSC branch (handleOSC); future agent events
 // (agent.started/update/done, spec §24.5) reuse the same channel with structured
 // keys.
@@ -39,10 +41,34 @@ func parseOSC777(payload string) (key, value string, ok bool) {
 		return "", "", false
 	}
 	k, v, found := strings.Cut(payload, "=")
-	if !found || !oscAllowedKeys[k] || hasControlChars(v) {
+	if !found || !oscAllowedKeys[k] {
+		return "", "", false
+	}
+	if k == shellintegration.KeyCommand {
+		v = sanitizeCommandValue(v)
+	} else if hasControlChars(v) {
 		return "", "", false
 	}
 	return k, v, true
+}
+
+// sanitizeCommandValue collapses whitespace control characters (newlines, tabs,
+// carriage returns) to spaces so multiline commands survive the OSC frame
+// without dropping the entire event. Other C0/C1 control characters are stripped.
+func sanitizeCommandValue(v string) string {
+	var b strings.Builder
+	b.Grow(len(v))
+	for _, r := range v {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			b.WriteByte(' ')
+		case r < 0x20 || (r >= 0x7f && r <= 0x9f):
+			// strip other control chars
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // hasControlChars reports whether s contains C0/C1 control characters, which are

@@ -12,7 +12,15 @@
 # here. ptyline uses its default palette which matches common zsh prompt conventions.
 
 __ptyline_emit() { printf '\e]777;%s=%s\e\\' "$1" "$2"; }
-__ptyline_now_ms() { date +%s%3N; }
+# zsh has $EPOCHREALTIME via zsh/datetime; avoids GNU-only date +%s%3N on macOS.
+__ptyline_now_ms() {
+    zmodload zsh/datetime 2>/dev/null
+    if (( ${+EPOCHREALTIME} )); then
+        printf '%.0f\n' $(( EPOCHREALTIME * 1000 ))
+    else
+        printf '%s000\n' "$(date +%s)"
+    fi
+}
 __ptyline_emit_env() {
     [ -z "$PTYLINE_ENV_NAMES" ] && return
     local __ptyline_name __ptyline_value __ptyline_out __ptyline_count
@@ -100,7 +108,11 @@ __ptyline_emit_exec_env
 # Wrap ssh to report outbound connections to the ptyline status bar.
 # Use `command ssh` to bypass this wrapper when needed.
 ssh() {
-    __ptyline_emit ssh_start "${@[-1]}"
+    local _ptyline_host=
+    for _ptyline_a in "$@"; do
+        case "$_ptyline_a" in -*) ;; *) _ptyline_host=$_ptyline_a; break ;; esac
+    done
+    __ptyline_emit ssh_start "$_ptyline_host"
     command ssh "$@"
     local _code=$?
     __ptyline_emit ssh_end ""

@@ -145,33 +145,86 @@ func TestGitCleanRepoDirtyEmpty(t *testing.T) {
 	}
 }
 
-// TestGitAheadBehind verifies ahead/behind parsing from the branch header line.
-func TestGitAheadBehind(t *testing.T) {
-	cases := []struct {
-		line   string
+// TestGitV2BranchParsing verifies porcelain v2 header parsing for branch name,
+// ahead, and behind counts. The v2 branch lines are unambiguous regardless of
+// branch names that contain "..." or "[" (unlike the v1 ## header).
+func TestGitV2BranchParsing(t *testing.T) {
+	type tc struct {
+		lines  []string
 		branch string
 		ahead  int
 		behind int
-	}{
-		{"main...origin/main [ahead 2, behind 1]", "main", 2, 1},
-		{"main...origin/main [ahead 3]", "main", 3, 0},
-		{"main...origin/main [behind 4]", "main", 0, 4},
-		{"main...origin/main", "main", 0, 0},
-		{"main", "main", 0, 0},
-		{"No commits yet on main", "main", 0, 0},
 	}
-	for _, tc := range cases {
+	cases := []tc{
+		{
+			lines:  []string{"# branch.head main", "# branch.ab +2 -1"},
+			branch: "main", ahead: 2, behind: 1,
+		},
+		{
+			lines:  []string{"# branch.head feat/foo...bar", "# branch.ab +3 -0"},
+			branch: "feat/foo...bar", ahead: 3, behind: 0,
+		},
+		{
+			lines:  []string{"# branch.head feat/foo [wip]", "# branch.ab +0 -4"},
+			branch: "feat/foo [wip]", ahead: 0, behind: 4,
+		},
+		{
+			lines:  []string{"# branch.head main"},
+			branch: "main", ahead: 0, behind: 0,
+		},
+		{
+			lines:  []string{"# branch.head (detached)"},
+			branch: "", ahead: 0, behind: 0,
+		},
+	}
+	for _, c := range cases {
 		d := &gitData{}
-		parseBranchLine(tc.line, d)
-		if d.Branch != tc.branch {
-			t.Errorf("parseBranchLine(%q) branch = %q, want %q", tc.line, d.Branch, tc.branch)
+		for _, line := range c.lines {
+			parsePortcelainV2Line(line, d)
 		}
-		if d.Ahead != tc.ahead {
-			t.Errorf("parseBranchLine(%q) ahead = %d, want %d", tc.line, d.Ahead, tc.ahead)
+		if d.Branch != c.branch {
+			t.Errorf("branch = %q, want %q (lines %v)", d.Branch, c.branch, c.lines)
 		}
-		if d.Behind != tc.behind {
-			t.Errorf("parseBranchLine(%q) behind = %d, want %d", tc.line, d.Behind, tc.behind)
+		if d.Ahead != c.ahead {
+			t.Errorf("ahead = %d, want %d (lines %v)", d.Ahead, c.ahead, c.lines)
 		}
+		if d.Behind != c.behind {
+			t.Errorf("behind = %d, want %d (lines %v)", d.Behind, c.behind, c.lines)
+		}
+	}
+}
+
+// TestGitV2StatusCounts verifies porcelain v2 status entry parsing.
+func TestGitV2StatusCounts(t *testing.T) {
+	lines := []string{
+		"# branch.head main",
+		"1 .M N... 100644 100644 100644 aaa bbb file1.go",     // modified work-tree only
+		"1 M. N... 100644 100644 100644 aaa bbb file2.go",     // staged only
+		"1 MM N... 100644 100644 100644 aaa bbb file3.go",     // staged + modified
+		"2 R. N... 100644 100644 100644 aaa bbb R50 file4.go\tfile4_orig.go", // renamed staged
+		"u UU N... 100644 100644 100644 100644 aaa bbb ccc file5.go",        // conflict
+		"u AA N... 100644 100644 100644 100644 aaa bbb ccc file6.go",        // conflict
+		"? untracked.txt",
+		"? another.txt",
+	}
+	d := &gitData{}
+	for _, line := range lines {
+		parsePortcelainV2Line(line, d)
+	}
+	if d.Branch != "main" {
+		t.Errorf("branch = %q, want main", d.Branch)
+	}
+	if d.Staged != 3 { // file2, file3, file4 (renamed staged)
+		t.Errorf("staged = %d, want 3", d.Staged)
+	}
+	if d.Modified != 2 { // file1, file3
+		t.Errorf("modified = %d, want 2", d.Modified)
+	}
+	if d.Conflict != 2 { // file5, file6
+		t.Errorf("conflict = %d, want 2", d.Conflict)
+	}
+	if d.Untracked != 2 {
+		t.Errorf("untracked = %d, want 2", d.Untracked)
 	}
 }
 

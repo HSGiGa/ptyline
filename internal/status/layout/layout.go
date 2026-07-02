@@ -2,71 +2,54 @@
 // renders a one-line format string, that string is parsed into renderable blocks
 // with layout metadata so multi-line, priority overflow, and compact variants
 // work later without a redesign (spec §8.8, ARCHITECTURE.md §7, §8).
+//
+// Block, Anchor, Align, Width, WidthKind, and ParseFormat live in the sibling
+// package internal/format so that config validation can import them without
+// creating a config → status/layout dependency cycle.
 package layout
 
 import (
 	"sort"
-	"strconv"
-	"strings"
+
+	"github.com/hsgiga/ptyline/internal/format"
 )
 
-// Anchor is the terminal side a block is pinned to.
-type Anchor string
+// Type aliases let all existing callers continue to use layout.Block,
+// layout.Anchor, etc. without change, while the canonical definitions live in
+// the leaf package internal/format.
+type (
+	Block     = format.Block
+	Anchor    = format.Anchor
+	Align     = format.Align
+	Width     = format.Width
+	WidthKind = format.WidthKind
+)
 
+// Re-export Anchor constants so callers need not import internal/format directly.
 const (
-	AnchorLeft   Anchor = "left"
-	AnchorCenter Anchor = "center"
-	AnchorRight  Anchor = "right"
+	AnchorLeft   Anchor = format.AnchorLeft
+	AnchorCenter Anchor = format.AnchorCenter
+	AnchorRight  Anchor = format.AnchorRight
 )
 
-// Align is text alignment within a block's allocated area.
-type Align string
-
+// Re-export Align constants.
 const (
-	AlignLeft   Align = "left"
-	AlignCenter Align = "center"
-	AlignRight  Align = "right"
+	AlignLeft   Align = format.AlignLeft
+	AlignCenter Align = format.AlignCenter
+	AlignRight  Align = format.AlignRight
 )
 
-// WidthKind enumerates width unit types (spec §8.8).
-type WidthKind int
-
+// Re-export WidthKind constants.
 const (
-	WidthAuto    WidthKind = iota // size to content
-	WidthFill                     // take remaining space
-	WidthCells                    // fixed N cells
-	WidthPercent                  // N% of bar width
+	WidthAuto    = format.WidthAuto
+	WidthFill    = format.WidthFill
+	WidthCells   = format.WidthCells
+	WidthPercent = format.WidthPercent
 )
 
-// Width is a resolved width spec.
-type Width struct {
-	Kind  WidthKind
-	Value int // cells or percent depending on Kind
-}
-
-// Block is one renderable unit with layout metadata. Priority drives graceful
-// degradation when the terminal is narrow (ARCHITECTURE.md §8). A block is either a
-// module reference (ModuleID set) or a literal run of text (Text set, ModuleID
-// empty) produced by parsing the format string.
-type Block struct {
-	ModuleID  string
-	Text      string // literal content when ModuleID == ""
-	Separator bool
-	Anchor    Anchor
-	Align     Align
-	Width     Width
-	MinWidth  int
-	MaxWidth  int
-	Truncate  string
-	Priority  int
-	StyleID   string
-}
-
-// IsLiteral reports whether the block is a literal text run (no module).
-func (b Block) IsLiteral() bool { return b.ModuleID == "" && !b.Separator }
-
-// IsSeparator reports whether the block is a separator marker (`|` in format).
-func (b Block) IsSeparator() bool { return b.Separator }
+// ParseFormat delegates to the format package. It is kept here for backward
+// compatibility; prefer calling format.ParseFormat directly in new code.
+func ParseFormat(s string) []Block { return format.ParseFormat(s) }
 
 // Engine assigns each block a cell range given the total bar width.
 type Engine struct {
@@ -216,225 +199,6 @@ func (e *Engine) resolveWidth(b Block, natural int) int {
 		w = 0
 	}
 	return w
-}
-
-// ParseFormat turns a placeholder template into ordered blocks. `||` splits the
-// template into anchor sections (1 → left; 2 → left,right; 3 → left,center,right),
-// `{name}` placeholders become module blocks, literal text becomes literal blocks,
-// `|` inserts a separator marker, and `\|` is a literal pipe character (spec §13.1).
-func ParseFormat(format string) []Block {
-	tokens := tokenize(format)
-
-	var sections [][]Block
-	var current []Block
-	for _, t := range tokens {
-		switch t.kind {
-		case tokSplit:
-			sections = append(sections, current)
-			current = nil
-		case tokSep:
-			trimTrailingSpace(&current)
-			current = append(current, separatorBlock(""))
-		case tokPlaceholder:
-			current = append(current, placeholderBlock(t.text, ""))
-		case tokLiteral:
-			text := t.text
-			if len(current) > 0 && current[len(current)-1].IsSeparator() {
-				text = strings.TrimLeft(text, " \t")
-			}
-			if text != "" {
-				current = append(current, literalBlock(text, ""))
-			}
-		}
-	}
-	sections = append(sections, current)
-
-	anchors := sectionAnchors(len(sections))
-	var blocks []Block
-	for i, section := range sections {
-		for j := range section {
-			if section[j].Anchor == "" {
-				section[j].Anchor = anchors[i]
-			}
-		}
-		blocks = append(blocks, section...)
-	}
-	return blocks
-}
-
-// tokKind identifies token categories produced by the format string scanner.
-type tokKind int
-
-const (
-	tokLiteral     tokKind = iota // run of literal text (escape-decoded)
-	tokPlaceholder                // {name} or {name:spec} expression
-	tokSep                        // | separator marker within a section
-	tokSplit                      // || section boundary (left/center/right)
-)
-
-type fmtTok struct {
-	kind tokKind
-	text string // set for tokLiteral and tokPlaceholder
-}
-
-// tokenize scans a format string into a flat token stream. Escape rule: \| is a
-// literal |; all other \ sequences are passed through as-is.
-func tokenize(format string) []fmtTok {
-	var tokens []fmtTok
-	i := 0
-	for i < len(format) {
-		switch {
-		case format[i] == '|' && i+1 < len(format) && format[i+1] == '|':
-			tokens = append(tokens, fmtTok{kind: tokSplit})
-			i += 2
-		case format[i] == '|':
-			tokens = append(tokens, fmtTok{kind: tokSep})
-			i++
-		case format[i] == '{':
-			close := strings.IndexByte(format[i:], '}')
-			if close < 0 {
-				tokens = append(tokens, fmtTok{kind: tokLiteral, text: format[i:]})
-				i = len(format)
-			} else {
-				close += i
-				tokens = append(tokens, fmtTok{kind: tokPlaceholder, text: format[i+1 : close]})
-				i = close + 1
-			}
-		default:
-			var b strings.Builder
-			for i < len(format) {
-				if format[i] == '|' || format[i] == '{' {
-					break
-				}
-				if format[i] == '\\' && i+1 < len(format) && format[i+1] == '|' {
-					b.WriteByte('|')
-					i += 2
-				} else {
-					b.WriteByte(format[i])
-					i++
-				}
-			}
-			tokens = append(tokens, fmtTok{kind: tokLiteral, text: b.String()})
-		}
-	}
-	return tokens
-}
-
-func sectionAnchors(n int) []Anchor {
-	switch n {
-	case 1:
-		return []Anchor{AnchorLeft}
-	case 2:
-		return []Anchor{AnchorLeft, AnchorRight}
-	default: // 3 or more: extra sections fold into the right anchor
-		out := []Anchor{AnchorLeft, AnchorCenter, AnchorRight}
-		for len(out) < n {
-			out = append(out, AnchorRight)
-		}
-		return out
-	}
-}
-
-func trimTrailingSpace(blocks *[]Block) {
-	if len(*blocks) == 0 {
-		return
-	}
-	last := &(*blocks)[len(*blocks)-1]
-	if !last.IsLiteral() {
-		return
-	}
-	last.Text = strings.TrimRight(last.Text, " \t")
-	if last.Text == "" {
-		*blocks = (*blocks)[:len(*blocks)-1]
-	}
-}
-
-func placeholderBlock(expr string, anchor Anchor) Block {
-	name, spec, hasSpec := strings.Cut(expr, ":")
-	block := Block{
-		ModuleID: name,
-		Anchor:   anchor,
-		Align:    AlignLeft,
-		Width:    Width{Kind: WidthAuto},
-		Truncate: "right",
-	}
-	if !hasSpec {
-		return block
-	}
-	// {name:>}  {name:^}  → anchor override, WidthAuto (block moves to right/center, order-safe)
-	// {name:<}  → no-op: block stays in its section anchor (documents intent, no reorder)
-	if len(spec) == 1 {
-		switch spec[0] {
-		case '>':
-			block.Anchor = AnchorRight
-		case '^':
-			block.Anchor = AnchorCenter
-		case '<':
-			// no-op: keep section anchor
-		default:
-			return block
-		}
-		return block
-	}
-	// {name:>20%}  → WidthPercent + align
-	if strings.HasSuffix(spec[1:], "%") {
-		pct, err := strconv.Atoi(strings.TrimSuffix(spec[1:], "%"))
-		if err != nil || pct <= 0 || pct > 100 {
-			return block
-		}
-		switch spec[0] {
-		case '<':
-			block.Align = AlignLeft
-		case '^':
-			block.Align = AlignCenter
-		case '>':
-			block.Align = AlignRight
-		default:
-			return block
-		}
-		block.Width = Width{Kind: WidthPercent, Value: pct}
-		return block
-	}
-	// {name:>8}  → WidthCells + align
-	cells, err := strconv.Atoi(spec[1:])
-	if err != nil || cells <= 0 {
-		return block
-	}
-	switch spec[0] {
-	case '<':
-		block.Align = AlignLeft
-	case '^':
-		block.Align = AlignCenter
-	case '>':
-		block.Align = AlignRight
-	default:
-		return block
-	}
-	block.Width = Width{Kind: WidthCells, Value: cells}
-	return block
-}
-
-func literalBlock(text string, anchor Anchor) Block {
-	return Block{
-		Text:     text,
-		Anchor:   anchor,
-		Align:    AlignLeft,
-		Width:    Width{Kind: WidthAuto},
-		Truncate: "none",
-		// Literals (separators, spacing) are kept ahead of modules under pressure.
-		Priority: 1,
-	}
-}
-
-func separatorBlock(anchor Anchor) Block {
-	return Block{
-		Separator: true,
-		Anchor:    anchor,
-		Align:     AlignLeft,
-		Width:     Width{Kind: WidthAuto},
-		Truncate:  "none",
-		Priority:  1,
-	}
 }
 
 // anchorDropOrder returns a tiebreaker value used in arrange's sort: higher =

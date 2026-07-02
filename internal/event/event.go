@@ -7,7 +7,11 @@
 // added without rewriting the application core. See ARCHITECTURE.md.
 package event
 
-import "context"
+import (
+	"context"
+
+	"github.com/hsgiga/ptyline/internal/snapshot"
+)
 
 // AppEvent is the closed set of events the loop reacts to. It is a sealed
 // interface: implementers live in this package so the loop can exhaustively
@@ -38,12 +42,10 @@ type ShellMeta struct {
 	Value string
 }
 
-// ModuleUpdated reports that a module produced a new snapshot. The payload is
-// kept as any to avoid a dependency cycle with package status; the loop asserts
-// the concrete type.
+// ModuleUpdated reports that a module produced a new snapshot.
 type ModuleUpdated struct {
 	ID       string
-	Snapshot any
+	Snapshot snapshot.ModuleSnapshot
 }
 
 // ChildExited reports the child process exit code.

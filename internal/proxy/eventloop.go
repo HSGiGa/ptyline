@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"github.com/hsgiga/ptyline/internal/event"
+	"github.com/hsgiga/ptyline/internal/snapshot"
 )
 
 // Handlers contain the side effects owned by the application wiring. Loop keeps
@@ -16,12 +17,16 @@ type Handlers struct {
 	ResizeRequest     func(cols, rows uint16)
 	ResizeCommit      func(cols, rows uint16)
 	ShellMeta         func(key, value string)
-	ModuleUpdated     func(id string, snapshot any)
+	ModuleUpdated     func(id string, snap snapshot.ModuleSnapshot)
 	Tick              func()
 	Redraw            func()
 	InvalidateBar     func()
-	Terminate         func(signal string)
-	ConfigReload      func()
+	// ScrollReset is called when the child sent ESC c (RIS) or CSI ! p (DECSTR),
+	// which would reset the terminal scroll region. The handler must re-apply the
+	// scroll region and invalidate the bar so it is repainted on the next Redraw.
+	ScrollReset func()
+	Terminate   func(signal string)
+	ConfigReload func()
 }
 
 // Loop is the single select-driven event loop. It multiplexes every input source
@@ -63,6 +68,9 @@ func (l *Loop) Run() (exitCode int, err error) {
 			// here would break any program that reads stdin EOF (cat, REPLs, ssh).
 			if l.h.WriteInput != nil {
 				if err := l.h.WriteInput(e.Data); err != nil {
+					if l.h.Terminate != nil {
+						l.h.Terminate("SIGTERM")
+					}
 					return 1, err
 				}
 			}
@@ -78,19 +86,29 @@ func (l *Loop) Run() (exitCode int, err error) {
 				// alt-screen-transition case, fall back to a plain write plus an
 				// invalidate so the redraw below still restores the bar.
 				clobbered := l.filter.TakeBarClobbered()
-				if clobbered && !deferred && l.h.WriteOutputFramed != nil {
+				scrollReset := l.filter.TakeScrollReset()
+				if clobbered && !deferred && !scrollReset && l.h.WriteOutputFramed != nil {
 					if err := l.h.WriteOutputFramed(output); err != nil {
+						if l.h.Terminate != nil {
+							l.h.Terminate("SIGTERM")
+						}
 						return 1, err
 					}
 				} else {
 					if l.h.WriteOutput != nil {
 						if err := l.h.WriteOutput(output); err != nil {
+							if l.h.Terminate != nil {
+								l.h.Terminate("SIGTERM")
+							}
 							return 1, err
 						}
 					}
 					if clobbered && l.h.InvalidateBar != nil {
 						l.h.InvalidateBar()
 					}
+				}
+				if scrollReset && l.h.ScrollReset != nil {
+					l.h.ScrollReset()
 				}
 				l.applyFilterMeta()
 				if !deferred {

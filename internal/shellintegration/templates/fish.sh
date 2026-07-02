@@ -116,7 +116,13 @@ end
 # Wrap ssh to report outbound connections to the ptyline status bar.
 # Use `command ssh` to bypass this wrapper when needed.
 function ssh
-    __ptyline_emit ssh_start $argv[-1]
+    set -l _ptyline_host ""
+    for _ptyline_a in $argv
+        string match -q -- '-*' $_ptyline_a; and continue
+        set _ptyline_host $_ptyline_a
+        break
+    end
+    __ptyline_emit ssh_start "$_ptyline_host"
     command ssh $argv
     set -l _code $status
     __ptyline_emit ssh_end ""

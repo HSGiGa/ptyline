@@ -25,9 +25,11 @@ const maxBarRedrawHz = 20
 //
 // All terminal writes in the program must go through one TerminalWriter instance.
 // It is only ever touched from the event-loop goroutine, so it needs no lock.
+//
+// Alt-screen state is NOT tracked here; callers pass it explicitly so the single
+// source of truth remains AnsiFilter.AltActive().
 type TerminalWriter struct {
 	out          io.Writer
-	altActive    bool
 	barTop       uint16    // 1-based first bar row
 	barCount     int       // number of reserved bar rows
 	lastBars     []string  // last bar lines written, to skip no-op redraws (spec §16)
@@ -65,16 +67,15 @@ func (w *TerminalWriter) WriteChild(b []byte) error {
 	return w.writeAll(b)
 }
 
-// SetAltActive toggles alternate-screen mode. While active, bar frames are
-// suppressed and any pending redraw is dropped (spec §11).
-func (w *TerminalWriter) SetAltActive(active bool) {
-	w.altActive = active
-	if active {
-		w.pendingFrame = false
-		// Force a redraw on return to the normal screen.
-		w.lastBars = nil
-		w.lastBarAt = time.Time{}
-	}
+// OnAltEnter is called when the child enters the alternate screen. It cancels
+// any pending bar redraw and resets the repaint cache so the bar is fully
+// redrawn on the next normal-screen frame (spec §11). The caller is responsible
+// for passing alt=true to subsequent FlushBarFrame* and WriteChildFrame calls.
+func (w *TerminalWriter) OnAltEnter() {
+	w.pendingFrame = false
+	// Force a full repaint on return to the normal screen.
+	w.lastBars = nil
+	w.lastBarAt = time.Time{}
 }
 
 // SetBarRows records the 1-based first bar row and how many rows the bar spans
@@ -122,8 +123,9 @@ func (w *TerminalWriter) ClearBar() error {
 // When the terminal is too short to show every row (barCount < len(lines)), the
 // BOTTOM rows are kept — the content nearest the prompt — and the top decorative
 // rows are dropped, so a short terminal never paints past its last row.
-func (w *TerminalWriter) FlushBarFrame(lines []string) error {
-	if !w.readyForBarFrame() {
+// alt must reflect AnsiFilter.AltActive(); the writer no longer tracks this itself.
+func (w *TerminalWriter) FlushBarFrame(lines []string, alt bool) error {
+	if !w.readyForBarFrame(alt) {
 		return nil
 	}
 	return w.flushBarFrame(lines)
@@ -133,21 +135,40 @@ func (w *TerminalWriter) FlushBarFrame(lines []string) error {
 // only when a frame is actually eligible to be emitted. This keeps high-rate PTY
 // output from paying layout/render costs for frames that the rate limiter will
 // suppress.
-func (w *TerminalWriter) FlushBarFrameLazy(render func() []string) error {
-	if !w.readyForBarFrame() {
+// alt must reflect AnsiFilter.AltActive(); the writer no longer tracks this itself.
+func (w *TerminalWriter) FlushBarFrameLazy(render func() []string, alt bool) error {
+	if !w.readyForBarFrame(alt) {
 		return nil
 	}
 	return w.flushBarFrame(render())
 }
 
-func (w *TerminalWriter) readyForBarFrame() bool {
-	if w.altActive || !w.pendingFrame || w.barTop == 0 || w.barCount == 0 {
+func (w *TerminalWriter) readyForBarFrame(alt bool) bool {
+	if alt || !w.pendingFrame || w.barTop == 0 || w.barCount == 0 {
 		return false
 	}
 	if !w.lastBarAt.IsZero() && time.Since(w.lastBarAt) < time.Second/maxBarRedrawHz {
 		return false
 	}
 	return true
+}
+
+// PendingRedrawDue returns the time until the next bar frame may be drawn
+// when a redraw is pending but rate-limited. Returns 0 if not rate-limited
+// (either nothing pending, or the window has already expired).
+// alt must reflect AnsiFilter.AltActive(); the writer no longer tracks this itself.
+func (w *TerminalWriter) PendingRedrawDue(alt bool) time.Duration {
+	if alt || !w.pendingFrame || w.barTop == 0 || w.barCount == 0 {
+		return 0
+	}
+	if w.lastBarAt.IsZero() {
+		return 0
+	}
+	remaining := time.Second/maxBarRedrawHz - time.Since(w.lastBarAt)
+	if remaining <= 0 {
+		return 0
+	}
+	return remaining
 }
 
 func (w *TerminalWriter) flushBarFrame(lines []string) error {
@@ -171,8 +192,9 @@ func (w *TerminalWriter) flushBarFrame(lines []string) error {
 // frames makes the bar blink blank for a frame, so the two are bracketed together
 // and the bar never renders empty. With no bar (or on the alt screen) it degrades
 // to a plain child write.
-func (w *TerminalWriter) WriteChildFrame(child []byte, lines []string) error {
-	if w.altActive || w.barTop == 0 || w.barCount == 0 {
+// alt must reflect AnsiFilter.AltActive(); the writer no longer tracks this itself.
+func (w *TerminalWriter) WriteChildFrame(child []byte, lines []string, alt bool) error {
+	if alt || w.barTop == 0 || w.barCount == 0 {
 		return w.WriteChild(child)
 	}
 	if err := w.writeAll([]byte(terminal.BeginSyncUpdate)); err != nil {

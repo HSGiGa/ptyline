@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 func TestLoad(t *testing.T) {
@@ -202,8 +204,20 @@ func TestMigrateToLatest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "config_version = 1\nshell = \"bash\"\n" {
-		t.Fatalf("migrateToLatest() = %q", got)
+	// Programmatic migration re-encodes the full struct (all fields), so just
+	// verify that the result round-trips as a valid v1 config with the expected fields.
+	var result struct {
+		Version int    `toml:"config_version"`
+		Shell   string `toml:"shell"`
+	}
+	if _, err := toml.Decode(string(got), &result); err != nil {
+		t.Fatalf("migrateToLatest() produced invalid TOML: %v\nraw: %q", err, got)
+	}
+	if result.Version != 1 {
+		t.Errorf("config_version = %d, want 1", result.Version)
+	}
+	if result.Shell != "bash" {
+		t.Errorf("shell = %q, want bash", result.Shell)
 	}
 }
 

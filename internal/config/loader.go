@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/hsgiga/ptyline/internal/status/layout"
+	"github.com/hsgiga/ptyline/internal/format"
 )
 
 // Load reads, migrates, and parses the config. The flow is:
@@ -75,8 +75,7 @@ func parse(raw []byte) (Config, error) {
 //   - config_version is required and must equal CurrentVersion;
 //   - unknown top-level/module keys, invalid enums, and invalid width expressions
 //     are errors (not silently defaulted);
-//   - bar must define format or at least one [[bar.row]];
-//   - custom-command modules must carry a timeout (spec §16, §17).
+//   - bar must define format or at least one [[bar.row]].
 func Validate(cfg *Config) error {
 	if cfg.Version != CurrentVersion {
 		return fmt.Errorf("config_version must be %d", CurrentVersion)
@@ -149,6 +148,14 @@ func Validate(cfg *Config) error {
 			}
 		}
 	}
+	// Exec and git modules with sub-100ms intervals would saturate the subprocess pool.
+	const minExecIntervalMS = 100
+	for id, module := range cfg.Modules {
+		src := ModuleSource(id, module)
+		if (src == "exec" || id == "git") && module.IntervalMS > 0 && module.IntervalMS < minExecIntervalMS {
+			return fmt.Errorf("module.%s.interval_ms must be >= %d", id, minExecIntervalMS)
+		}
+	}
 	// Cross-module check: template modules must not reference other templates or themselves.
 	templateIDs := map[string]bool{}
 	for id, module := range cfg.Modules {
@@ -160,7 +167,7 @@ func Validate(cfg *Config) error {
 		if !templateIDs[id] {
 			continue
 		}
-		for _, b := range layout.ParseFormat(module.Format) {
+		for _, b := range format.ParseFormat(module.Format) {
 			if b.IsLiteral() || b.IsSeparator() {
 				continue
 			}
@@ -319,6 +326,12 @@ func ValidateOverlayScope(overlay Config, meta toml.MetaData) error {
 		}
 		if meta.IsDefined("module", id, "refresh_on_command") {
 			return fmt.Errorf("overlay must not set module.%s.refresh_on_command", id)
+		}
+		if meta.IsDefined("module", id, "env") && !IsBuiltinModuleID(id) {
+			// Exec module env controls which shell variables are passed to subprocess
+			// commands; allowing overlays to set it would let a project .ptyline
+			// exfiltrate credentials (e.g. env = ["AWS_SECRET_ACCESS_KEY"]).
+			return fmt.Errorf("overlay must not set module.%s.env", id)
 		}
 		if meta.IsDefined("module", id, "source") {
 			return fmt.Errorf("overlay must not set module.%s.source", id)
@@ -581,5 +594,8 @@ func ApplyOverlays(base Config, paths ...string) (Config, error) {
 	}
 
 	inferActiveModules(&result, explicitlyDisabled)
+	if err := Validate(&result); err != nil {
+		return Config{}, fmt.Errorf("merged config invalid: %w", err)
+	}
 	return result, nil
 }
