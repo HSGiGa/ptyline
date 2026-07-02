@@ -584,6 +584,7 @@ func run(opts options) int {
 			render = renderer.NewWithState(newEngine(int(cols)), visuals.Theme, animState)
 			configureRenderer(render)
 			if alt {
+				altCoord.MarkResizedDuringAlt()
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
 				_, _ = ctrl.Write([]byte(terminal.ShowCursor))

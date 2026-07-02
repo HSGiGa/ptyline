@@ -47,7 +47,11 @@ func (as *appState) reloadConfig(newProjectPath string, force bool) bool {
 		top, count := bar.Geometry(*as.area, curSize.Rows, len(newBarRows))
 		as.writer.SetBarRows(top, count)
 		_ = as.sup.Resize(pty.Size{Cols: curSize.Cols, Rows: curSize.Rows})
-		as.ctrl.ApplyScrollRegion(curSize, *as.area)
+		// When the bar gains rows the cursor may be sitting on what is now a
+		// bar row. ApplyScrollRegionAtChildBottom sets the scroll region and
+		// explicitly places the cursor at the last child row, so it is always
+		// safe regardless of where it was before the height change.
+		as.ctrl.ApplyScrollRegionAtChildBottom(curSize, *as.area)
 	}
 	*as.barRows = newBarRows
 	if newVisuals, err := bar.VisualsFromConfig(*as.resolvedCfg, colorMode(as.profile.Capabilities.Color), as.opts.ConfigPath); err == nil {

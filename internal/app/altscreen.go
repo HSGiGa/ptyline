@@ -25,6 +25,12 @@ type altScreenCoordinator struct {
 
 	pendingVal bool
 	hasPending bool
+
+	// resizedDuringAlt is set when a resize event occurs while the alternate
+	// screen is active. The pre-alt cursor position was saved before the resize
+	// and may now lie inside the reserved bar rows if the terminal shrank.
+	// Cleared on alt entry so repeated alt sessions each track independently.
+	resizedDuringAlt bool
 }
 
 // SetPending records an incoming alt-screen transition for deferred execution.
@@ -44,24 +50,41 @@ func (c *altScreenCoordinator) FlushPending() bool {
 	return true
 }
 
+// MarkResizedDuringAlt records that a terminal resize occurred while the
+// alternate screen was active. The ResizeCommit handler calls this so that
+// Apply(false) can choose the correct scroll-region strategy on alt exit.
+func (c *altScreenCoordinator) MarkResizedDuringAlt() { c.resizedDuringAlt = true }
+
 // Apply executes the alt-screen entry or exit procedure immediately.
 func (c *altScreenCoordinator) Apply(active bool) {
 	c.state.Terminal.AlternateScreen = active
 	if active {
+		c.resizedDuringAlt = false // fresh entry: reset resize tracker
 		c.writer.OnAltEnter()
 		c.ctrl.ResetScrollRegion()
 		_ = c.sup.ResizeFull(pty.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows})
 		return
 	}
-	// Leaving alt: the ?1049l has already restored the normal screen and the
-	// pre-alt cursor. Because the normal-screen scroll region confined the child
-	// to rows 1..childBottom, that restored cursor is always inside the child
-	// region (never on the reserved bar row), so we only need to re-establish the
-	// scroll region — with save/restore so DECSTBM's homing side effect doesn't
-	// move the cursor. Pinning it to the last child row here (as an earlier fix
-	// did) is wrong for shells that merely probe the alt screen at startup, e.g.
-	// fish's terminal-capability query: it forced their first prompt to the bottom.
-	_ = c.sup.Resize(pty.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows})
-	c.ctrl.ApplyScrollRegion(terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}, *c.area)
+	// Leaving alt: ?1049l has already restored the normal screen and the pre-alt
+	// cursor. Two sub-cases:
+	//
+	//   No resize during alt — the pre-alt cursor was saved while the scroll
+	//   region confined the child to rows 1..childBottom, so it is guaranteed
+	//   to be inside the child area. Use ApplyScrollRegion (SaveCursor/DECSTBM/
+	//   RestoreCursor) to preserve the exact position. Forcing the cursor to the
+	//   last child row here breaks shells that briefly probe the alt screen at
+	//   startup (e.g. fish's terminal-capability query).
+	//
+	//   Resize during alt — the saved pre-alt position is based on the old
+	//   geometry. If the terminal shrank, that row may now be inside the reserved
+	//   bar area. Use ApplyScrollRegionAtChildBottom to guarantee a safe landing.
+	size := terminal.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows}
+	_ = c.sup.Resize(pty.Size{Cols: size.Cols, Rows: size.Rows})
+	if c.resizedDuringAlt {
+		c.resizedDuringAlt = false
+		c.ctrl.ApplyScrollRegionAtChildBottom(size, *c.area)
+	} else {
+		c.ctrl.ApplyScrollRegion(size, *c.area)
+	}
 	c.redraw()
 }
