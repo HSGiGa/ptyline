@@ -609,12 +609,11 @@ func run(opts options) int {
 				return
 			}
 			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
-			// ApplyScrollRegionAtChildBottom instead of ApplyScrollRegion: on macOS,
-			// shrinking the terminal clamps the cursor into the reserved bar rows.
-			// SaveCursor/RestoreCursor would restore that clamped position right back
-			// into the bar; placing the cursor at the last child row is always safe
-			// and shells reposition the prompt after SIGWINCH regardless.
-			ctrl.ApplyScrollRegionAtChildBottom(terminal.Size{Cols: cols, Rows: rows}, area)
+			// Re-establish the scroll region. On Linux/WSL this preserves the cursor
+			// (SaveCursor/RestoreCursor) so a resize/split does not jump the cursor to
+			// the last line; on macOS it pins the cursor to the last child row because
+			// the OS clamps it into the bar on shrink. See reapplyScrollRegionAfterResize.
+			reapplyScrollRegionAfterResize(ctrl, terminal.Size{Cols: cols, Rows: rows}, area)
 			_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 		},
 		ShellMeta: func(key, value string) {
