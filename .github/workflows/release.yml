@@ -58,7 +58,7 @@ jobs:
           artifact="$(ls ptyline-${{ matrix.goos }}-*)"
           tar -czf "${artifact}.tar.gz" "${artifact}"
           shasum -a 256 "${artifact}.tar.gz" > "${artifact}.tar.gz.sha256"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ptyline-${{ matrix.goos }}
           path: |
