@@ -57,6 +57,13 @@ type TerminationSignal struct{ Signal string }
 // ConfigReloadRequested is sent when SIGUSR1 is received.
 type ConfigReloadRequested struct{}
 
+// RedrawRequest asks the loop to repaint the bar without advancing any animation.
+// It is used to flush a bar frame that the rate limiter deferred, so a pending
+// frame lands as soon as the redraw window expires. Unlike Tick, it must NOT run
+// the periodic Tick handler (which advances the animation phase) — otherwise
+// high-rate deferred flushes would speed the animation far past its tick interval.
+type RedrawRequest struct{}
+
 func (StdinInput) isAppEvent()            {}
 func (PtyOutput) isAppEvent()             {}
 func (Resize) isAppEvent()                {}
@@ -67,6 +74,7 @@ func (ModuleUpdated) isAppEvent()         {}
 func (ChildExited) isAppEvent()           {}
 func (TerminationSignal) isAppEvent()     {}
 func (ConfigReloadRequested) isAppEvent() {}
+func (RedrawRequest) isAppEvent()         {}
 
 // Bus is the fan-in channel of events. Producers send; the loop receives.
 type Bus struct {

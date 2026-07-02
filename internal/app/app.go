@@ -236,11 +236,13 @@ func run(opts options) int {
 		writer.RequestRedraw()
 		alt := filter.AltActive()
 		_ = writer.FlushBarFrameLazy(renderFn, alt)
-		// If the frame was deferred by rate-limiting, schedule a one-shot Tick so
-		// the bar is redrawn as soon as the window expires without waiting for the
-		// next user event or module update.
+		// If the frame was deferred by rate-limiting, schedule a one-shot redraw so
+		// the bar is repainted as soon as the window expires without waiting for the
+		// next user event or module update. It must be RedrawRequest, not Tick: Tick
+		// advances the animation phase, so using it here would let high-rate deferred
+		// flushes run the command animation far faster than its tick interval.
 		if due := writer.PendingRedrawDue(alt); due > 0 {
-			time.AfterFunc(due, func() { bus.SendCtx(ctx, event.Tick{}) })
+			time.AfterFunc(due, func() { bus.SendCtx(ctx, event.RedrawRequest{}) })
 		}
 	}
 	altCoord := &altScreenCoordinator{

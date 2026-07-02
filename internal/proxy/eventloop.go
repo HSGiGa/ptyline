@@ -24,8 +24,8 @@ type Handlers struct {
 	// ScrollReset is called when the child sent ESC c (RIS) or CSI ! p (DECSTR),
 	// which would reset the terminal scroll region. The handler must re-apply the
 	// scroll region and invalidate the bar so it is repainted on the next Redraw.
-	ScrollReset func()
-	Terminate   func(signal string)
+	ScrollReset  func()
+	Terminate    func(signal string)
 	ConfigReload func()
 }
 
@@ -143,6 +143,12 @@ func (l *Loop) Run() (exitCode int, err error) {
 			if l.h.Tick != nil {
 				l.h.Tick()
 			}
+			if l.h.Redraw != nil {
+				l.h.Redraw()
+			}
+		case event.RedrawRequest:
+			// Redraw only — no Tick handler, so a deferred-frame flush never
+			// advances the animation phase (that is the ticker's job alone).
 			if l.h.Redraw != nil {
 				l.h.Redraw()
 			}

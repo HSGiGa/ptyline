@@ -92,6 +92,32 @@ func TestLoopSplitsPtyOutputAfterAltLeave(t *testing.T) {
 	}
 }
 
+// RedrawRequest must repaint the bar without running the Tick handler. A
+// deferred-frame flush uses RedrawRequest, so if it advanced the animation phase
+// (via Tick) high-rate flushes would run the command animation far too fast.
+func TestLoopRedrawRequestDoesNotTick(t *testing.T) {
+	bus := event.NewBus(2)
+	bus.Send(event.RedrawRequest{})
+	bus.Send(event.ChildExited{Code: 0})
+
+	ticks, redraws := 0, 0
+	loop := NewLoop(bus, NewAnsiFilter(reserved.Default()))
+	loop.SetHandlers(Handlers{
+		Tick:   func() { ticks++ },
+		Redraw: func() { redraws++ },
+	})
+
+	if _, err := loop.Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if ticks != 0 {
+		t.Fatalf("RedrawRequest ran Tick %d times, want 0", ticks)
+	}
+	if redraws != 1 {
+		t.Fatalf("RedrawRequest triggered %d redraws, want 1", redraws)
+	}
+}
+
 // A termination signal exits with the conventional 128+signo code and invokes the
 // Terminate handler with the canonical signal token.
 func TestLoopTerminationExitCode(t *testing.T) {
