@@ -302,13 +302,13 @@
       "properties": {
         "color_scheme": {
           "type": "string",
-          "description": "Named color scheme.",
-          "examples": ["gruvbox-dark", "gruvbox-light", "catppuccin-mocha", "nord", "terminal-native"]
+          "description": "Named color scheme (config/themes/<name>.toml). \"default\" resolves per shell to the fish/zsh/bash-default palette.",
+          "examples": ["default", "catppuccin-mocha", "catppuccin-latte", "gruvbox-dark", "gruvbox-light", "dracula", "solarized-light", "nord"]
         },
         "style": {
           "type": "string",
-          "description": "Visual style preset.",
-          "examples": ["flat", "powerline", "round", "diamond"]
+          "description": "Visual style preset (config/styles/<name>.toml). \"default\" resolves per shell (powerline for zsh, flat otherwise).",
+          "examples": ["default", "flat", "powerline"]
         },
         "icons": {
           "type": "string",

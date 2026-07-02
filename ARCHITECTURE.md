@@ -55,7 +55,7 @@ reload ┘                                  └───────────
 | `internal/config` | TOML schema/loader/migrate | versioned config, overlays, nearest project `.ptyline` discovery |
 | `internal/runtimeenv` | runtime profile + capabilities | detect once; components query capabilities |
 | `internal/platform` | OS-specific detection | build-tagged; WSL = Linux runtime branch |
-| `internal/shellintegration` | OSC contract + init scripts | cwd/env/command/exit/duration/SSH/colors via OSC 777; **shell-agnostic — adding a shell is a template file, never Go logic** |
+| `internal/shellintegration` | OSC contract + init scripts | cwd/env/command/exit/duration/SSH via OSC 777; **shell-agnostic — adding a shell is a template file, never Go logic** |
 | `internal/reserved` | reserved-area math | single source of truth for "rows − reserved" |
 | `internal/diagnostics` | health/debug state | lightweight record type; replay/doctor tooling is deferred |
 

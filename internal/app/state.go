@@ -38,6 +38,7 @@ type appState struct {
 	// Immutable config inputs — read by reloadConfig.
 	cfg        config.Config
 	cliOverlay string // resolved overlay path (from --overlay flag)
+	shell      string // child shell label, drives color_scheme = "default" resolution
 
 	// Observability — created once, pointer gives full lifecycle access.
 	diagState *diagnostics.State

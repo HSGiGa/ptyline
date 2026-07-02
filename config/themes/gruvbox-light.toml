@@ -1,0 +1,14 @@
+# Gruvbox light. Palette only — pair with a style preset (theme.style).
+# Source: https://github.com/morhetz/gruvbox
+name = "gruvbox-light"
+
+[palette]
+"base.bg" = "#fbf1c7" # bg0
+"base.fg" = "#3c3836" # fg1
+panel = "#ebdbb2"     # bg1
+accent = "#076678"    # faded blue
+ok = "#79740e"        # faded green
+warn = "#b57614"      # faded yellow
+error = "#9d0006"     # faded red
+muted = "#7c6f64"     # bg4/gray
+command = "#af3a03"   # faded orange

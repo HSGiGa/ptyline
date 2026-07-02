@@ -7,9 +7,9 @@
 # exit_code as a plain integer, duration_ms already in milliseconds, cwd absolute
 # — so the Go side consumes one representation for every shell.
 #
-# colors: bash has no standard color variable system ($PS1 embeds raw ANSI escapes,
-# not named color variables), so the "colors" key is not emitted here. ptyline uses
-# its default palette which already matches bash prompt conventions.
+# colors: ptyline no longer reads shell color variables; the bar palette comes
+# entirely from its themes. Under bash, color_scheme = "default" resolves to the
+# bash-default theme.
 
 __ptyline_emit() { printf '\e]777;%s=%s\e\\' "$1" "$2"; }
 # $EPOCHREALTIME (bash ≥5, macOS bash 3.2 lacks it) avoids GNU-only date +%s%3N.

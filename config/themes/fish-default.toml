@@ -1,0 +1,14 @@
+# fish-default — palette for color_scheme = "default" under fish. Cyan/teal
+# identity echoing fish's own accent colors; pairs with the flat style preset.
+name = "fish-default"
+
+[palette]
+"base.bg" = "#12201f"
+"base.fg" = "#c8e0e0"
+panel = "#183230"
+accent = "#2aa198"  # teal
+ok = "#4ec9b0"      # aqua green
+warn = "#d7ba7d"    # sand
+error = "#f07178"   # coral
+muted = "#5f8787"   # muted teal-gray
+command = "#56b6c2" # cyan

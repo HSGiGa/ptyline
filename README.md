@@ -101,8 +101,8 @@ ptyline --version
 
 Shell integration is optional; ptyline still works as a transparent wrapper
 without it. Integration scripts emit whitelisted OSC 777 metadata for cwd,
-environment, active/done command, exit code, duration, SSH state, and shell color
-sync. Supported templates are `bash`, `zsh`, and `fish`.
+environment, active/done command, exit code, duration, and SSH state. Supported
+templates are `bash`, `zsh`, and `fish`.
 
 Examples:
 
@@ -126,9 +126,21 @@ a clock) is used when none is found. To start from the richer example layout in
 this repo, copy it once (installation never touches your config):
 
 ```sh
-mkdir -p ~/.config/ptyline
-cp config/config.toml ~/.config/ptyline/config.toml
+make install-config   # copies config + themes/styles to ~/.config/ptyline
 ```
+
+`install-config` never overwrites an existing `config.toml`, but always refreshes
+the bundled `themes/` and `styles/`. Override the destination with
+`make install-config CONFIGDIR=/path/to/dir`, or copy the files by hand:
+
+```sh
+mkdir -p ~/.config/ptyline
+cp -r config/config.toml config/config.schema.json config/themes config/styles ~/.config/ptyline/
+```
+
+The `themes/` and `styles/` directories are resolved next to your `config.toml`;
+without them, `color_scheme`/`style = "default"` falls back to the built-in
+terminal-native look instead of the shell-default palettes.
 
 The sample config lives at [config/config.toml](config/config.toml) and uses
 [config/config.schema.json](config/config.schema.json) for editor validation.
@@ -164,6 +176,39 @@ mode = "shell-integration"
 [module.git]
 format = "{branch}{dirty}"
 ```
+
+### Themes and styles
+
+Appearance is two independent axes:
+
+- `theme.color_scheme` picks the **palette** (colors), from [config/themes/](config/themes/).
+- `theme.style` picks the **style preset** (segment shape/presentation), from
+  [config/styles/](config/styles/) — `flat` (colored text on the terminal
+  background) or `powerline` (filled segments with arrow caps).
+
+```toml
+[theme]
+color_scheme = "catppuccin-mocha"
+style = "powerline"
+```
+
+Both accept `"default"` (the built-in default), which resolves per shell:
+
+| shell            | color_scheme   | style     |
+| ---------------- | -------------- | --------- |
+| `fish`           | `fish-default` | `flat`    |
+| `zsh`            | `zsh-default`  | `powerline` |
+| `bash`, `sh`, …  | `bash-default` | `flat`    |
+
+An explicit value is always used verbatim and never overridden by the shell.
+ptyline no longer reads colors from the shell (`fish_color_*` and friends); the
+palette comes entirely from these themes.
+
+Bundled palettes: `catppuccin-mocha`, `catppuccin-latte`, `gruvbox-dark`,
+`gruvbox-light`, `dracula`, `solarized-light`, `nord`, the `*-default` shell
+palettes, plus the self-contained legacy themes (`catppuccin`, `gruvbox`, and
+the `-powerline`/`-box`/`-pill` variants). Any theme file may also override
+individual `[palette]` tokens or `[style.*]` blocks inline in your config.
 
 ## Bar Format
 

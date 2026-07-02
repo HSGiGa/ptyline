@@ -56,14 +56,14 @@ func TestUserLabelFromEnv(t *testing.T) {
 }
 
 func TestShellLabel(t *testing.T) {
-	if got := shellLabel([]string{"/bin/zsh"}); got != "zsh" {
-		t.Fatalf("shellLabel() = %q, want zsh", got)
+	if got := ShellLabel([]string{"/bin/zsh"}); got != "zsh" {
+		t.Fatalf("ShellLabel() = %q, want zsh", got)
 	}
-	if got := shellLabel([]string{"-bash"}); got != "bash" {
-		t.Fatalf("shellLabel() = %q, want bash", got)
+	if got := ShellLabel([]string{"-bash"}); got != "bash" {
+		t.Fatalf("ShellLabel() = %q, want bash", got)
 	}
-	if got := shellLabel(nil); got != "" {
-		t.Fatalf("shellLabel(nil) = %q, want empty", got)
+	if got := ShellLabel(nil); got != "" {
+		t.Fatalf("ShellLabel(nil) = %q, want empty", got)
 	}
 }
 

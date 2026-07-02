@@ -7,9 +7,9 @@
 # exit_code as a plain integer, duration_ms already in milliseconds, cwd absolute
 # — so the Go side consumes one representation for every shell.
 #
-# colors: zsh has no standard color variable system (colors depend on the active
-# theme — oh-my-zsh, p10k, starship, etc.), so the "colors" key is not emitted
-# here. ptyline uses its default palette which matches common zsh prompt conventions.
+# colors: ptyline no longer reads shell color variables; the bar palette comes
+# entirely from its themes. Under zsh, color_scheme = "default" resolves to the
+# zsh-default theme.
 
 __ptyline_emit() { printf '\e]777;%s=%s\e\\' "$1" "$2"; }
 # zsh has $EPOCHREALTIME via zsh/datetime; avoids GNU-only date +%s%3N on macOS.

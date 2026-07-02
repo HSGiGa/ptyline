@@ -16,7 +16,7 @@ type Shell struct {
 
 // NewShell creates a shell module from the resolved child argv.
 func NewShell(argv []string) *Shell {
-	return &Shell{value: shellLabel(argv)}
+	return &Shell{value: ShellLabel(argv)}
 }
 
 func (m *Shell) ID() status.ModuleID     { return "shell" }
@@ -30,7 +30,10 @@ func (m *Shell) Refresh(_ context.Context) status.ModuleSnapshot {
 	}
 }
 
-func shellLabel(argv []string) string {
+// ShellLabel returns the basename of the child command (login-shell "-" prefix
+// stripped), e.g. "fish" for "/usr/bin/fish". It also drives the shell-specific
+// default theme resolution.
+func ShellLabel(argv []string) string {
 	if len(argv) == 0 || argv[0] == "" {
 		return ""
 	}

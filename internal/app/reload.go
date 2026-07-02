@@ -34,7 +34,7 @@ func (as *appState) reloadConfig(newProjectPath string, force bool) bool {
 	// leave config, rows, and modules on their old values (rather than pairing a
 	// new layout with the stale theme) and treat it as a failed reload. Not
 	// storing newProjectPath lets a fixed .ptyline retry on the next cwd event.
-	newVisuals, err := bar.VisualsFromConfig(newCfg, colorMode(as.profile.Capabilities.Color), as.opts.ConfigPath)
+	newVisuals, err := bar.VisualsFromConfig(newCfg, colorMode(as.profile.Capabilities.Color), as.opts.ConfigPath, as.shell)
 	if err != nil {
 		as.diagState.RecordConfigWarning(fmt.Sprintf("overlay %s: visuals: %v", newProjectPath, err))
 		return false

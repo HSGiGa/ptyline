@@ -24,7 +24,7 @@ func Default() Config {
 		},
 		Theme: ThemeConfig{
 			ColorScheme: "default",
-			Style:       "flat",
+			Style:       "default",
 			Icons:       "ascii",
 			Fallback:    "ascii",
 		},

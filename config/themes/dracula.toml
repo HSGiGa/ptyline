@@ -1,0 +1,14 @@
+# Dracula (dark). Palette only — pair with a style preset (theme.style).
+# Source: https://draculatheme.com/contribute
+name = "dracula"
+
+[palette]
+"base.bg" = "#282a36" # background
+"base.fg" = "#f8f8f2" # foreground
+panel = "#44475a"     # current line / selection
+accent = "#bd93f9"    # purple
+ok = "#50fa7b"        # green
+warn = "#f1fa8c"      # yellow
+error = "#ff5555"     # red
+muted = "#6272a4"     # comment
+command = "#ffb86c"   # orange

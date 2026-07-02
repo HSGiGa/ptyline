@@ -1,0 +1,14 @@
+# zsh-default — palette for color_scheme = "default" under zsh. Pairs with the
+# powerline style preset by default (matching the p10k/oh-my-zsh segment look).
+name = "zsh-default"
+
+[palette]
+"base.bg" = "#232634"
+"base.fg" = "#dcdfe4"
+panel = "#2f3445"
+accent = "#61afef"  # blue
+ok = "#98c379"      # green
+warn = "#e5c07b"    # yellow
+error = "#e06c75"   # red
+muted = "#7f8496"
+command = "#c678dd" # purple

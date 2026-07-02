@@ -1,0 +1,18 @@
+# flat — the default style preset: colored text on the terminal's own background,
+# no segment backgrounds or caps. References only accent/ok/warn/error/muted so it
+# renders on every palette, including the built-in terminal-native fallback.
+
+[style.hostname]
+fg = "ok"
+bold = true
+
+[style.time]
+fg = "warn"
+
+[style.git]
+fg = "ok"
+bold = true
+
+[style.ssh]
+fg = "accent"
+bold = true

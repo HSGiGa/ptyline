@@ -1,0 +1,14 @@
+# Gruvbox dark. Palette only — pair with a style preset (theme.style).
+# Source: https://github.com/morhetz/gruvbox
+name = "gruvbox-dark"
+
+[palette]
+"base.bg" = "#282828" # bg0
+"base.fg" = "#ebdbb2" # fg1
+panel = "#3c3836"     # bg1
+accent = "#83a598"    # bright blue
+ok = "#b8bb26"        # bright green
+warn = "#fabd2f"      # bright yellow
+error = "#fb4934"     # bright red
+muted = "#928374"     # gray
+command = "#fe8019"   # bright orange

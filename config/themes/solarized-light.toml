@@ -1,0 +1,14 @@
+# Solarized light. Palette only — pair with a style preset (theme.style).
+# Source: https://ethanschoonover.com/solarized/
+name = "solarized-light"
+
+[palette]
+"base.bg" = "#fdf6e3" # base3
+"base.fg" = "#657b83" # base00
+panel = "#eee8d5"     # base2
+accent = "#268bd2"    # blue
+ok = "#859900"        # green
+warn = "#b58900"      # yellow
+error = "#dc322f"     # red
+muted = "#93a1a1"     # base1
+command = "#cb4b16"   # orange

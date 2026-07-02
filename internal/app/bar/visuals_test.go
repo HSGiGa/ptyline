@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hsgiga/ptyline/internal/config"
+	"github.com/hsgiga/ptyline/internal/status/style"
 	"github.com/hsgiga/ptyline/internal/status/theme"
 )
 
@@ -27,7 +28,10 @@ func TestVisualsFromConfigAppliesInlinePaletteAndStyles(t *testing.T) {
 		},
 	}
 
-	visuals, err := VisualsFromConfig(cfg, theme.TrueColor, "")
+	// Empty config dir: the default color_scheme/style resolve to files that are
+	// not installed, so rendering falls back to the terminal-native palette.
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	visuals, err := VisualsFromConfig(cfg, theme.TrueColor, configPath, "bash")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,10 +50,7 @@ func TestVisualsFromConfigAppliesInlinePaletteAndStyles(t *testing.T) {
 func TestVisualsFromConfigLoadsThemeFile(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	if err := os.Mkdir(filepath.Join(dir, "themes"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "themes", "custom.toml"), []byte(`
+	writeThemeFile(t, dir, "custom.toml", `
 name = "custom"
 
 [palette]
@@ -62,13 +63,11 @@ bg = "panel"
 bold = true
 padding_left = 1
 padding_right = 1
-`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+`)
 	cfg := config.Default()
 	cfg.Theme.ColorScheme = "custom"
 
-	visuals, err := VisualsFromConfig(cfg, theme.TrueColor, configPath)
+	visuals, err := VisualsFromConfig(cfg, theme.TrueColor, configPath, "bash")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +83,7 @@ func TestVisualsFromConfigRejectsMissingThemeFile(t *testing.T) {
 	cfg := config.Default()
 	cfg.Theme.ColorScheme = "missing"
 
-	_, err := VisualsFromConfig(cfg, theme.TrueColor, filepath.Join(t.TempDir(), "config.toml"))
+	_, err := VisualsFromConfig(cfg, theme.TrueColor, filepath.Join(t.TempDir(), "config.toml"), "bash")
 	if err == nil || !strings.Contains(err.Error(), "theme \"missing\" not found") {
 		t.Fatalf("VisualsFromConfig error = %v, want missing theme", err)
 	}
@@ -96,8 +95,78 @@ func TestVisualsFromConfigRejectsInvalidStyleColor(t *testing.T) {
 		"time": {FG: "not-a-color"},
 	}
 
-	_, err := VisualsFromConfig(cfg, theme.TrueColor, "")
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	_, err := VisualsFromConfig(cfg, theme.TrueColor, configPath, "bash")
 	if err == nil || !strings.Contains(err.Error(), "style.time.fg") {
 		t.Fatalf("VisualsFromConfig error = %v, want style.time.fg", err)
+	}
+}
+
+// TestVisualsFromConfigResolvesDefaultPerShell verifies color_scheme = "default"
+// and style = "default" pick the shell's palette and style preset: fish/bash use
+// the flat preset, zsh the powerline preset.
+func TestVisualsFromConfigResolvesDefaultPerShell(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	writeThemeFile(t, dir, "fish-default.toml", "name=\"fish-default\"\n[palette]\naccent=\"#010203\"\n")
+	writeThemeFile(t, dir, "bash-default.toml", "name=\"bash-default\"\n[palette]\naccent=\"#161718\"\n")
+	writeThemeFile(t, dir, "zsh-default.toml",
+		"name=\"zsh-default\"\n[palette]\n\"base.bg\"=\"#000000\"\naccent=\"#040506\"\n")
+	writeStyleFile(t, dir, "flat.toml", "[style.hostname]\nfg=\"accent\"\n")
+	writeStyleFile(t, dir, "powerline.toml", "[style.hostname]\nfg=\"base.bg\"\nbg=\"accent\"\nshape=\"powerline\"\n")
+
+	cases := map[string]struct {
+		accent string
+		shape  style.Shape
+	}{
+		"fish": {"\x1b[38;2;1;2;3m", style.ShapeFlat},
+		"bash": {"\x1b[38;2;22;23;24m", style.ShapeFlat},
+		"zsh":  {"\x1b[38;2;4;5;6m", style.ShapePowerline},
+	}
+	for shell, want := range cases {
+		visuals, err := VisualsFromConfig(config.Default(), theme.TrueColor, configPath, shell)
+		if err != nil {
+			t.Fatalf("%s: %v", shell, err)
+		}
+		if got := visuals.Theme.FG("accent"); got != want.accent {
+			t.Errorf("%s accent fg = %q, want %q", shell, got, want.accent)
+		}
+		if got := visuals.Styles["hostname"].Shape; got != want.shape {
+			t.Errorf("%s hostname shape = %q, want %q", shell, got, want.shape)
+		}
+	}
+}
+
+// TestVisualsFromConfigDefaultFallsBackWhenFilesMissing verifies the default
+// resolution never fails when no theme/style files are installed: it keeps the
+// terminal-native palette even for zsh (whose default style is powerline).
+func TestVisualsFromConfigDefaultFallsBackWhenFilesMissing(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	visuals, err := VisualsFromConfig(config.Default(), theme.TrueColor, configPath, "zsh")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := visuals.Theme.FG("ok"), "\x1b[38;2;0;205;0m"; got != want {
+		t.Fatalf("ok fg = %q, want %q", got, want)
+	}
+}
+
+func writeThemeFile(t *testing.T, dir, name, body string) {
+	t.Helper()
+	writeUnder(t, dir, "themes", name, body)
+}
+
+func writeStyleFile(t *testing.T, dir, name, body string) {
+	t.Helper()
+	writeUnder(t, dir, "styles", name, body)
+}
+
+func writeUnder(t *testing.T, dir, sub, name, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, sub, name), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

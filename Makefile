@@ -42,6 +42,10 @@ ifndef BINDIR
 BINDIR := $(HOME)/.local/bin
 endif
 
+# Config destination for `make install-config`: $XDG_CONFIG_HOME/ptyline, falling
+# back to ~/.config/ptyline. Themes/styles are resolved next to config.toml.
+CONFIGDIR ?= $(if $(XDG_CONFIG_HOME),$(XDG_CONFIG_HOME),$(HOME)/.config)/ptyline
+
 TOOLS_BIN   := $(CURDIR)/.tools/bin
 GOCACHE     ?= $(CURDIR)/.cache/go-build
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
@@ -140,6 +144,28 @@ install: build ## Install the binary into $(DESTDIR)$(BINDIR) (user-writable, no
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 0755 $(DIST)/$(BINARY) $(DESTDIR)$(BINDIR)/$(BINARY)
 	@echo "installed $(BINARY) -> $(DESTDIR)$(BINDIR)/$(BINARY)"
+
+.PHONY: install-config
+install-config: ## Install config + themes/styles into $(DESTDIR)$(CONFIGDIR) (never overwrites config.toml)
+	@dest="$(DESTDIR)$(CONFIGDIR)"; \
+	install -d "$$dest/themes" "$$dest/styles"; \
+	copy() { \
+		if [ "$$1" -ef "$$2" ]; then \
+			echo "kept (same file) $$2"; \
+		else \
+			install -m 0644 "$$1" "$$2"; \
+		fi; \
+	}; \
+	copy config/config.schema.json "$$dest/config.schema.json"; \
+	for f in config/themes/*.toml; do copy "$$f" "$$dest/themes/$$(basename "$$f")"; done; \
+	for f in config/styles/*.toml; do copy "$$f" "$$dest/styles/$$(basename "$$f")"; done; \
+	if [ -f "$$dest/config.toml" ]; then \
+		echo "kept existing $$dest/config.toml"; \
+	else \
+		install -m 0644 config/config.toml "$$dest/config.toml"; \
+		echo "installed config.toml -> $$dest/config.toml"; \
+	fi; \
+	echo "installed themes/styles -> $$dest"
 
 .PHONY: uninstall
 uninstall: ## Remove the installed binary from $(DESTDIR)$(BINDIR)

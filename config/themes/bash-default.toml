@@ -1,0 +1,14 @@
+# bash-default — palette for color_scheme = "default" under bash/sh and unknown
+# shells. Neutral, restrained tones; pairs with the flat style preset by default.
+name = "bash-default"
+
+[palette]
+"base.bg" = "#1c1c1c"
+"base.fg" = "#d0d0d0"
+panel = "#2a2a2a"
+accent = "#5f87af" # steel blue
+ok = "#87af5f"     # green
+warn = "#d7af5f"   # amber
+error = "#d75f5f"  # red
+muted = "#6c6c6c"
+command = "#af875f" # tan

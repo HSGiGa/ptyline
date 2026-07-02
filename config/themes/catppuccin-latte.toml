@@ -1,0 +1,14 @@
+# Catppuccin Latte (light). Palette only — pair with a style preset (theme.style).
+# Source: https://github.com/catppuccin/catppuccin
+name = "catppuccin-latte"
+
+[palette]
+"base.bg" = "#eff1f5" # base
+"base.fg" = "#4c4f69" # text
+panel = "#ccd0da"     # surface0
+accent = "#1e66f5"    # blue
+ok = "#40a02b"        # green
+warn = "#df8e1d"      # yellow
+error = "#d20f39"     # red
+muted = "#9ca0b0"     # overlay0
+command = "#fe640b"   # peach

@@ -1,6 +1,7 @@
 package bar
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,39 +17,84 @@ type Visuals struct {
 	Styles map[string]style.Style
 }
 
+// themeFile is a color scheme: a palette plus, for self-contained legacy and
+// shell-default themes, its own [style.*] blocks. Palette-only themes leave
+// Styles empty and take their shape from the style preset (styles/<name>.toml).
 type themeFile struct {
 	Name    string                        `toml:"name"`
 	Palette map[string]string             `toml:"palette"`
 	Styles  map[string]config.StyleConfig `toml:"style"`
 }
 
+// styleFile is a style preset: shape and per-block presentation only, resolved
+// against whatever palette the color scheme provides.
+type styleFile struct {
+	Styles map[string]config.StyleConfig `toml:"style"`
+}
+
 // VisualsFromConfig resolves the configured palette and styles into renderer
-// inputs. The layering is: built-in defaults, optional theme file, inline
-// [theme.*] overrides, then inline [style.*] overrides.
-func VisualsFromConfig(cfg config.Config, mode theme.Mode, configPath string) (Visuals, error) {
+// inputs. The layering, weakest first, is: built-in defaults, the color
+// scheme's palette, inline [theme.*] palette overrides, the style preset's
+// [style.*], the color scheme's own [style.*] (self-contained themes), then
+// inline [style.*].
+//
+// Both color_scheme and theme.style accept "default" (or empty), which resolves
+// per shell: fish/zsh/bash select fish-default/zsh-default/bash-default palettes
+// and flat/powerline/flat style presets. An explicit value is used verbatim.
+// When a default-derived file is missing, rendering falls back to the built-in
+// terminal-native look (and to the flat preset, which every palette can back);
+// an explicit name that is missing is an error.
+func VisualsFromConfig(cfg config.Config, mode theme.Mode, configPath, shell string) (Visuals, error) {
 	palette := theme.DefaultPalette()
 	styles := map[string]style.Style{}
 
-	if scheme := cfg.Theme.ColorScheme; scheme != "" && scheme != "default" {
-		fileTheme, path, err := loadThemeFile(configPath, scheme)
-		if err != nil {
-			return Visuals{}, err
-		}
+	scheme := cfg.Theme.ColorScheme
+	schemeDerived := scheme == "" || scheme == "default"
+	if schemeDerived {
+		scheme = defaultScheme(shell)
+	}
+
+	fileTheme, path, err := loadThemeFile(configPath, scheme)
+	paletteFellBack := false
+	switch {
+	case err == nil:
 		if fileTheme.Name != "" && fileTheme.Name != scheme {
 			return Visuals{}, fmt.Errorf("%s: name = %q, want %q", path, fileTheme.Name, scheme)
 		}
 		if err := mergePalette(palette, fileTheme.Palette, path+": palette"); err != nil {
 			return Visuals{}, err
 		}
-		if err := mergeStyles(styles, fileTheme.Styles, path+": style", palette); err != nil {
-			return Visuals{}, err
-		}
+	case schemeDerived && errors.Is(err, os.ErrNotExist):
+		// No default theme installed for this shell: keep the terminal-native
+		// palette. fileTheme stays zero, so it contributes no embedded styles.
+		fileTheme = themeFile{}
+		paletteFellBack = true
+	default:
+		return Visuals{}, err
 	}
 
 	if err := mergePalette(palette, cfg.Theme.Palette, "theme.palette"); err != nil {
 		return Visuals{}, err
 	}
 	if err := mergePalette(palette, cfg.Theme.Status, "theme.status"); err != nil {
+		return Visuals{}, err
+	}
+
+	styleName := cfg.Theme.Style
+	styleDerived := styleName == "" || styleName == "default"
+	if styleDerived {
+		styleName = defaultStyle(shell)
+		// The terminal-native fallback palette lacks base.bg/panel, so a
+		// segmented preset cannot render on it; keep the token-safe flat preset.
+		if paletteFellBack {
+			styleName = "flat"
+		}
+	}
+
+	if err := applyStylePreset(styles, configPath, styleName, styleDerived, palette); err != nil {
+		return Visuals{}, err
+	}
+	if err := mergeStyles(styles, fileTheme.Styles, path+": style", palette); err != nil {
 		return Visuals{}, err
 	}
 	if err := mergeStyles(styles, cfg.Styles, "style", palette); err != nil {
@@ -58,12 +104,48 @@ func VisualsFromConfig(cfg config.Config, mode theme.Mode, configPath string) (V
 	return Visuals{Theme: theme.New(mode, palette), Styles: styles}, nil
 }
 
+// defaultScheme maps the interactive shell to its built-in default palette, and
+// defaultStyle to its default style preset. These are the only places Go code
+// names a shell; every other shell reference lives in the integration templates.
+func defaultScheme(shell string) string {
+	switch shell {
+	case "fish":
+		return "fish-default"
+	case "zsh":
+		return "zsh-default"
+	default: // bash, sh, unknown, and command fallbacks
+		return "bash-default"
+	}
+}
+
+func defaultStyle(shell string) string {
+	if shell == "zsh" {
+		return "powerline" // matches the p10k/oh-my-zsh segment convention
+	}
+	return "flat"
+}
+
+// applyStylePreset merges styles/<name>.toml into dst. When derived (the name
+// came from default resolution), a missing file falls back to the renderer's
+// built-in styles rather than failing; a missing explicit preset is an error.
+func applyStylePreset(dst map[string]style.Style, configPath, name string, derived bool, palette map[string]theme.RGB) error {
+	preset, path, err := loadStyleFile(configPath, name)
+	switch {
+	case err == nil:
+		return mergeStyles(dst, preset.Styles, path+": style", palette)
+	case derived && errors.Is(err, os.ErrNotExist):
+		return nil
+	default:
+		return err
+	}
+}
+
 func loadThemeFile(configPath, name string) (themeFile, string, error) {
 	path := filepath.Join(filepath.Dir(config.ResolvePath(configPath)), "themes", name+".toml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return themeFile{}, path, fmt.Errorf("%s: theme %q not found", path, name)
+			return themeFile{}, path, fmt.Errorf("%s: theme %q not found: %w", path, name, os.ErrNotExist)
 		}
 		return themeFile{}, path, err
 	}
@@ -74,6 +156,28 @@ func loadThemeFile(configPath, name string) (themeFile, string, error) {
 	}
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
 		return themeFile{}, path, fmt.Errorf("%s: unknown key %q", path, undecoded[0])
+	}
+	return file, path, nil
+}
+
+// loadStyleFile reads styles/<name>.toml. A missing file is returned wrapping
+// os.ErrNotExist so callers can distinguish it from a malformed preset.
+func loadStyleFile(configPath, name string) (styleFile, string, error) {
+	path := filepath.Join(filepath.Dir(config.ResolvePath(configPath)), "styles", name+".toml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return styleFile{}, path, fmt.Errorf("%s: style preset %q not found: %w", path, name, os.ErrNotExist)
+		}
+		return styleFile{}, path, err
+	}
+	var file styleFile
+	metadata, err := toml.Decode(string(raw), &file)
+	if err != nil {
+		return styleFile{}, path, fmt.Errorf("%s: %w", path, err)
+	}
+	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
+		return styleFile{}, path, fmt.Errorf("%s: unknown key %q", path, undecoded[0])
 	}
 	return file, path, nil
 }

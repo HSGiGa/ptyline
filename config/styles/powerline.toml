@@ -1,0 +1,51 @@
+# powerline — filled segments with arrow caps. Requires a full palette
+# (base.bg, base.fg, panel, accent, ok, warn, command), so pair it with a named
+# color scheme rather than the terminal-native fallback.
+
+[style.hostname]
+fg = "base.bg"
+bg = "accent"
+bold = true
+shape = "powerline"
+left_cap = ""
+right_cap = ""
+padding_left = 1
+padding_right = 1
+
+[style.time]
+fg = "base.fg"
+bg = "panel"
+shape = "powerline"
+left_cap = ""
+right_cap = ""
+padding_left = 1
+padding_right = 1
+
+[style.git]
+fg = "base.bg"
+bg = "ok"
+bold = true
+shape = "powerline"
+left_cap = ""
+right_cap = ""
+padding_left = 1
+padding_right = 1
+
+[style.command]
+fg = "base.bg"
+bg = "command"
+shape = "powerline"
+left_cap = ""
+right_cap = ""
+padding_left = 1
+padding_right = 1
+
+[style.ssh]
+fg = "base.bg"
+bg = "warn"
+bold = true
+shape = "powerline"
+left_cap = ""
+right_cap = ""
+padding_left = 1
+padding_right = 1

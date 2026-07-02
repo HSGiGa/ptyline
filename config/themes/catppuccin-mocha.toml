@@ -1,0 +1,14 @@
+# Catppuccin Mocha (dark). Palette only — pair with a style preset (theme.style).
+# Source: https://github.com/catppuccin/catppuccin
+name = "catppuccin-mocha"
+
+[palette]
+"base.bg" = "#1e1e2e" # base
+"base.fg" = "#cdd6f4" # text
+panel = "#313244"     # surface0
+accent = "#89b4fa"    # blue
+ok = "#a6e3a1"        # green
+warn = "#f9e2af"      # yellow
+error = "#f38ba8"     # red
+muted = "#6c7086"     # overlay0
+command = "#fab387"   # peach

@@ -25,12 +25,10 @@ import (
 	"github.com/hsgiga/ptyline/internal/reserved"
 	"github.com/hsgiga/ptyline/internal/runtimeenv"
 	"github.com/hsgiga/ptyline/internal/shellintegration"
-	"github.com/hsgiga/ptyline/internal/shellintegration/shellcolors"
 	"github.com/hsgiga/ptyline/internal/snapshot"
 	"github.com/hsgiga/ptyline/internal/status"
 	"github.com/hsgiga/ptyline/internal/status/layout"
 	"github.com/hsgiga/ptyline/internal/status/renderer"
-	"github.com/hsgiga/ptyline/internal/status/style"
 	"github.com/hsgiga/ptyline/internal/terminal"
 )
 
@@ -190,24 +188,10 @@ func run(opts options) int {
 	state.UpdateModule(sshBaseSnap)
 	sshAnim := modules.NewSSHAnimator(sshBaseSnap)
 
-	visuals, err := bar.VisualsFromConfig(resolvedCfg, colorMode(profile.Capabilities.Color), opts.ConfigPath)
+	visuals, err := bar.VisualsFromConfig(resolvedCfg, colorMode(profile.Capabilities.Color), opts.ConfigPath, modules.ShellLabel(argv))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ptyline: theme:", err)
 		return 1
-	}
-	var shellStyles map[string]style.Style
-	mergedStyles := func() map[string]style.Style {
-		if len(shellStyles) == 0 {
-			return visuals.Styles
-		}
-		merged := make(map[string]style.Style, len(shellStyles)+len(visuals.Styles))
-		for k, v := range shellStyles {
-			merged[k] = v
-		}
-		for k, v := range visuals.Styles {
-			merged[k] = v // config/theme always wins
-		}
-		return merged
 	}
 	newEngine := func(cols int) *layout.Engine {
 		return layout.NewWithMinBlock(cols, resolvedCfg.Bar.MinBlockWidth)
@@ -215,7 +199,7 @@ func run(opts options) int {
 	var changeAnimating atomic.Bool
 	configureRenderer := func(r *renderer.Renderer) {
 		r.SetJustify(renderer.Justify(resolvedCfg.Bar.Justify))
-		r.SetStyles(mergedStyles())
+		r.SetStyles(visuals.Styles)
 		r.SetAnimations(bar.AnimationsFromConfig(resolvedCfg.Modules))
 		r.SetTemplates(bar.TemplateSpecs(resolvedCfg))
 		r.SetIcons(bar.IconSpecs(resolvedCfg))
@@ -521,6 +505,7 @@ func run(opts options) int {
 	as := &appState{
 		cfg:                cfg,
 		cliOverlay:         cliOverlay,
+		shell:              modules.ShellLabel(argv),
 		resolvedCfg:        &resolvedCfg,
 		area:               &area,
 		barRows:            &barRows,
@@ -632,12 +617,6 @@ func run(opts options) int {
 			state.ApplyShellMeta(key, value)
 			if key == shellintegration.KeyCommand && value != "" {
 				pendingRefreshCommand = state.Shell.LastCommand
-			}
-			if key == shellintegration.KeyColors {
-				shellStyles = shellcolors.ParseToStyles(value)
-				render.SetStyles(mergedStyles())
-				redraw()
-				return
 			}
 			if key == shellintegration.KeySSHStart {
 				state.UpdateModule(sshAnim.OnSSHStart(state.Shell.SSHTarget))
