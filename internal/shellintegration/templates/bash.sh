@@ -12,7 +12,14 @@
 # its default palette which already matches bash prompt conventions.
 
 __ptyline_emit() { printf '\e]777;%s=%s\e\\' "$1" "$2"; }
-__ptyline_now_ms() { date +%s%3N; }
+# $EPOCHREALTIME (bash ≥5, macOS bash 3.2 lacks it) avoids GNU-only date +%s%3N.
+__ptyline_now_ms() {
+    if [ -n "${EPOCHREALTIME-}" ]; then
+        printf '%.0f' "${EPOCHREALTIME}000"
+    else
+        printf '%s000' "$(date +%s)"
+    fi
+}
 __ptyline_emit_env() {
     [ -z "$PTYLINE_ENV_NAMES" ] && return
     local __ptyline_names __ptyline_name __ptyline_value __ptyline_out __ptyline_count
@@ -72,8 +79,10 @@ __ptyline_emit_exec_env() {
 }
 
 # DEBUG fires before each command; capture the first command of the line and its
-# start time, ignoring our own precmd hook.
+# start time, ignoring our own precmd hook and any sub-commands run inside
+# PROMPT_COMMAND (guarded by __ptyline_in_prompt).
 __ptyline_preexec() {
+    [ -n "$__ptyline_in_prompt" ] && return  # inside PROMPT_COMMAND — not a user command
     case "$BASH_COMMAND" in
     __ptyline_precmd*) return ;;
     esac
@@ -90,6 +99,7 @@ __ptyline_preexec() {
 # actually ran) its duration, then clear the active command.
 __ptyline_precmd() {
     __ptyline_exit=$?
+    __ptyline_in_prompt=1
     if [ -n "$__ptyline_running" ]; then
         __ptyline_emit duration_ms "$(($(__ptyline_now_ms) - __ptyline_start))"
         __ptyline_running=
@@ -99,9 +109,19 @@ __ptyline_precmd() {
     __ptyline_emit_env
     __ptyline_emit_exec_env
     __ptyline_emit command ""
+    __ptyline_in_prompt=
 }
 
-trap '__ptyline_preexec' DEBUG
+# Append to any existing DEBUG trap rather than replacing it, so bash-preexec
+# and other DEBUG-based tools keep working alongside ptyline.
+__ptyline_existing_debug=$(trap -p DEBUG 2>/dev/null)
+if [ -n "$__ptyline_existing_debug" ]; then
+    __ptyline_existing_debug=$(printf '%s' "$__ptyline_existing_debug" | sed "s/^trap -- '\\(.*\\)' DEBUG\$/\\1/")
+    trap "${__ptyline_existing_debug}; __ptyline_preexec" DEBUG
+else
+    trap '__ptyline_preexec' DEBUG
+fi
+unset __ptyline_existing_debug
 case "$PROMPT_COMMAND" in
 *__ptyline_precmd*) ;;
 *) PROMPT_COMMAND="__ptyline_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
@@ -113,7 +133,11 @@ __ptyline_emit_exec_env
 # Wrap ssh to report outbound connections to the ptyline status bar.
 # Use `command ssh` to bypass this wrapper when needed.
 ssh() {
-    __ptyline_emit ssh_start "${!#}"
+    local _ptyline_host=
+    for _ptyline_a in "$@"; do
+        case "$_ptyline_a" in -*) ;; *) _ptyline_host=$_ptyline_a; break ;; esac
+    done
+    __ptyline_emit ssh_start "$_ptyline_host"
     command ssh "$@"
     local _code=$?
     __ptyline_emit ssh_end ""

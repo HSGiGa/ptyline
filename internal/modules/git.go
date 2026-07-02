@@ -162,46 +162,28 @@ var gitSubIDs = []status.ModuleID{
 
 // collect runs the git subprocesses and returns parsed data. Returns nil on
 // any error (not-a-repo, git missing, etc.); timedOut is true when ctx expired.
+//
+// Uses --porcelain=v2 --branch (git ≥ 2.11, released 2016): the v2 branch
+// header lines are unambiguous and cannot be confused by branch names that
+// contain "..." or "[" as in the v1 header.
 func (m *Git) collect(ctx context.Context) (data *gitData, timedOut bool) {
 	dir := ""
 	if m.cwd != nil {
 		dir = m.cwd()
 	}
 
-	// git status --porcelain=v1 -b — one call covers branch, ahead/behind,
-	// staged, modified, untracked, and conflicts.
-	args := m.withDir(dir, "status", "--porcelain=v1", "-b")
+	args := m.withDir(dir, "status", "--porcelain=v2", "--branch")
 	out, err := exec.CommandContext(ctx, m.gitBin, args...).Output()
 	if ctx.Err() != nil {
 		return nil, true
 	}
 	if err != nil {
-		return nil, false // not a repo, or git missing
+		return nil, false // not a repo, git missing, or git < 2.11
 	}
 
 	d := &gitData{}
 	for _, line := range strings.Split(string(out), "\n") {
-		if len(line) < 2 {
-			continue
-		}
-		if strings.HasPrefix(line, "## ") {
-			parseBranchLine(line[3:], d)
-			continue
-		}
-		x, y := line[0], line[1]
-		switch {
-		case x == '?' && y == '?':
-			d.Untracked++
-		case isConflictXY(x, y):
-			d.Conflict++
-		default:
-			if x != ' ' {
-				d.Staged++
-			}
-			if y != ' ' {
-				d.Modified++
-			}
-		}
+		parsePortcelainV2Line(line, d)
 	}
 
 	// Detect REBASE/MERGE/etc. state from git directory files.
@@ -210,6 +192,71 @@ func (m *Git) collect(ctx context.Context) (data *gitData, timedOut bool) {
 	}
 
 	return d, false
+}
+
+// parsePortcelainV2Line parses one line from `git status --porcelain=v2 --branch`.
+//
+// Header lines:
+//
+//	# branch.head <name>    (or "(detached)")
+//	# branch.ab +N -M
+//
+// Status entries:
+//
+//	1 XY …  changed (X=index, Y=work-tree; '.' = unmodified)
+//	2 XY …  renamed/copied (same XY semantics)
+//	u XY …  unmerged
+//	? …     untracked
+func parsePortcelainV2Line(line string, d *gitData) {
+	if len(line) < 2 {
+		return
+	}
+	if line[0] == '#' && len(line) >= 3 && line[1] == ' ' {
+		rest := line[2:]
+		switch {
+		case strings.HasPrefix(rest, "branch.head "):
+			name := strings.TrimPrefix(rest, "branch.head ")
+			if name != "(detached)" {
+				d.Branch = name
+			}
+		case strings.HasPrefix(rest, "branch.ab "):
+			// "+N -M" — ahead and behind counts.
+			ab := strings.TrimPrefix(rest, "branch.ab ")
+			for _, part := range strings.Fields(ab) {
+				if len(part) < 2 {
+					continue
+				}
+				n, err := strconv.Atoi(part[1:])
+				if err != nil {
+					continue
+				}
+				switch part[0] {
+				case '+':
+					d.Ahead = n
+				case '-':
+					d.Behind = n
+				}
+			}
+		}
+		return
+	}
+	switch line[0] {
+	case '1', '2': // changed entry: "1 XY …" or "2 XY …"
+		if len(line) < 4 {
+			return
+		}
+		x, y := line[2], line[3]
+		if x != '.' {
+			d.Staged++
+		}
+		if y != '.' {
+			d.Modified++
+		}
+	case 'u': // unmerged
+		d.Conflict++
+	case '?': // untracked
+		d.Untracked++
+	}
 }
 
 // withDir prepends -C dir to git args when dir is non-empty.
@@ -235,39 +282,6 @@ func (m *Git) resolveGitDir(ctx context.Context, cwd string) string {
 	return gitDir
 }
 
-// parseBranchLine parses the content after "## " in the porcelain -b header.
-// Examples: "main...origin/main [ahead 2, behind 1]", "main", "No commits yet on main".
-func parseBranchLine(s string, d *gitData) {
-	// Strip "[ahead N, behind M]" suffix.
-	if idx := strings.Index(s, " ["); idx != -1 {
-		ab := s[idx+2:]
-		if end := strings.Index(ab, "]"); end != -1 {
-			ab = ab[:end]
-		}
-		for _, part := range strings.Split(ab, ", ") {
-			switch {
-			case strings.HasPrefix(part, "ahead "):
-				d.Ahead, _ = strconv.Atoi(strings.TrimSpace(part[6:]))
-			case strings.HasPrefix(part, "behind "):
-				d.Behind, _ = strconv.Atoi(strings.TrimSpace(part[7:]))
-			}
-		}
-		s = strings.TrimSpace(s[:idx])
-	}
-	// Strip remote tracking "...origin/main".
-	if idx := strings.Index(s, "..."); idx != -1 {
-		s = s[:idx]
-	}
-	// "No commits yet on <branch>".
-	s = strings.TrimPrefix(s, "No commits yet on ")
-	d.Branch = strings.TrimSpace(s)
-}
-
-// isConflictXY reports whether an XY pair from git status --porcelain=v1
-// indicates an unmerged (conflict) entry.
-func isConflictXY(x, y byte) bool {
-	return x == 'U' || y == 'U' || (x == 'A' && y == 'A') || (x == 'D' && y == 'D')
-}
 
 // detectGitState inspects special files inside the git directory to determine
 // the current repository operation state.

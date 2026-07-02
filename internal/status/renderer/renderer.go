@@ -83,14 +83,59 @@ type Animation struct {
 	DurationTicks int
 }
 
+// AnimationState captures the per-module animation bookkeeping that should
+// survive a renderer recreation on resize or config reload. Callers extract it
+// via TakeAnimationState before replacing the renderer and pass it to
+// NewWithState so in-progress change pulses are not interrupted.
+type AnimationState struct {
+	lastValues  map[string]string
+	changedAt   map[string]int
+	changedFor  map[string]int
+	frameActive bool
+}
+
 // New creates a renderer over a layout engine and theme. A nil theme renders
-// plain (no-color) output.
+// plain (no-color) output. Animation state starts fresh.
 func New(engine *layout.Engine, th *theme.Theme) *Renderer {
-	r := &Renderer{engine: engine, theme: th, justify: JustifyCenter, styles: map[string]style.Style{}, animations: map[string]Animation{}, lastValues: map[string]string{}, changedAt: map[string]int{}, changedFor: map[string]int{}, templates: map[string]TemplateSpec{}, icons: map[string]ModuleIcon{}}
+	return NewWithState(engine, th, nil)
+}
+
+// NewWithState is like New but carries over prior animation state so change
+// pulses and glints survive resize and config reload.
+func NewWithState(engine *layout.Engine, th *theme.Theme, anim *AnimationState) *Renderer {
+	r := &Renderer{
+		engine:     engine,
+		theme:      th,
+		justify:    JustifyCenter,
+		styles:     map[string]style.Style{},
+		animations: map[string]Animation{},
+		lastValues: map[string]string{},
+		changedAt:  map[string]int{},
+		changedFor: map[string]int{},
+		templates:  map[string]TemplateSpec{},
+		icons:      map[string]ModuleIcon{},
+	}
 	if th != nil && th.Mode() != theme.NoColor {
 		r.base = th.FG("base.fg") + th.BG("base.bg")
 	}
+	if anim != nil {
+		r.lastValues = anim.lastValues
+		r.changedAt = anim.changedAt
+		r.changedFor = anim.changedFor
+		r.frameActiveAnimation = anim.frameActive
+	}
 	return r
+}
+
+// TakeAnimationState extracts the current animation state so it can be passed
+// to NewWithState when recreating the renderer on resize or reload.
+func (r *Renderer) TakeAnimationState() *AnimationState {
+	return &AnimationState{
+		lastValues:  r.lastValues,
+		changedAt:   r.changedAt,
+		changedFor:  r.changedFor,
+		frameActive: r.frameActiveAnimation,
+	}
 }
 
 // ModuleIcon is a display-only icon attached to a rendered module block.

@@ -221,3 +221,69 @@ func TestOrdinaryOSCPassThrough(t *testing.T) {
 		t.Fatalf("OSC 0 = %q, want pass-through", got)
 	}
 }
+
+// ESC c (RIS) in the normal screen must be intercepted: the filter must not
+// forward it (it would reset the terminal scroll region), must set scrollReset,
+// and must substitute a clear-child-area sequence.
+func TestRISInterceptedNormalScreen(t *testing.T) {
+	f := newFilter()
+	out := string(f.Filter([]byte("\x1bc")))
+
+	// Must not forward the raw RIS.
+	if out == "\x1bc" {
+		t.Fatal("RIS was forwarded unchanged — scroll region would be lost")
+	}
+	// Must contain a cursor-move + erase to clear the child area.
+	if out == "" {
+		t.Fatal("RIS produced no substitute output (expected clear-child sequence)")
+	}
+	// scrollReset flag must be set.
+	if !f.TakeScrollReset() {
+		t.Error("TakeScrollReset = false after RIS; event loop would not re-apply scroll region")
+	}
+	// Flag must be consumed on first call.
+	if f.TakeScrollReset() {
+		t.Error("TakeScrollReset = true on second call; should be one-shot")
+	}
+}
+
+// ESC c in the alt screen passes through — the terminal owns all rows there.
+func TestRISInAltScreenPassesThrough(t *testing.T) {
+	f := newFilter()
+	// Enter alt screen.
+	f.Filter([]byte("\x1b[?1049h"))
+	out := string(f.Filter([]byte("\x1bc")))
+	if out != "\x1bc" {
+		t.Fatalf("RIS in alt screen = %q, want pass-through", out)
+	}
+	if f.TakeScrollReset() {
+		t.Error("TakeScrollReset = true in alt screen; should not intercept")
+	}
+}
+
+// CSI ! p (DECSTR, soft terminal reset) in the normal screen must be
+// intercepted the same way as RIS.
+func TestDECSTRInterceptedNormalScreen(t *testing.T) {
+	f := newFilter()
+	out := string(f.Filter([]byte("\x1b[!p")))
+
+	if out == "\x1b[!p" {
+		t.Fatal("DECSTR was forwarded unchanged — scroll region would be lost")
+	}
+	if !f.TakeScrollReset() {
+		t.Error("TakeScrollReset = false after DECSTR")
+	}
+}
+
+// Prefix and suffix bytes around an RIS must be preserved.
+func TestRISMidStreamPreservesNeighbours(t *testing.T) {
+	f := newFilter()
+	// "hello\x1bcworld" — surrounding text should pass through.
+	out := string(f.Filter([]byte("hello\x1bcworld")))
+	if out[:5] != "hello" {
+		t.Errorf("prefix = %q, want %q", out[:5], "hello")
+	}
+	if out[len(out)-5:] != "world" {
+		t.Errorf("suffix = %q, want %q", out[len(out)-5:], "world")
+	}
+}

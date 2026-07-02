@@ -52,6 +52,7 @@ type AnsiFilter struct {
 	deferred     []byte // bytes after an alt transition, replayed after the transition is applied
 	meta         []event.ShellMeta
 	barClobbered bool // child emitted an erase that may have wiped the reserved bar rows
+	scrollReset  bool // child sent ESC c (RIS) or CSI ! p (DECSTR) — scroll region lost
 	onAlt        func(active bool)
 	onDiag       func(msg string)
 }
@@ -88,6 +89,19 @@ func (f *AnsiFilter) TakeBarClobbered() bool {
 		return false
 	}
 	f.barClobbered = false
+	return true
+}
+
+// TakeScrollReset reports whether the child sent ESC c (RIS) or CSI ! p
+// (DECSTR) since the last call, then resets the flag. Either sequence resets
+// the terminal's scroll region to full-screen, unprotecting the reserved bar
+// rows. The event loop uses this to re-apply the scroll region and repaint
+// the bar immediately (spec §8.5).
+func (f *AnsiFilter) TakeScrollReset() bool {
+	if !f.scrollReset {
+		return false
+	}
+	f.scrollReset = false
 	return true
 }
 
@@ -252,6 +266,20 @@ func (f *AnsiFilter) handleSequence(seq, out []byte) ([]byte, bool) {
 		return append(out, forward...), altChanged
 	case ']':
 		return f.handleOSC(seq, out), false
+	case 'c':
+		// ESC c = RIS (Reset to Initial State): resets the scroll region to the full
+		// screen, so our reserved bar rows become unprotected. Intercept it, substitute
+		// a clear-child-area sequence (matching the visible effect), and set scrollReset
+		// so the event loop re-applies the scroll region and repaints the bar.
+		if f.alt.Active {
+			return append(out, seq...), false // alt screen: child owns everything
+		}
+		f.scrollReset = true
+		bottom := f.bottom()
+		if bottom == 0 {
+			return append(out, seq...), false
+		}
+		return append(out, []byte(fmt.Sprintf("\x1b[%d;999H\x1b[1J\x1b[H", bottom))...), false
 	default:
 		return append(out, seq...), false
 	}
@@ -285,6 +313,17 @@ func (f *AnsiFilter) handleCSI(seq []byte) ([]byte, bool) {
 			return seq, false // alt screen: child owns every row
 		}
 		return f.rewriteEraseDisplay(seq, params), false
+	case 'p':
+		// CSI ! p = DECSTR (Soft Terminal Reset): like RIS, resets the scroll region.
+		if params == "!" && !f.alt.Active {
+			f.scrollReset = true
+			bottom := f.bottom()
+			if bottom == 0 {
+				return seq, false
+			}
+			return []byte(fmt.Sprintf("\x1b[%d;999H\x1b[1J\x1b[H", bottom)), false
+		}
+		return seq, false
 	default:
 		return seq, false
 	}

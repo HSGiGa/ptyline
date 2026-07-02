@@ -16,7 +16,7 @@ func TestWriteChildFrameIsAtomic(t *testing.T) {
 	w.SetBarRows(30, 1)
 
 	child := []byte("cmd\x1b[0J") // child output that erases to end (clobbers the bar)
-	if err := w.WriteChildFrame(child, []string{"bar"}); err != nil {
+	if err := w.WriteChildFrame(child, []string{"bar"}, false); err != nil {
 		t.Fatalf("WriteChildFrame: %v", err)
 	}
 	out := buf.String()
@@ -37,7 +37,7 @@ func TestWriteChildFrameIsAtomic(t *testing.T) {
 	// Having painted "bar", an identical subsequent flush is a no-op.
 	buf.Reset()
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"bar"}); err != nil {
+	if err := w.FlushBarFrame([]string{"bar"}, false); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() != 0 {
@@ -51,7 +51,7 @@ func TestWriteChildFrameNoBarPlainWrite(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewTerminalWriter(&buf)
 	// barTop/barCount unset → no bar.
-	if err := w.WriteChildFrame([]byte("cmd"), []string{"bar"}); err != nil {
+	if err := w.WriteChildFrame([]byte("cmd"), []string{"bar"}, false); err != nil {
 		t.Fatalf("WriteChildFrame: %v", err)
 	}
 	if out := buf.String(); out != "cmd" {
@@ -65,7 +65,7 @@ func TestWriterFlushAndSkipUnchanged(t *testing.T) {
 	w.SetBarRows(30, 1)
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"hello"}); err != nil {
+	if err := w.FlushBarFrame([]string{"hello"}, false); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() == 0 {
@@ -80,7 +80,7 @@ func TestWriterFlushAndSkipUnchanged(t *testing.T) {
 	// Re-requesting the same content is a no-op (spec §16).
 	buf.Reset()
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"hello"}); err != nil {
+	if err := w.FlushBarFrame([]string{"hello"}, false); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() != 0 {
@@ -96,7 +96,7 @@ func TestWriterShortTerminalKeepsBottomRows(t *testing.T) {
 	w.SetBarRows(30, 1) // only one row fits
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"TOP-border", "BOTTOM-content"}); err != nil {
+	if err := w.FlushBarFrame([]string{"TOP-border", "BOTTOM-content"}, false); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("BOTTOM-content")) {
@@ -112,10 +112,11 @@ func TestWriterSuppressesBarInAltScreen(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewTerminalWriter(&buf)
 	w.SetBarRows(30, 1)
-	w.SetAltActive(true)
+	w.OnAltEnter()
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"hidden"}); err != nil {
+	// Callers pass alt=true when the filter reports alt active.
+	if err := w.FlushBarFrame([]string{"hidden"}, true); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() != 0 {
@@ -129,15 +130,15 @@ func TestWriterForcesRedrawAfterAltScreen(t *testing.T) {
 	w.SetBarRows(30, 1)
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"bar"}); err != nil {
+	if err := w.FlushBarFrame([]string{"bar"}, false); err != nil {
 		t.Fatalf("initial FlushBarFrame: %v", err)
 	}
 	buf.Reset()
 
-	w.SetAltActive(true)
-	w.SetAltActive(false)
+	// Simulate: enter alt (clears bar state), then leave alt (caller passes false).
+	w.OnAltEnter()
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"bar"}); err != nil {
+	if err := w.FlushBarFrame([]string{"bar"}, false); err != nil {
 		t.Fatalf("post-alt FlushBarFrame: %v", err)
 	}
 	if buf.Len() == 0 {
@@ -153,11 +154,11 @@ func TestWriterRateLimits(t *testing.T) {
 	w.SetBarRows(30, 1)
 
 	w.RequestRedraw()
-	_ = w.FlushBarFrame([]string{"a"})
+	_ = w.FlushBarFrame([]string{"a"}, false)
 	buf.Reset()
 
 	w.RequestRedraw()
-	if err := w.FlushBarFrame([]string{"b"}); err != nil {
+	if err := w.FlushBarFrame([]string{"b"}, false); err != nil {
 		t.Fatalf("FlushBarFrame: %v", err)
 	}
 	if buf.Len() != 0 {
@@ -171,7 +172,7 @@ func TestWriterLazyFlushSkipsRenderWhenRateLimited(t *testing.T) {
 	w.SetBarRows(30, 1)
 
 	w.RequestRedraw()
-	_ = w.FlushBarFrameLazy(func() []string { return []string{"a"} })
+	_ = w.FlushBarFrameLazy(func() []string { return []string{"a"} }, false)
 	buf.Reset()
 
 	called := false
@@ -179,7 +180,7 @@ func TestWriterLazyFlushSkipsRenderWhenRateLimited(t *testing.T) {
 	if err := w.FlushBarFrameLazy(func() []string {
 		called = true
 		return []string{"b"}
-	}); err != nil {
+	}, false); err != nil {
 		t.Fatalf("FlushBarFrameLazy: %v", err)
 	}
 	if called {

@@ -14,7 +14,6 @@ import (
 	"github.com/hsgiga/ptyline/internal/config"
 	"github.com/hsgiga/ptyline/internal/event"
 	"github.com/hsgiga/ptyline/internal/reserved"
-	"github.com/hsgiga/ptyline/internal/status"
 )
 
 func TestBarGeometry(t *testing.T) {
@@ -305,9 +304,9 @@ func TestExecModuleRuntimeRefreshAfterCommand(t *testing.T) {
 		if !ok {
 			t.Fatalf("event = %T, want ModuleUpdated", got)
 		}
-		snap, ok := update.Snapshot.(status.ModuleSnapshot)
-		if !ok || snap.ID != "gh" || snap.Value.Text != "ok" {
-			t.Fatalf("snapshot = %#v, want gh=ok", update.Snapshot)
+		snap := update.Snapshot
+		if snap.ID != "gh" || snap.Value.Text != "ok" {
+			t.Fatalf("snapshot = %#v, want gh=ok", snap)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("refresh_on_command did not emit ModuleUpdated")
@@ -337,9 +336,9 @@ func TestExecModuleRuntimeUsesEnvProvider(t *testing.T) {
 		if !ok {
 			t.Fatalf("event = %T, want ModuleUpdated", got)
 		}
-		snap, ok := update.Snapshot.(status.ModuleSnapshot)
-		if !ok || snap.ID != "exec" || snap.Value.Text != "one:two" {
-			t.Fatalf("snapshot = %#v, want exec=one:two", update.Snapshot)
+		snap := update.Snapshot
+		if snap.ID != "exec" || snap.Value.Text != "one:two" {
+			t.Fatalf("snapshot = %#v, want exec=one:two", snap)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("exec refresh did not emit ModuleUpdated")

@@ -46,9 +46,9 @@ func (c *altScreenCoordinator) FlushPending() bool {
 
 // Apply executes the alt-screen entry or exit procedure immediately.
 func (c *altScreenCoordinator) Apply(active bool) {
-	c.writer.SetAltActive(active)
 	c.state.Terminal.AlternateScreen = active
 	if active {
+		c.writer.OnAltEnter()
 		c.ctrl.ResetScrollRegion()
 		_ = c.sup.ResizeFull(pty.Size{Cols: c.state.Terminal.Cols, Rows: c.state.Terminal.Rows})
 		return
