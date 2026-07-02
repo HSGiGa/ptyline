@@ -116,6 +116,22 @@ func parseExecEnv(value, nonce string) map[string]string {
 	return out
 }
 
+// stripNonce validates and removes the "<nonce>:" prefix that the shell
+// integration prepends to authenticated single-value frames (cwd). It returns
+// the payload and true only when the frame carries the expected nonce, so a
+// forged OSC 777 (injected from a file or command output, which cannot know the
+// per-session nonce) is rejected. An empty nonce never matches.
+func stripNonce(value, nonce string) (string, bool) {
+	if nonce == "" {
+		return "", false
+	}
+	got, rest, ok := strings.Cut(value, ":")
+	if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(nonce)) != 1 {
+		return "", false
+	}
+	return rest, true
+}
+
 // isValidEnvName reports whether s is a POSIX-shell environment variable name
 // (leading letter or underscore, then letters/digits/underscores).
 func isValidEnvName(s string) bool {

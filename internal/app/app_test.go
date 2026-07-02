@@ -212,6 +212,28 @@ func TestParseExecEnv(t *testing.T) {
 	}
 }
 
+func TestStripNonce(t *testing.T) {
+	const nonce = "deadbeef"
+	if got, ok := stripNonce(nonce+":/home/u/proj", nonce); !ok || got != "/home/u/proj" {
+		t.Fatalf("stripNonce valid = (%q, %v), want (\"/home/u/proj\", true)", got, ok)
+	}
+	// A path containing ':' survives — only the first segment is the nonce.
+	if got, ok := stripNonce(nonce+":/a:b", nonce); !ok || got != "/a:b" {
+		t.Fatalf("stripNonce with ':' in path = (%q, %v), want (\"/a:b\", true)", got, ok)
+	}
+	// Forged frame (no nonce, as an injected OSC 777 would be) is rejected.
+	if _, ok := stripNonce("/etc", nonce); ok {
+		t.Fatal("stripNonce accepted a frame with no nonce prefix")
+	}
+	if _, ok := stripNonce("wrong:/etc", nonce); ok {
+		t.Fatal("stripNonce accepted a frame with the wrong nonce")
+	}
+	// An empty configured nonce never matches (defensive; never happens in a real run).
+	if _, ok := stripNonce(":/etc", ""); ok {
+		t.Fatal("stripNonce accepted an empty nonce")
+	}
+}
+
 func TestChangedEnvNames(t *testing.T) {
 	old := map[string]string{"A": "1", "B": "2", "GONE": "x"}
 	next := map[string]string{"A": "1", "B": "changed", "NEW": "y"}
