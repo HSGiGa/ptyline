@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a ptyline bug with enough terminal context to reproduce it.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: ptyline version
+      description: Output of `ptyline --version`.
+      placeholder: ptyline v1.0.0-rc.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Linux
+        - WSL2
+        - macOS
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal emulator
+      placeholder: Ghostty, WezTerm, Alacritty, Windows Terminal, GNOME Terminal, Kitty
+    validations:
+      required: true
+  - type: input
+    id: shell
+    attributes:
+      label: Shell / child command
+      placeholder: fish, bash, zsh, ptyline -- ssh host
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      render: toml
+      description: Include only the relevant `config.toml` / `.ptyline` snippet.
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Run ...
+        2. Press ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+

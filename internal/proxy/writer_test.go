@@ -30,7 +30,7 @@ func TestWriteChildFrameIsAtomic(t *testing.T) {
 	childAt := strings.Index(out, "cmd\x1b[0J")
 	barAt := strings.Index(out, "bar")
 	end := strings.Index(out, terminal.EndSyncUpdate)
-	if !(begin < childAt && childAt < barAt && barAt < end) {
+	if begin >= childAt || childAt >= barAt || barAt >= end {
 		t.Fatalf("order should be sync-begin < child < bar < sync-end, got %q", out)
 	}
 

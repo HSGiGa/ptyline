@@ -23,7 +23,7 @@ func openDebugLog(d *diagnostics.State) {
 		return
 	}
 	write := func(tag, msg string) {
-		fmt.Fprintf(f, "%s [%s] %s\n", time.Now().Format(time.RFC3339Nano), tag, msg)
+		_, _ = fmt.Fprintf(f, "%s [%s] %s\n", time.Now().Format(time.RFC3339Nano), tag, msg)
 	}
 	write("start", fmt.Sprintf("ptyline pid=%d", os.Getpid()))
 	d.SetLogger(func(tag, msg string) { write(tag, msg) })

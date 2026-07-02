@@ -282,7 +282,6 @@ func (m *Git) resolveGitDir(ctx context.Context, cwd string) string {
 	return gitDir
 }
 
-
 // detectGitState inspects special files inside the git directory to determine
 // the current repository operation state.
 func detectGitState(gitDir string) string {

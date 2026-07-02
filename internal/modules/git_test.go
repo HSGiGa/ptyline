@@ -198,12 +198,12 @@ func TestGitV2BranchParsing(t *testing.T) {
 func TestGitV2StatusCounts(t *testing.T) {
 	lines := []string{
 		"# branch.head main",
-		"1 .M N... 100644 100644 100644 aaa bbb file1.go",     // modified work-tree only
-		"1 M. N... 100644 100644 100644 aaa bbb file2.go",     // staged only
-		"1 MM N... 100644 100644 100644 aaa bbb file3.go",     // staged + modified
+		"1 .M N... 100644 100644 100644 aaa bbb file1.go",                    // modified work-tree only
+		"1 M. N... 100644 100644 100644 aaa bbb file2.go",                    // staged only
+		"1 MM N... 100644 100644 100644 aaa bbb file3.go",                    // staged + modified
 		"2 R. N... 100644 100644 100644 aaa bbb R50 file4.go\tfile4_orig.go", // renamed staged
-		"u UU N... 100644 100644 100644 100644 aaa bbb ccc file5.go",        // conflict
-		"u AA N... 100644 100644 100644 100644 aaa bbb ccc file6.go",        // conflict
+		"u UU N... 100644 100644 100644 100644 aaa bbb ccc file5.go",         // conflict
+		"u AA N... 100644 100644 100644 100644 aaa bbb ccc file6.go",         // conflict
 		"? untracked.txt",
 		"? another.txt",
 	}
