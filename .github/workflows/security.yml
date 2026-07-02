@@ -26,8 +26,8 @@ jobs:
 
   codeql:
     name: codeql
+    if: ${{ vars.ENABLE_CODEQL == 'true' }}
     runs-on: ubuntu-latest
-    continue-on-error: true
     permissions:
       contents: read
       security-events: write
