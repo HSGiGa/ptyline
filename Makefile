@@ -31,11 +31,15 @@ export CGO_ENABLED
 #   - otherwise ~/.local/bin (XDG convention; add it to $PATH if missing).
 # Override with `make install BINDIR=/usr/local/bin` (needs sudo) or set DESTDIR
 # for packaging.
-BREW_BIN := $(shell brew --prefix 2>/dev/null)/bin
+BREW_PREFIX := $(shell brew --prefix 2>/dev/null)
+BREW_BIN := $(BREW_PREFIX)/bin
+ifneq ($(BREW_PREFIX),)
 ifneq ($(wildcard $(BREW_BIN)/.),)
 BINDIR ?= $(BREW_BIN)
-else
-BINDIR ?= $(HOME)/.local/bin
+endif
+endif
+ifndef BINDIR
+BINDIR := $(HOME)/.local/bin
 endif
 
 TOOLS_BIN   := $(CURDIR)/.tools/bin

@@ -105,13 +105,27 @@ __ptyline_precmd() {
         __ptyline_running=
     fi
     __ptyline_emit exit_code "$__ptyline_exit"
-    __ptyline_emit cwd "$PWD"
+    # cwd is nonce-tagged like exec_env: ptyline runs exec-module commands and
+    # discovers project .ptyline files from it, so a forged OSC 777 cwd (printed
+    # from a file or command output) must not be able to redirect them.
+    __ptyline_emit cwd "$PTYLINE_NONCE:$PWD"
     __ptyline_emit_env
     __ptyline_emit_exec_env
     __ptyline_emit command ""
-    __ptyline_in_prompt=
 }
 
+# Runs as the final PROMPT_COMMAND entry, clearing the guard __ptyline_precmd
+# set at the start of the prompt. Keeping the guard up across the whole
+# PROMPT_COMMAND chain means the user's own PROMPT_COMMAND commands run guarded
+# too, so they never masquerade as an active command (and never wedge
+# __ptyline_running, which would swallow the next real command).
+__ptyline_prompt_done() { __ptyline_in_prompt=; }
+
+# Keep the guard raised for the rest of this setup (and any trailing lines of
+# the user's rc file) until the first prompt clears it via __ptyline_prompt_done.
+# Otherwise the setup commands below fire the DEBUG trap and leak as spurious
+# "command" frames.
+__ptyline_in_prompt=1
 # Append to any existing DEBUG trap rather than replacing it, so bash-preexec
 # and other DEBUG-based tools keep working alongside ptyline.
 __ptyline_existing_debug=$(trap -p DEBUG 2>/dev/null)
@@ -122,9 +136,12 @@ else
     trap '__ptyline_preexec' DEBUG
 fi
 unset __ptyline_existing_debug
+# __ptyline_precmd runs first (captures $? and raises the guard); the user's
+# original PROMPT_COMMAND runs guarded in the middle; __ptyline_prompt_done runs
+# last and lowers the guard exactly once per prompt.
 case "$PROMPT_COMMAND" in
 *__ptyline_precmd*) ;;
-*) PROMPT_COMMAND="__ptyline_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+*) PROMPT_COMMAND="__ptyline_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND};__ptyline_prompt_done" ;;
 esac
 
 __ptyline_emit_env

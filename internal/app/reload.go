@@ -29,6 +29,16 @@ func (as *appState) reloadConfig(newProjectPath string, force bool) bool {
 		as.diagState.RecordConfigWarning(fmt.Sprintf("overlay %s: %v", newProjectPath, err))
 		return false
 	}
+	// Build visuals before mutating any state. On startup a bad theme aborts the
+	// whole launch, so a reload must not half-apply either: if visuals fail we
+	// leave config, rows, and modules on their old values (rather than pairing a
+	// new layout with the stale theme) and treat it as a failed reload. Not
+	// storing newProjectPath lets a fixed .ptyline retry on the next cwd event.
+	newVisuals, err := bar.VisualsFromConfig(newCfg, colorMode(as.profile.Capabilities.Color), as.opts.ConfigPath)
+	if err != nil {
+		as.diagState.RecordConfigWarning(fmt.Sprintf("overlay %s: visuals: %v", newProjectPath, err))
+		return false
+	}
 	as.projectOverlayPath.Store(newProjectPath)
 	// Invalidate the per-cwd cache so the next cwd event re-scans parent dirs
 	// with the new config in place (the .ptyline locations may have changed).
@@ -47,12 +57,14 @@ func (as *appState) reloadConfig(newProjectPath string, force bool) bool {
 		top, count := bar.Geometry(*as.area, curSize.Rows, len(newBarRows))
 		as.writer.SetBarRows(top, count)
 		_ = as.sup.Resize(pty.Size{Cols: curSize.Cols, Rows: curSize.Rows})
-		as.ctrl.ApplyScrollRegion(curSize, *as.area)
+		// When the bar gains rows the cursor may be sitting on what is now a
+		// bar row. ApplyScrollRegionAtChildBottom sets the scroll region and
+		// explicitly places the cursor at the last child row, so it is always
+		// safe regardless of where it was before the height change.
+		as.ctrl.ApplyScrollRegionAtChildBottom(curSize, *as.area)
 	}
 	*as.barRows = newBarRows
-	if newVisuals, err := bar.VisualsFromConfig(*as.resolvedCfg, colorMode(as.profile.Capabilities.Color), as.opts.ConfigPath); err == nil {
-		*as.visuals = newVisuals
-	}
+	*as.visuals = newVisuals
 	*as.animState = (*as.render).TakeAnimationState()
 	*as.render = renderer.NewWithState(as.newEngine(int(as.termState.Terminal.Cols)), as.visuals.Theme, *as.animState)
 	as.configureRenderer(*as.render)

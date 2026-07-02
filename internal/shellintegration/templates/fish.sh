@@ -103,14 +103,17 @@ function __ptyline_postexec --on-event fish_postexec
         set -e __ptyline_start
     end
     __ptyline_emit exit_code $code
-    __ptyline_emit cwd "$PWD"
+    __ptyline_emit_cwd
     __ptyline_emit_env
     __ptyline_emit_exec_env
     __ptyline_emit command ""
 end
 
+# cwd is nonce-tagged like exec_env: ptyline runs exec-module commands and
+# discovers project .ptyline files from it, so a forged OSC 777 cwd (printed
+# from a file or command output) must not be able to redirect them.
 function __ptyline_emit_cwd --on-variable PWD
-    __ptyline_emit cwd "$PWD"
+    __ptyline_emit cwd "$PTYLINE_NONCE:$PWD"
 end
 
 # Wrap ssh to report outbound connections to the ptyline status bar.

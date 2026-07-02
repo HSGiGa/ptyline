@@ -92,7 +92,10 @@ __ptyline_precmd() {
         __ptyline_start=
     fi
     __ptyline_emit exit_code "$__ptyline_exit"
-    __ptyline_emit cwd "$PWD"
+    # cwd is nonce-tagged like exec_env: ptyline runs exec-module commands and
+    # discovers project .ptyline files from it, so a forged OSC 777 cwd (printed
+    # from a file or command output) must not be able to redirect them.
+    __ptyline_emit cwd "$PTYLINE_NONCE:$PWD"
     __ptyline_emit_env
     __ptyline_emit_exec_env
     __ptyline_emit command ""

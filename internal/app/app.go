@@ -139,10 +139,11 @@ func run(opts options) int {
 	// frame prevents injection: an attacker printing an OSC 777 exec_env=<payload> from
 	// a file or command output cannot supply the nonce, so the frame is dropped.
 	//
-	// Not protected by the nonce: cwd, command, exit_code, env — these affect only the
-	// status bar display, not the environment that commands run in, so forging them is a
-	// display-only attack (worst case: wrong branch or directory in the bar). Extending
-	// nonce coverage to those keys is a future improvement once the nonce is per-key.
+	// cwd is authenticated with the same nonce: it is not display-only — it sets the
+	// working directory of exec-module subprocesses and the root for project .ptyline
+	// discovery, so a forged cwd could redirect where commands run and which overlay
+	// loads. command, exit_code, and env stay unauthenticated: they only feed the bar
+	// display (worst case: a wrong command/branch shown), never command execution.
 	execEnvNonce := newNonce()
 	sup.SetEnv("PTYLINE_ENV_NAMES", strings.Join(resolvedCfg.Modules["env"].Env, ","))
 	sup.SetEnv("PTYLINE_EXEC_ENV_NAMES", strings.Join(execEnvNames(resolvedCfg), ","))
@@ -235,11 +236,13 @@ func run(opts options) int {
 		writer.RequestRedraw()
 		alt := filter.AltActive()
 		_ = writer.FlushBarFrameLazy(renderFn, alt)
-		// If the frame was deferred by rate-limiting, schedule a one-shot Tick so
-		// the bar is redrawn as soon as the window expires without waiting for the
-		// next user event or module update.
+		// If the frame was deferred by rate-limiting, schedule a one-shot redraw so
+		// the bar is repainted as soon as the window expires without waiting for the
+		// next user event or module update. It must be RedrawRequest, not Tick: Tick
+		// advances the animation phase, so using it here would let high-rate deferred
+		// flushes run the command animation far faster than its tick interval.
 		if due := writer.PendingRedrawDue(alt); due > 0 {
-			time.AfterFunc(due, func() { bus.SendCtx(ctx, event.Tick{}) })
+			time.AfterFunc(due, func() { bus.SendCtx(ctx, event.RedrawRequest{}) })
 		}
 	}
 	altCoord := &altScreenCoordinator{
@@ -321,26 +324,42 @@ func run(opts options) int {
 			return // worker already running; it will see gitPending when done
 		}
 		go func() {
-			for gitPending.CompareAndSwap(true, false) {
-				// Re-read expectedCWD on each iteration from the caller's last value.
-				// Since pendingCWD races, use cwdHolder as the freshest source.
-				cwdAtStart, _ := cwdHolder.Load().(string)
-				rctx, rcancel := context.WithTimeout(ctx, time.Second)
-				snaps := gm.RefreshAll(rctx)
-				rcancel()
-				// Discard stale results: if the cwd changed while we were running,
-				// keep pending so the loop runs once more with the current directory.
-				if expectedCWD != "" {
-					if cur, _ := cwdHolder.Load().(string); cur != cwdAtStart {
-						gitPending.Store(true)
-						continue
+			// done marks a clean hand-off; if we unwind without it (a panic in
+			// RefreshAll/SendCtx) release the flag so git isn't wedged refreshing.
+			done := false
+			defer func() {
+				if !done {
+					gitRefreshing.Store(false)
+				}
+			}()
+			for {
+				for gitPending.CompareAndSwap(true, false) {
+					// Re-read expectedCWD on each iteration from the caller's last value.
+					// Since pendingCWD races, use cwdHolder as the freshest source.
+					cwdAtStart, _ := cwdHolder.Load().(string)
+					rctx, rcancel := context.WithTimeout(ctx, time.Second)
+					snaps := gm.RefreshAll(rctx)
+					rcancel()
+					// Discard stale results: if the cwd changed while we were running,
+					// keep pending so the loop runs once more with the current directory.
+					if expectedCWD != "" {
+						if cur, _ := cwdHolder.Load().(string); cur != cwdAtStart {
+							gitPending.Store(true)
+							continue
+						}
+					}
+					for _, snap := range snaps {
+						bus.SendCtx(ctx, event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
 					}
 				}
-				for _, snap := range snaps {
-					bus.SendCtx(ctx, event.ModuleUpdated{ID: string(snap.ID), Snapshot: snap})
+				gitRefreshing.Store(false)
+				// A request may have arrived between the failed CAS above and clearing
+				// the flag; re-acquire and loop, unless another caller already did.
+				if !gitPending.Load() || !gitRefreshing.CompareAndSwap(false, true) {
+					done = true
+					return
 				}
 			}
-			gitRefreshing.Store(false)
 		}()
 	}
 
@@ -465,9 +484,10 @@ func run(opts options) int {
 			gitCtx, gCancel := context.WithCancel(ctx)
 			gitCancel = gCancel
 			startGitTicker(gitCtx, gitMod)
-			for _, snap := range gitMod.RefreshAll(context.Background()) {
-				state.UpdateModule(snap)
-			}
+			// Emit the initial snapshot off the event loop (as exec modules do) so a
+			// reload triggered by `cd` never stalls terminal I/O for up to the git
+			// timeout while RefreshAll runs.
+			refreshGitMod(gitMod, "")
 		}
 
 		// Probe-driven system modules: one call starts/stops/restarts them all to
@@ -584,16 +604,31 @@ func run(opts options) int {
 			render = renderer.NewWithState(newEngine(int(cols)), visuals.Theme, animState)
 			configureRenderer(render)
 			if alt {
+				altCoord.MarkResizedDuringAlt()
 				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
 				_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 				return
 			}
 			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
-			ctrl.ApplyScrollRegion(terminal.Size{Cols: cols, Rows: rows}, area)
+			// Re-establish the scroll region. On Linux/WSL this preserves the cursor
+			// (SaveCursor/RestoreCursor) so a resize/split does not jump the cursor to
+			// the last line; on macOS it pins the cursor to the last child row because
+			// the OS clamps it into the bar on shrink. See reapplyScrollRegionAfterResize.
+			reapplyScrollRegionAfterResize(ctrl, terminal.Size{Cols: cols, Rows: rows}, area)
 			_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 		},
 		ShellMeta: func(key, value string) {
+			if key == shellintegration.KeyCWD {
+				// cwd is authenticated: it sets exec modules' working directory and
+				// the root for project .ptyline discovery, so a frame without the
+				// session nonce (a forged OSC 777) is dropped rather than applied.
+				cwd, ok := stripNonce(value, execEnvNonce)
+				if !ok {
+					return
+				}
+				value = cwd
+			}
 			state.ApplyShellMeta(key, value)
 			if key == shellintegration.KeyCommand && value != "" {
 				pendingRefreshCommand = state.Shell.LastCommand
