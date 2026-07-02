@@ -6,6 +6,10 @@
 fg = "ok"
 bold = true
 
+[style.cwd]
+fg = "accent"
+bold = true
+
 [style.time]
 fg = "warn"
 
