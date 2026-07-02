@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26.4"
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go test -race -shuffle=on ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  build:
+    name: build (${{ matrix.goos }})
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            runner: ubuntu-latest
+            cgo: "0"
+          - goos: darwin
+            runner: macos-latest
+            cgo: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          mkdir -p dist
+          arch="$(go env GOARCH)"
+          go build -buildvcs=false -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/ptyline-${{ matrix.goos }}-${arch}" ./cmd/ptyline
+      - name: Package artifact
+        run: |
+          cd dist
+          artifact="$(ls ptyline-${{ matrix.goos }}-*)"
+          tar -czf "${artifact}.tar.gz" "${artifact}"
+          shasum -a 256 "${artifact}.tar.gz" > "${artifact}.tar.gz.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ptyline-${{ matrix.goos }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  publish:
+    name: publish github release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "${GITHUB_REF_NAME}" in
+            *-rc*) prerelease="--prerelease" ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" dist/* --verify-tag --generate-notes ${prerelease}

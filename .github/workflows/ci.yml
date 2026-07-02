@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GO_VERSION: "1.26.4"
+
 jobs:
   build:
     name: build (${{ matrix.goos }})
@@ -27,10 +30,10 @@ jobs:
             runner: macos-latest
             cgo: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Build
         env:
@@ -48,13 +51,15 @@ jobs:
       matrix:
         runner: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: Check go.mod/go.sum
+        run: go mod tidy && git diff --exit-code go.mod go.sum
       - run: go vet ./...
-      - run: go test -race ./...
+      - run: go test -race -shuffle=on ./...
 
   lint:
     name: format & lint
@@ -63,10 +68,10 @@ jobs:
     # same command developers run locally. See the lint target in the Makefile.
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       - run: make fmt-check
       - run: make lint

@@ -1,0 +1,7 @@
+/.github/ @hsgiga
+/internal/terminal/ @hsgiga
+/internal/pty/ @hsgiga
+/internal/proxy/ @hsgiga
+/internal/shellintegration/templates/ @hsgiga
+/internal/config/ @hsgiga
+
