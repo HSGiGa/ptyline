@@ -98,10 +98,24 @@ func run(opts options) int {
 			fmt.Fprintln(os.Stderr, "ptyline: created default config at", path)
 		}
 	}
+	handoff, present, err := parseHandoff()
+	if present && err != nil {
+		fmt.Fprintln(os.Stderr, "ptyline:", err)
+		return 1
+	}
+	adopted := handoff != nil
+
+	// In adopted mode the shell is already running on the handed-off PTY, and
+	// exiting here would orphan it with no PTY reader — the user's session would
+	// hang. A bad config must degrade to built-in defaults, never exit.
 	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ptyline: config:", err)
-		return 1
+		if !adopted {
+			fmt.Fprintln(os.Stderr, "ptyline: config:", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stderr, "ptyline: config:", err, "— continuing with built-in defaults")
+		cfg = config.Default()
 	}
 
 	cliOverlay := config.ResolveOverlayPath(opts.OverlayPath)
@@ -113,20 +127,18 @@ func run(opts options) int {
 	}
 	resolvedCfg, err := config.ApplyOverlays(cfg, cliOverlay, initProjectOverlay)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ptyline: overlay:", err)
-		return 1
+		if !adopted {
+			fmt.Fprintln(os.Stderr, "ptyline: overlay:", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stderr, "ptyline: overlay:", err, "— continuing without overlays")
+		resolvedCfg = cfg
 	}
 
 	barRows := bar.BuildRows(resolvedCfg)
 	area := reserved.Area{Edge: reserved.Bottom, Rows: uint16(len(barRows))}
 
 	binID := captureBinaryIdentity()
-	handoff, present, err := parseHandoff()
-	if present && err != nil {
-		fmt.Fprintln(os.Stderr, "ptyline:", err)
-		return 1
-	}
-	adopted := handoff != nil
 
 	argv := resolveChild(opts.Child, resolvedCfg, profile)
 	if adopted {
