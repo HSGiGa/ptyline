@@ -1,0 +1,72 @@
+version: 2
+
+project_name: ptyline
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  # macOS needs cgo (the system-metric modules call mach/IOKit), so it is built
+  # natively on the macOS runner. Only arm64 is shipped — cross-compiling a cgo
+  # amd64 binary is not worth the toolchain.
+  - id: darwin
+    main: ./cmd/ptyline
+    binary: ptyline
+    env:
+      - CGO_ENABLED=1
+    goos: [darwin]
+    goarch: [arm64]
+    flags:
+      - -buildvcs=false
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+  # linux is pure Go, so it cross-compiles cleanly from the macOS runner.
+  - id: linux
+    main: ./cmd/ptyline
+    binary: ptyline
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -buildvcs=false
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    # Keeps the ptyline-<os>-<arch>.tar.gz names the current release used.
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  # rc / beta tags are published as GitHub pre-releases automatically.
+  prerelease: auto
+
+brews:
+  - name: ptyline
+    repository:
+      owner: HSGiGa
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/HSGiGa/ptyline"
+    description: "Lightweight terminal wrapper with a configurable bottom status bar"
+    license: "MIT"
+    # Don't auto-bump the formula for rc/pre-releases.
+    skip_upload: auto
+    install: |
+      bin.install "ptyline"
+    test: |
+      assert_match "ptyline", shell_output("#{bin}/ptyline --version")
+    caveats: |
+      On first run ptyline writes an editable config to
+      ~/.config/ptyline/config.toml. Themes and styles are built in, so
+      it works out of the box; drop your own into ~/.config/ptyline/themes
+      or styles to override them.
+      See https://github.com/HSGiGa/ptyline#configuration.

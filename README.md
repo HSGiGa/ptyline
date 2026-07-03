@@ -30,14 +30,26 @@ diagnostics/replay tooling are deferred.
 
 ## Installation
 
+### With Homebrew (recommended)
+
+Installs a prebuilt binary from the latest
+[release](https://github.com/hsgiga/ptyline/releases) and keeps it current — no
+Go toolchain required. Available for macOS (Apple Silicon) and Linux
+(x86-64 / arm64):
+
+```sh
+brew install hsgiga/tap/ptyline
+brew upgrade ptyline               # update to the latest release
+```
+
+### From source
+
 **Requirements:** **Go 1.26+** and a Linux, WSL2, or macOS host. Verify your
 toolchain with `go version`.
 
 On **macOS** the system-metric modules use cgo (mach/IOKit), so you also need the
 Xcode Command Line Tools (`xcode-select --install`); `make build` enables
 `CGO_ENABLED=1` automatically on darwin.
-
-### From source (recommended)
 
 ```sh
 git clone https://github.com/hsgiga/ptyline.git
@@ -121,26 +133,24 @@ $XDG_CONFIG_HOME/ptyline/config.toml
 ~/.config/ptyline/config.toml
 ```
 
-ptyline also runs with **no config file** — a minimal built-in default (a rule and
-a clock) is used when none is found. To start from the richer example layout in
-this repo, copy it once (installation never touches your config):
+**On first run** ptyline writes an editable `config.toml` (the richer example
+layout) to the default path when none exists; an existing config is never
+overwritten. It also runs fine with **no config file** — a minimal built-in
+default (a rule and a clock) applies when none is found.
+
+Themes and style presets are **built into the binary**, so `color_scheme` and
+`style` work out of the box with no extra files. To customize one, drop a file
+with the same name into `~/.config/ptyline/themes/` or `~/.config/ptyline/styles/` —
+an on-disk file always overrides the built-in of the same name. To get editable
+copies of every shipped theme/style plus the schema:
 
 ```sh
-make install-config   # copies config + themes/styles to ~/.config/ptyline
+make install-config   # copies config + themes/styles to ~/.config/ptyline (optional)
 ```
 
-`install-config` never overwrites an existing `config.toml`, but always refreshes
-the bundled `themes/` and `styles/`. Override the destination with
-`make install-config CONFIGDIR=/path/to/dir`, or copy the files by hand:
-
-```sh
-mkdir -p ~/.config/ptyline
-cp -r config/config.toml config/config.schema.json config/themes config/styles ~/.config/ptyline/
-```
-
-The `themes/` and `styles/` directories are resolved next to your `config.toml`;
-without them, `color_scheme`/`style = "default"` falls back to the built-in
-terminal-native look instead of the shell-default palettes.
+`install-config` never overwrites an existing `config.toml`. Override the
+destination with `make install-config CONFIGDIR=/path/to/dir`, or copy files by
+hand from [config/](config/).
 
 The sample config lives at [config/config.toml](config/config.toml) and uses
 [config/config.schema.json](config/config.schema.json) for editor validation.
