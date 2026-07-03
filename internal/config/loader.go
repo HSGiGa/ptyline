@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	assets "github.com/hsgiga/ptyline/config"
 	"github.com/hsgiga/ptyline/internal/format"
 )
 
@@ -253,6 +254,28 @@ func DefaultPath() string {
 		return filepath.Join(os.TempDir(), "ptyline", "config.toml")
 	}
 	return filepath.Join(home, ".config", "ptyline", "config.toml")
+}
+
+// EnsureUserConfig writes the sample config.toml to the default config path when
+// none exists yet, giving a fresh install a file to edit. It never overwrites an
+// existing config. Writing is best-effort and callers should treat an error as
+// non-fatal: Load falls back to built-in defaults when no file is present, and
+// themes/styles resolve from the binary regardless.
+func EnsureUserConfig() (created bool, path string, err error) {
+	path = DefaultPath()
+	switch _, statErr := os.Stat(path); {
+	case statErr == nil:
+		return false, path, nil
+	case !os.IsNotExist(statErr):
+		return false, path, statErr
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, path, err
+	}
+	if err := os.WriteFile(path, assets.SampleConfig(), 0o644); err != nil {
+		return false, path, err
+	}
+	return true, path, nil
 }
 
 // FindProjectConfig returns the closest .ptyline file at or above dir. Project

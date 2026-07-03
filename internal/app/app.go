@@ -88,6 +88,16 @@ func Run(args []string, version string) int {
 // run constructs and drives the wrapper pipeline.
 func run(opts options) int {
 	profile := runtimeenv.Detect()
+	// On a fresh install (default path, no file yet) seed an editable copy of the
+	// sample config. Best-effort: a write failure still leaves built-in defaults.
+	if opts.ConfigPath == "" {
+		switch created, path, err := config.EnsureUserConfig(); {
+		case err != nil:
+			fmt.Fprintln(os.Stderr, "ptyline: could not write default config:", err)
+		case created:
+			fmt.Fprintln(os.Stderr, "ptyline: created default config at", path)
+		}
+	}
 	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ptyline: config:", err)
@@ -769,7 +779,8 @@ func run(opts options) int {
 			} else if changed {
 				if filter.AltActive() {
 					diagState.RecordConfigWarning(
-						"binary updated, but alt-screen app is active; re-exec deferred — run --reload again after exiting")
+						"binary updated, but alt-screen app is active; re-exec deferred — run --reload again after exiting",
+					)
 				} else if err := reexecSelf(binID.path, ctrl, sup, execEnvNonce, argv); err != nil {
 					diagState.RecordConfigWarning(fmt.Sprintf("re-exec: %v (reloading config instead)", err))
 				} else {
