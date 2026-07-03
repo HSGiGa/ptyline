@@ -137,17 +137,26 @@ func TestVisualsFromConfigResolvesDefaultPerShell(t *testing.T) {
 	}
 }
 
-// TestVisualsFromConfigDefaultFallsBackWhenFilesMissing verifies the default
-// resolution never fails when no theme/style files are installed: it keeps the
-// terminal-native palette even for zsh (whose default style is powerline).
-func TestVisualsFromConfigDefaultFallsBackWhenFilesMissing(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	visuals, err := VisualsFromConfig(config.Default(), theme.TrueColor, configPath, "zsh")
+// TestVisualsFromConfigDefaultUsesBuiltinTheme verifies that with no theme/style
+// files on disk the default resolution still succeeds by using the shipped
+// (embedded) shell-default theme, and that the embedded copy matches the
+// on-disk one. This is the fresh-install path: it must not fall back to the
+// terminal-native palette now that the built-ins are always present.
+func TestVisualsFromConfigDefaultUsesBuiltinTheme(t *testing.T) {
+	emptyDir := filepath.Join(t.TempDir(), "config.toml")
+	fromEmbed, err := VisualsFromConfig(config.Default(), theme.TrueColor, emptyDir, "zsh")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("embed resolution: %v", err)
 	}
-	if got, want := visuals.Theme.FG("ok"), "\x1b[38;2;0;205;0m"; got != want {
-		t.Fatalf("ok fg = %q, want %q", got, want)
+	fromDisk, err := VisualsFromConfig(config.Default(), theme.TrueColor, repoConfigPath(), "zsh")
+	if err != nil {
+		t.Fatalf("disk resolution: %v", err)
+	}
+	if got, want := fromEmbed.Theme.FG("ok"), fromDisk.Theme.FG("ok"); got != want {
+		t.Fatalf("built-in theme fg = %q, want %q (matching on-disk zsh-default)", got, want)
+	}
+	if native := "\x1b[38;2;0;205;0m"; fromEmbed.Theme.FG("ok") == native {
+		t.Fatal("default resolution unexpectedly fell back to native palette")
 	}
 }
 

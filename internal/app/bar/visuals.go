@@ -1,12 +1,14 @@
 package bar
 
 import (
+	"embed"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	assets "github.com/hsgiga/ptyline/config"
 	"github.com/hsgiga/ptyline/internal/config"
 	"github.com/hsgiga/ptyline/internal/status/style"
 	"github.com/hsgiga/ptyline/internal/status/theme"
@@ -140,11 +142,29 @@ func applyStylePreset(dst map[string]style.Style, configPath, name string, deriv
 	}
 }
 
+// readAsset returns the bytes for <subdir>/<name>.toml, preferring a file in the
+// user's config directory and falling back to the copy embedded in the binary.
+// The returned label identifies the source for diagnostics. A name present in
+// neither place yields os.ErrNotExist wrapped with the on-disk path a user would
+// create to add it.
+func readAsset(configPath, subdir, name string, builtin embed.FS) ([]byte, string, error) {
+	diskPath := filepath.Join(filepath.Dir(config.ResolvePath(configPath)), subdir, name+".toml")
+	switch raw, err := os.ReadFile(diskPath); {
+	case err == nil:
+		return raw, diskPath, nil
+	case !os.IsNotExist(err):
+		return nil, diskPath, err
+	}
+	if raw, err := builtin.ReadFile(subdir + "/" + name + ".toml"); err == nil {
+		return raw, "built-in " + subdir + "/" + name, nil
+	}
+	return nil, diskPath, os.ErrNotExist
+}
+
 func loadThemeFile(configPath, name string) (themeFile, string, error) {
-	path := filepath.Join(filepath.Dir(config.ResolvePath(configPath)), "themes", name+".toml")
-	raw, err := os.ReadFile(path)
+	raw, path, err := readAsset(configPath, "themes", name, assets.Themes)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return themeFile{}, path, fmt.Errorf("%s: theme %q not found: %w", path, name, os.ErrNotExist)
 		}
 		return themeFile{}, path, err
@@ -163,10 +183,9 @@ func loadThemeFile(configPath, name string) (themeFile, string, error) {
 // loadStyleFile reads styles/<name>.toml. A missing file is returned wrapping
 // os.ErrNotExist so callers can distinguish it from a malformed preset.
 func loadStyleFile(configPath, name string) (styleFile, string, error) {
-	path := filepath.Join(filepath.Dir(config.ResolvePath(configPath)), "styles", name+".toml")
-	raw, err := os.ReadFile(path)
+	raw, path, err := readAsset(configPath, "styles", name, assets.Styles)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return styleFile{}, path, fmt.Errorf("%s: style preset %q not found: %w", path, name, os.ErrNotExist)
 		}
 		return styleFile{}, path, err

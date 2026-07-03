@@ -24,65 +24,28 @@ jobs:
       - run: go test -race -shuffle=on ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
-  build:
-    name: build (${{ matrix.goos }})
+  goreleaser:
+    name: goreleaser
     needs: verify
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            runner: ubuntu-latest
-            cgo: "0"
-          - goos: darwin
-            runner: macos-latest
-            cgo: "1"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      - name: Build binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          CGO_ENABLED: ${{ matrix.cgo }}
-        run: |
-          mkdir -p dist
-          arch="$(go env GOARCH)"
-          go build -buildvcs=false -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/ptyline-${{ matrix.goos }}-${arch}" ./cmd/ptyline
-      - name: Package artifact
-        run: |
-          cd dist
-          artifact="$(ls ptyline-${{ matrix.goos }}-*)"
-          tar -czf "${artifact}.tar.gz" "${artifact}"
-          shasum -a 256 "${artifact}.tar.gz" > "${artifact}.tar.gz.sha256"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ptyline-${{ matrix.goos }}
-          path: |
-            dist/*.tar.gz
-            dist/*.sha256
-
-  publish:
-    name: publish github release
-    needs: build
-    runs-on: ubuntu-latest
+    # macOS runner: darwin builds natively with cgo, linux cross-compiles (pure Go).
+    runs-on: macos-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
         with:
-          path: dist
-          merge-multiple: true
-      - name: Publish release
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          prerelease=""
-          case "${GITHUB_REF_NAME}" in
-            *-rc*) prerelease="--prerelease" ;;
-          esac
-          gh release create "${GITHUB_REF_NAME}" dist/* --verify-tag --generate-notes ${prerelease}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT with write access to HSGiGa/homebrew-tap so GoReleaser can commit
+          # the updated formula there.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
