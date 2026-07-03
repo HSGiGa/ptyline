@@ -49,3 +49,8 @@ jobs:
           # PAT with write access to HSGiGa/homebrew-tap so GoReleaser can commit
           # the updated formula there.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Pin the tag explicitly from the push event. Without this, GoReleaser
+          # resolves the release tag via `git describe`, which is ambiguous when
+          # two tags point at the same commit (picks an arbitrary one instead of
+          # the tag that actually triggered this run).
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
