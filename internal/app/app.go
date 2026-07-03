@@ -109,7 +109,19 @@ func run(opts options) int {
 
 	barRows := bar.BuildRows(resolvedCfg)
 	area := reserved.Area{Edge: reserved.Bottom, Rows: uint16(len(barRows))}
+
+	binID := captureBinaryIdentity()
+	handoff, present, err := parseHandoff()
+	if present && err != nil {
+		fmt.Fprintln(os.Stderr, "ptyline:", err)
+		return 1
+	}
+	adopted := handoff != nil
+
 	argv := resolveChild(opts.Child, resolvedCfg, profile)
+	if adopted {
+		argv = handoff.ChildArgv
+	}
 
 	// --- Terminal: enter raw mode; ALWAYS restore on the way out (spec §15). ---
 	ctrl := terminal.New(os.Stdin, os.Stdout)
@@ -124,10 +136,20 @@ func run(opts options) int {
 		fmt.Fprintln(os.Stderr, "ptyline: warning: cannot query terminal size, using 80x24")
 	}
 	ctrl.ApplyScrollRegion(size, area)
-	_, _ = ctrl.Write([]byte(terminal.ClearScreen + terminal.CursorTo(1, 1)))
+	if !adopted {
+		_, _ = ctrl.Write([]byte(terminal.ClearScreen + terminal.CursorTo(1, 1)))
+	}
 
 	// --- Child PTY sized to rows-minus-reserved (spec §8.2). ---
-	sup := pty.New(argv, area)
+	//
+	// In adopted mode (re-exec handoff) the child is already running; we inherit
+	// its PTY master fd and PID from the previous process image via PTYLINE_HANDOFF.
+	var sup *pty.Supervisor
+	if adopted {
+		sup = pty.Adopt(handoff.PtyFD, handoff.ChildPID, area)
+	} else {
+		sup = pty.New(argv, area)
+	}
 	// execEnvNonce authenticates exec_env frames from the shell integration so a
 	// program that only injects bytes into the stream (e.g. a malicious file cat)
 	// cannot forge the environment we run exec-module commands with.
@@ -142,14 +164,22 @@ func run(opts options) int {
 	// discovery, so a forged cwd could redirect where commands run and which overlay
 	// loads. command, exit_code, and env stay unauthenticated: they only feed the bar
 	// display (worst case: a wrong command/branch shown), never command execution.
+	//
+	// In adopted mode the shell already holds the nonce from the previous image; reuse
+	// it so OSC exec_env/cwd frames keep passing authentication.
 	execEnvNonce := newNonce()
+	if adopted {
+		execEnvNonce = handoff.Nonce
+	}
 	sup.SetEnv("PTYLINE_ENV_NAMES", strings.Join(resolvedCfg.Modules["env"].Env, ","))
 	sup.SetEnv("PTYLINE_EXEC_ENV_NAMES", strings.Join(execEnvNames(resolvedCfg), ","))
 	sup.SetEnv("PTYLINE_NONCE", execEnvNonce)
 	sup.SetEnv("PTYLINE_PID", strconv.Itoa(os.Getpid()))
-	if err := sup.Start(pty.Size{Cols: size.Cols, Rows: size.Rows}); err != nil {
-		fmt.Fprintln(os.Stderr, "ptyline: pty:", err)
-		return 1
+	if !adopted {
+		if err := sup.Start(pty.Size{Cols: size.Cols, Rows: size.Rows}); err != nil {
+			fmt.Fprintln(os.Stderr, "ptyline: pty:", err)
+			return 1
+		}
 	}
 
 	// --- Event loop + ANSI/OSC filter. ---
@@ -730,6 +760,22 @@ func run(opts options) int {
 		},
 		Terminate: func(sig string) { _ = sup.TerminateGroup(sig) },
 		ConfigReload: func() {
+			// If the binary on disk has been replaced, re-exec in place so the new
+			// binary takes over without clearing the screen. reexecSelf never returns
+			// on success (it replaced the process image). On failure fall through to
+			// the regular config reload below.
+			if changed, err := binID.changed(); err != nil {
+				diagState.RecordConfigWarning(fmt.Sprintf("binary check: %v", err))
+			} else if changed {
+				if filter.AltActive() {
+					diagState.RecordConfigWarning(
+						"binary updated, but alt-screen app is active; re-exec deferred — run --reload again after exiting")
+				} else if err := reexecSelf(binID.path, ctrl, sup, execEnvNonce, argv); err != nil {
+					diagState.RecordConfigWarning(fmt.Sprintf("re-exec: %v (reloading config instead)", err))
+				} else {
+					return // reexecSelf succeeded; process image replaced — unreachable
+				}
+			}
 			newBase, err := config.Load(opts.ConfigPath)
 			if err != nil {
 				diagState.RecordConfigWarning(fmt.Sprintf("reload %s: %v", opts.ConfigPath, err))
@@ -760,6 +806,12 @@ func run(opts options) int {
 	}()
 	proxy.StartSignals(ctx, bus)
 	initModules()
+	if adopted {
+		// The adopted PTY was sized by the previous image; re-apply the current
+		// bar geometry in case the config changed the bar height. TIOCSWINSZ
+		// notifies the shell via SIGWINCH automatically.
+		_ = sup.Resize(pty.Size{Cols: size.Cols, Rows: size.Rows})
+	}
 	refreshGit("")
 	redraw()
 	code, err := loop.Run()

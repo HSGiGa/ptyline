@@ -18,7 +18,7 @@ Flags:
   --ptyline <path>         apply a visual overlay (.ptyline file or short name)
   --ptyline=<path>         same, equals form
   --no-project-ptyline     disable automatic project .ptyline discovery
-  --reload                 reload config in the running ptyline (uses $PTYLINE_PID)
+  --reload                 reload config; re-execs in place if the binary was updated (uses $PTYLINE_PID)
   --version                print version and exit
   --help                   show this help
 

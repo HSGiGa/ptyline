@@ -41,6 +41,19 @@ func TestApplyScrollRegionAtChildBottomMovesCursorOutOfBar(t *testing.T) {
 	}
 }
 
+// SuspendRaw and ResumeRaw do not emit any escape sequences; they only toggle
+// the raw-mode state. Calling them on a non-tty (as in tests) is graceful.
+func TestSuspendResumeRawNoOutput(t *testing.T) {
+	var buf bytes.Buffer
+	c := New(nil, &buf)
+	// On a non-tty these return errors but must not panic.
+	_ = c.SuspendRaw()
+	_ = c.ResumeRaw()
+	if buf.Len() != 0 {
+		t.Fatalf("SuspendRaw/ResumeRaw wrote %q, want empty", buf.String())
+	}
+}
+
 // Restore emits the exact cleanup order and is idempotent (spec §8.1, §15).
 func TestRestoreOrderIdempotent(t *testing.T) {
 	var buf bytes.Buffer

@@ -34,6 +34,10 @@ type Supervisor struct {
 	ptmx *os.File // master side; set by the OS-specific start()
 	area reserved.Area
 
+	// adoptedPID is non-zero in adopted mode (re-exec handoff): the child was
+	// spawned by a previous process image; we are now its parent via exec().
+	adoptedPID int
+
 	waitOnce sync.Once
 	waitCode int
 	waitErr  error
@@ -52,7 +56,11 @@ func New(argv []string, area reserved.Area) *Supervisor {
 }
 
 // SetEnv appends or overrides one environment variable in the child process.
+// No-op in adopted mode: the child is already running.
 func (s *Supervisor) SetEnv(key, value string) {
+	if s.adoptedPID != 0 {
+		return
+	}
 	s.cmd.Env = setEnv(s.cmd.Env, key, value)
 }
 
@@ -69,7 +77,11 @@ func setEnv(env []string, key, value string) []string {
 
 // Start spawns the child inside a new PTY sized to terminal rows minus the
 // reserved rows. Delegates to the build-tagged start().
+// Must not be called in adopted mode.
 func (s *Supervisor) Start(terminal Size) error {
+	if s.adoptedPID != 0 {
+		return errors.New("pty: Start called on adopted supervisor")
+	}
 	return s.start(s.childSize(terminal))
 }
 
@@ -81,10 +93,22 @@ func (s *Supervisor) childSize(terminal Size) Size {
 // PTY returns the master side for the IO proxy (read child output, write stdin).
 func (s *Supervisor) PTY() io.ReadWriteCloser { return s.ptmx }
 
+// MasterFD returns the file descriptor number of the PTY master side.
+// Used by reexecSelf to clear FD_CLOEXEC before exec().
+func (s *Supervisor) MasterFD() int {
+	if s.ptmx == nil {
+		return -1
+	}
+	return int(s.ptmx.Fd())
+}
+
 // Pid returns the child shell's process id (also its process-group id, since it
 // is started as a session leader). Zero before Start.
 func (s *Supervisor) Pid() int {
-	if s.cmd.Process == nil {
+	if s.adoptedPID != 0 {
+		return s.adoptedPID
+	}
+	if s.cmd == nil || s.cmd.Process == nil {
 		return 0
 	}
 	return s.cmd.Process.Pid
@@ -97,6 +121,11 @@ func (s *Supervisor) Pid() int {
 // and the result is cached.
 func (s *Supervisor) Wait() (int, error) {
 	s.waitOnce.Do(func() {
+		defer close(s.waitDone)
+		if s.adoptedPID != 0 {
+			s.waitCode, s.waitErr = s.waitAdopted()
+			return
+		}
 		err := s.cmd.Wait()
 		switch err {
 		case nil:
@@ -109,7 +138,6 @@ func (s *Supervisor) Wait() (int, error) {
 				s.waitCode, s.waitErr = 1, err
 			}
 		}
-		close(s.waitDone)
 	})
 	<-s.waitDone
 	return s.waitCode, s.waitErr
