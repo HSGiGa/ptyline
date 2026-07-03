@@ -65,6 +65,15 @@ func (c *Controller) write(s string) {
 	}
 }
 
+// SuspendRaw returns the terminal to cooked mode without touching the screen,
+// cursor, or scroll region. Used before syscall.Exec so the new process image
+// inherits a clean terminal state without any visual disruption.
+func (c *Controller) SuspendRaw() error { return c.disableRaw() }
+
+// ResumeRaw re-enables raw mode after a failed exec attempt so the current
+// process image can continue running normally.
+func (c *Controller) ResumeRaw() error { return c.enableRaw() }
+
 // Write satisfies io.Writer so the Controller can be the single sink shared with
 // the serialized writer; it drains short writes and retries on EINTR.
 func (c *Controller) Write(p []byte) (int, error) {

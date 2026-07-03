@@ -112,6 +112,41 @@ Probe-driven system modules (`cpu`, `memory`, `disk`, `load`, `battery`) hide
 when unavailable and reconcile on reload. macOS providers use mach/IOKit through
 cgo; Linux providers use procfs/sysfs/statfs-style sources.
 
+## Binary Handoff (re-exec on `--reload`)
+
+When `ptyline --reload` is received and the binary on disk has changed, ptyline
+replaces its own process image via `syscall.Exec` without clearing the screen.
+
+**What survives exec():**
+- PID — `$PTYLINE_PID` stays valid in the shell.
+- Open file descriptors without `FD_CLOEXEC` — including the PTY master (fd
+  is explicitly cleared of `CLOEXEC` before exec, then re-set in the new image).
+- Parent-child relationship — the new image can `wait4()` the same shell PID.
+
+**Handoff payload** (`PTYLINE_HANDOFF` env var, base64-encoded JSON, versioned):
+
+| Field        | Purpose                                          |
+|-------------|--------------------------------------------------|
+| `v`          | Schema version; mismatch → reject + fatal error  |
+| `pty_fd`     | PTY master fd number                             |
+| `child_pid`  | Shell PID                                        |
+| `nonce`      | execEnvNonce (shell already holds it)            |
+| `child_argv` | argv for `modules.NewShell` display label only   |
+
+The new image detects a handoff via `PTYLINE_HANDOFF`, then:
+1. Unsets the env var immediately (so exec-module children don't see it).
+2. Calls `pty.Adopt(fd, childPID, area)` instead of spawning a new shell.
+3. Skips `ClearScreen`; applies the scroll region with cursor preserved.
+4. Reuses `nonce` so OSC exec_env/cwd frames keep authenticating.
+
+**Not transferred** (restored on the next shell prompt via OSC frames):
+cwd, last command, exit code, exec_env snapshot, git status.
+
+**Known limitations:**
+- Re-exec is skipped while an alt-screen app (vim/less) is active.
+- `PTYLINE_ENV_NAMES`/`PTYLINE_EXEC_ENV_NAMES` in the shell env reflect the old
+  config until the shell restarts (same limitation as a plain `--reload`).
+
 ## Platform Scope & Build Matrix
 
 **Current readiness target: Linux, Linux/WSL, and macOS.** WSL2 is a runtime

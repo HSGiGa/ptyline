@@ -26,7 +26,7 @@ diagnostics/replay tooling are deferred.
   identity/runtime labels, and system metrics.
 - Custom local modules with bounded `source = "exec"` commands.
 - Config overlays: command-line overlays and nearest project `.ptyline` files.
-- Runtime reload with `ptyline --reload`.
+- Runtime reload with `ptyline --reload`; automatically re-execs in place (without clearing the screen) when the binary has been updated.
 
 ## Installation
 
@@ -95,7 +95,7 @@ ptyline --config ./config.toml  # use a specific config file
 ptyline --ptyline compact       # apply a visual overlay
 ptyline --no-project-ptyline    # ignore nearest project .ptyline overlays
 ptyline init fish               # print the fish shell-integration script
-ptyline --reload                # reload config in the running ptyline
+ptyline --reload                # reload config; re-execs in place if binary was updated
 ptyline --version
 ```
 

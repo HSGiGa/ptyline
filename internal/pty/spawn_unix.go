@@ -42,10 +42,10 @@ func (s *Supervisor) setsize(size Size) error {
 // to SIGKILL if it has not exited (spec §8.2, §15). The reaping Wait runs in the
 // loop's exit path.
 func (s *Supervisor) terminateGroup(sig string) error {
-	if s.cmd.Process == nil {
+	pgid := s.Pid() // session leader: pgid == pid; works in both normal and adopted mode
+	if pgid == 0 {
 		return nil
 	}
-	pgid := s.cmd.Process.Pid // session leader: pgid == pid
 	signal := syscall.SIGTERM
 	if sig == "SIGHUP" {
 		signal = syscall.SIGHUP
