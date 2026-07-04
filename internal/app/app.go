@@ -108,7 +108,7 @@ func run(opts options) int {
 	// In adopted mode the shell is already running on the handed-off PTY, and
 	// exiting here would orphan it with no PTY reader — the user's session would
 	// hang. A bad config must degrade to built-in defaults, never exit.
-	cfg, err := config.Load(opts.ConfigPath)
+	cfg, cfgExplicitDisabled, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		if !adopted {
 			fmt.Fprintln(os.Stderr, "ptyline: config:", err)
@@ -116,6 +116,7 @@ func run(opts options) int {
 		}
 		fmt.Fprintln(os.Stderr, "ptyline: config:", err, "— continuing with built-in defaults")
 		cfg = config.Default()
+		cfgExplicitDisabled = nil
 	}
 
 	cliOverlay := config.ResolveOverlayPath(opts.OverlayPath)
@@ -125,7 +126,7 @@ func run(opts options) int {
 			initProjectOverlay, _ = config.FindProjectConfig(cwd)
 		}
 	}
-	resolvedCfg, err := config.ApplyOverlays(cfg, cliOverlay, initProjectOverlay)
+	resolvedCfg, err := config.ApplyOverlays(cfg, cfgExplicitDisabled, cliOverlay, initProjectOverlay)
 	if err != nil {
 		if !adopted {
 			fmt.Fprintln(os.Stderr, "ptyline: overlay:", err)
@@ -555,28 +556,29 @@ func run(opts options) int {
 	// so existing closures continue to read/write the local variables directly
 	// while the method updates them through the pointers (ARCHITECTURE.md §A1).
 	as := &appState{
-		cfg:                cfg,
-		cliOverlay:         cliOverlay,
-		shell:              modules.ShellLabel(argv),
-		resolvedCfg:        &resolvedCfg,
-		area:               &area,
-		barRows:            &barRows,
-		visuals:            &visuals,
-		render:             &render,
-		animState:          &animState,
-		projectOverlayPath: &projectOverlayPath,
-		projectConfigCache: &projectConfigCache,
-		diagState:          diagState,
-		writer:             writer,
-		filter:             filter,
-		ctrl:               ctrl,
-		sup:                sup,
-		profile:            profile,
-		opts:               opts,
-		termState:          &state,
-		newEngine:          newEngine,
-		configureRenderer:  configureRenderer,
-		updateModules:      updateModules,
+		cfg:                 cfg,
+		cfgExplicitDisabled: cfgExplicitDisabled,
+		cliOverlay:          cliOverlay,
+		shell:               modules.ShellLabel(argv),
+		resolvedCfg:         &resolvedCfg,
+		area:                &area,
+		barRows:             &barRows,
+		visuals:             &visuals,
+		render:              &render,
+		animState:           &animState,
+		projectOverlayPath:  &projectOverlayPath,
+		projectConfigCache:  &projectConfigCache,
+		diagState:           diagState,
+		writer:              writer,
+		filter:              filter,
+		ctrl:                ctrl,
+		sup:                 sup,
+		profile:             profile,
+		opts:                opts,
+		termState:           &state,
+		newEngine:           newEngine,
+		configureRenderer:   configureRenderer,
+		updateModules:       updateModules,
 	}
 
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
@@ -799,16 +801,19 @@ func run(opts options) int {
 					return // reexecSelf succeeded; process image replaced — unreachable
 				}
 			}
-			newBase, err := config.Load(opts.ConfigPath)
+			newBase, newBaseDisabled, err := config.Load(opts.ConfigPath)
 			if err != nil {
 				diagState.RecordConfigWarning(fmt.Sprintf("reload %s: %v", opts.ConfigPath, err))
 				return // keep running on bad config
 			}
 			prevCfg := as.cfg
+			prevDisabled := as.cfgExplicitDisabled
 			as.cfg = newBase
+			as.cfgExplicitDisabled = newBaseDisabled
 			currentPath, _ := as.projectOverlayPath.Load().(string)
 			if !as.reloadConfig(currentPath, true) {
 				as.cfg = prevCfg // ApplyOverlays failed: restore base to stay consistent
+				as.cfgExplicitDisabled = prevDisabled
 			}
 		},
 	})

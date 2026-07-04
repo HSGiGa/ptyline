@@ -178,15 +178,31 @@ func AnimationsFromConfig(modules map[string]config.ModuleConfig) map[string]ren
 		animations[id] = renderer.Animation{
 			Mode:          module.Animation.Effect(),
 			Trigger:       trigger,
-			DurationTicks: durationTicks(module.AnimationIntervalMS),
+			DurationTicks: durationTicks(id, module.AnimationIntervalMS),
 		}
 	}
 	return animations
 }
 
-func durationTicks(intervalMS int) int {
+// defaultAnimationIntervalMS is the generic glint/pulse/blink cadence fallback.
+const defaultAnimationIntervalMS = 120
+
+// commandAnimationIntervalMS is the command module's default cadence — faster
+// than the generic fallback so an active command's glint reads as busy.
+const commandAnimationIntervalMS = 80
+
+// animationIntervalFallback returns the cadence to use when a module doesn't
+// configure animation_interval_ms.
+func animationIntervalFallback(id string) int {
+	if id == "command" {
+		return commandAnimationIntervalMS
+	}
+	return defaultAnimationIntervalMS
+}
+
+func durationTicks(id string, intervalMS int) int {
 	if intervalMS <= 0 {
-		intervalMS = 120
+		intervalMS = animationIntervalFallback(id)
 	}
 	ticks := 900 / intervalMS
 	if ticks < 1 {
@@ -204,7 +220,7 @@ func TickerConfig(modules map[string]config.ModuleConfig) (interval time.Duratio
 		}
 		next := time.Duration(module.AnimationIntervalMS) * time.Millisecond
 		if next <= 0 {
-			next = 120 * time.Millisecond
+			next = time.Duration(animationIntervalFallback(id)) * time.Millisecond
 		}
 		if interval == 0 || next < interval {
 			interval = next

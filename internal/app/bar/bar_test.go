@@ -75,6 +75,21 @@ func TestTickerConfig(t *testing.T) {
 	if interval != 0 || continuous {
 		t.Fatalf("time animation = (%v, %t), want disabled", interval, continuous)
 	}
+
+	// animation_interval_ms unset: command falls back to its own faster 80ms
+	// cadence, everything else falls back to the generic 120ms.
+	interval, continuous = TickerConfig(map[string]config.ModuleConfig{
+		"command": {Enabled: true, Animation: "glint"},
+	})
+	if interval != 80*time.Millisecond || continuous {
+		t.Fatalf("command animation fallback = (%v, %t), want (80ms, false)", interval, continuous)
+	}
+	interval, continuous = TickerConfig(map[string]config.ModuleConfig{
+		"git": {Enabled: true, Animation: config.AnimationDefault},
+	})
+	if interval != 120*time.Millisecond || continuous {
+		t.Fatalf("git animation fallback = (%v, %t), want (120ms, false)", interval, continuous)
+	}
 }
 
 func TestAnimationsFromConfig(t *testing.T) {

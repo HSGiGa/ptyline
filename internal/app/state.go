@@ -36,9 +36,10 @@ type appState struct {
 	projectConfigCache *map[string]string
 
 	// Immutable config inputs — read by reloadConfig.
-	cfg        config.Config
-	cliOverlay string // resolved overlay path (from --overlay flag)
-	shell      string // child shell label, drives color_scheme = "default" resolution
+	cfg                 config.Config
+	cfgExplicitDisabled map[string]bool // module ids cfg explicitly set enabled=false on
+	cliOverlay          string          // resolved overlay path (from --overlay flag)
+	shell               string          // child shell label, drives color_scheme = "default" resolution
 
 	// Observability — created once, pointer gives full lifecycle access.
 	diagState *diagnostics.State

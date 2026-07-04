@@ -26,7 +26,7 @@ animation = "pulse"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := Load(path)
+	cfg, _, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ animation = "pulse"
 }
 
 func TestLoadRootConfig(t *testing.T) {
-	cfg, err := Load(filepath.Join("..", "..", "config", "config.toml"))
+	cfg, _, err := Load(filepath.Join("..", "..", "config", "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,12 +57,13 @@ func TestLoadRootConfig(t *testing.T) {
 	if module := cfg.Modules["command"]; !module.Enabled || module.Format == "" {
 		t.Fatalf("root command module = %+v", module)
 	}
-	if module := cfg.Modules["gh"]; module.Source != "exec" || module.Command == "" {
-		t.Fatalf("root gh module = %+v, want source=exec with command", module)
+	if module := cfg.Modules["uptime"]; module.Source != "exec" || module.Command == "" {
+		t.Fatalf("root uptime module = %+v, want source=exec with command", module)
 	}
-
-	if got, want := cfg.Modules["env"].Env, []string{"PTYLINE_ENV"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("root env module env = %q, want %q", got, want)
+	for _, id := range []string{"cpu", "memory", "disk", "load", "battery", "command"} {
+		if module := cfg.Modules[id]; !module.Enabled {
+			t.Errorf("root %s module should be inferred enabled (referenced in bar format)", id)
+		}
 	}
 }
 
@@ -97,6 +98,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 		{name: "template without format", body: "config_version = 1\n[module.identity]\nsource = \"template\"", key: "module.identity.format"},
 		{name: "template self-reference", body: "config_version = 1\n[module.identity]\nsource = \"template\"\nformat = \"{identity} foo\"", key: "module.identity"},
 		{name: "template-in-template", body: "config_version = 1\n[module.a]\nsource = \"template\"\nformat = \"{user}\"\n[module.b]\nsource = \"template\"\nformat = \"{a} bar\"", key: "module.b"},
+		{name: "referenced module missing command", body: "config_version = 1\n[bar]\nformat = \"{typo}\"\n", key: "module.typo.command"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -104,7 +106,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 			if err := os.WriteFile(path, []byte(test.body), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			_, err := Load(path)
+			_, _, err := Load(path)
 			if err == nil || !strings.Contains(err.Error(), test.key) {
 				t.Fatalf("Load() error = %v, want key %q", err, test.key)
 			}
@@ -133,7 +135,7 @@ format = "%H:%M"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := Load(path)
+	cfg, _, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +179,7 @@ max_width = 60
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := Load(path)
+	cfg, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -311,7 +313,7 @@ func TestValidateOverlayScope_ForbiddenFields(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			path := write(tc.name+".ptyline", tc.body)
-			_, err := ApplyOverlays(Default(), path)
+			_, err := ApplyOverlays(Default(), nil, path)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("ApplyOverlays() error = %v, want substring %q", err, tc.want)
 			}
@@ -336,7 +338,7 @@ fg = "#ff0000"
 	base := Default()
 	base.Modules["time"] = ModuleConfig{Enabled: true, Format: "%H:%M:%S"}
 
-	result, err := ApplyOverlays(base, overlayPath)
+	result, err := ApplyOverlays(base, nil, overlayPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +368,7 @@ format = "{hostname} || {time}"
 		t.Fatal(err)
 	}
 	base := Default() // has 2 rows
-	result, err := ApplyOverlays(base, overlayPath)
+	result, err := ApplyOverlays(base, nil, overlayPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +394,7 @@ enabled = false
 	base := Default()
 	base.Bar.Format = "{cwd} || {git} || {time}"
 	// git is referenced in bar format, but overlay explicitly disables it
-	result, err := ApplyOverlays(base, disablePath)
+	result, err := ApplyOverlays(base, nil, disablePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +418,7 @@ min_block_width = 0
 	}
 	base := Default()
 	base.Bar.MinBlockWidth = 10
-	result, err := ApplyOverlays(base, overlayPath)
+	result, err := ApplyOverlays(base, nil, overlayPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +440,7 @@ format = "{hostname} || {time}"
 		t.Fatal(err)
 	}
 	base := Default()
-	result, err := ApplyOverlays(base, overlayPath)
+	result, err := ApplyOverlays(base, nil, overlayPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,6 +451,85 @@ format = "{hostname} || {time}"
 	// time still enabled
 	if m := result.Modules["time"]; !m.Enabled {
 		t.Error("time module should remain enabled")
+	}
+}
+
+func TestLoadInfersEnabledFromBarFormat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := `config_version = 1
+
+[bar]
+format = "{cpu} || {git} || {time}"
+
+[module.cpu]
+format = "{percent}%"
+
+[module.git]
+enabled = false
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := cfg.Modules["cpu"]; !m.Enabled {
+		t.Error("cpu should be inferred enabled: referenced in bar format, enabled unset")
+	}
+	if m := cfg.Modules["git"]; m.Enabled {
+		t.Error("git should stay disabled: explicit enabled=false beats inference")
+	}
+	if m := cfg.Modules["time"]; !m.Enabled {
+		t.Error("time should remain enabled (Default() already enables it)")
+	}
+}
+
+func TestLoadExplicitDisableSurvivesApplyOverlays(t *testing.T) {
+	rootPath := filepath.Join(t.TempDir(), "config.toml")
+	rootBody := `config_version = 1
+
+[bar]
+format = "{cpu} || {time}"
+
+[module.cpu]
+enabled = false
+format = "{percent}%"
+`
+	if err := os.WriteFile(rootPath, []byte(rootBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, explicitlyDisabled, err := Load(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := cfg.Modules["cpu"]; m.Enabled {
+		t.Fatal("cpu should be disabled right after Load()")
+	}
+
+	overlayPath := filepath.Join(t.TempDir(), "unrelated.ptyline")
+	overlayBody := "config_version = 1\n[icons]\nfallback = false\n"
+	if err := os.WriteFile(overlayPath, []byte(overlayBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ApplyOverlays(cfg, explicitlyDisabled, overlayPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := result.Modules["cpu"]; m.Enabled {
+		t.Error("cpu should still be disabled: root-level explicit disable must survive ApplyOverlays' inference pass")
+	}
+}
+
+func TestInferActiveModules_DottedID(t *testing.T) {
+	cfg := Default()
+	cfg.Bar.Format = "{git.branch} || {cpu:>8} || {time}"
+	inferActiveModules(&cfg, nil)
+	if m := cfg.Modules["git.branch"]; !m.Enabled {
+		t.Error("git.branch should be enabled: dotted ids must be recognized (format.ParseFormat, not the old regex)")
+	}
+	if m := cfg.Modules["cpu"]; !m.Enabled {
+		t.Error("cpu should be enabled: width-spec suffix must still be stripped correctly")
 	}
 }
 
@@ -466,7 +547,7 @@ func TestApplyOverlays_Layering(t *testing.T) {
 	// Project overlay overrides format (highest precedence)
 	projPath := write("proj.ptyline", "config_version = 1\n[bar]\nformat = \"{hostname}\"\n")
 
-	result, err := ApplyOverlays(Default(), cliPath, projPath)
+	result, err := ApplyOverlays(Default(), nil, cliPath, projPath)
 	if err != nil {
 		t.Fatal(err)
 	}

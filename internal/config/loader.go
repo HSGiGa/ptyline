@@ -14,31 +14,36 @@ import (
 
 // Load reads, migrates, and parses the config. The flow is:
 //
-//	read file → migrate_to_latest → parse → merge over Default()
+//	read file → migrate_to_latest → parse → infer active modules → merge over Default()
 //
 // If path is empty, DefaultPath() is used; a missing file yields Default()
 // without error (spec §13).
-func Load(path string) (Config, error) {
+//
+// The second return value is the set of module ids the file explicitly disabled via
+// enabled = false; pass it to ApplyOverlays so a later overlay's inferred activation
+// can't silently resurrect a root-config disable.
+func Load(path string) (Config, map[string]bool, error) {
 	path = ResolvePath(path)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Default(), nil
+			return Default(), nil, nil
 		}
-		return Config{}, err
+		return Config{}, nil, err
 	}
 	migrated, err := migrateToLatest(raw)
 	if err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
-	cfg, err := parse(migrated)
+	cfg, explicitlyDisabled, err := parse(migrated)
 	if err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return Config{}, nil, fmt.Errorf("%s: %w", path, err)
 	}
+	inferActiveModules(&cfg, explicitlyDisabled)
 	if err := Validate(&cfg); err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return Config{}, nil, fmt.Errorf("%s: %w", path, err)
 	}
-	return cfg, nil
+	return cfg, explicitlyDisabled, nil
 }
 
 // ResolvePath returns the effective config path for a user-supplied path.
@@ -50,24 +55,32 @@ func ResolvePath(path string) string {
 }
 
 // parse decodes already-migrated TOML bytes into a Config layered over Default().
-func parse(raw []byte) (Config, error) {
+// The returned map holds the ids of modules the file explicitly disabled via
+// enabled = false (see Load).
+func parse(raw []byte) (Config, map[string]bool, error) {
 	cfg := Default()
 	metadata, err := toml.Decode(string(raw), &cfg)
 	if err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
 	if !metadata.IsDefined("config_version") {
-		return Config{}, fmt.Errorf("config_version is required")
+		return Config{}, nil, fmt.Errorf("config_version is required")
 	}
 	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
-		return Config{}, fmt.Errorf("unknown key %q", undecoded[0])
+		return Config{}, nil, fmt.Errorf("unknown key %q", undecoded[0])
 	}
 	// A user who specifies `format` but no `[[bar.row]]` overrides the multi-line
 	// default; otherwise the default rows would shadow their intent.
 	if !metadata.IsDefined("bar", "row") && metadata.IsDefined("bar", "format") {
 		cfg.Bar.Rows = nil
 	}
-	return cfg, nil
+	explicitlyDisabled := map[string]bool{}
+	for id, mod := range cfg.Modules {
+		if metadata.IsDefined("module", id, "enabled") && !mod.Enabled {
+			explicitlyDisabled[id] = true
+		}
+	}
+	return cfg, explicitlyDisabled, nil
 }
 
 // Validate enforces the MVP configuration contract (spec §13.1). Violations are
@@ -557,10 +570,9 @@ func mergeStyleConfig(base, overlay StyleConfig) StyleConfig {
 	return base
 }
 
-var moduleRefRE = regexp.MustCompile(`\{([a-z][a-z0-9_]*)(?::[^}]*)?\}`)
-
-// inferActiveModules enables any module referenced in the bar layout unless it
-// was explicitly disabled via enabled=false in an overlay (tracked by the caller).
+// inferActiveModules enables any module referenced in the bar layout (by a
+// {name}/{name:spec} placeholder) unless it was explicitly disabled via
+// enabled=false (tracked by the caller, e.g. Load or ApplyOverlays).
 func inferActiveModules(cfg *Config, explicitlyDisabled map[string]bool) {
 	activate := func(id string) {
 		if explicitlyDisabled[id] {
@@ -573,21 +585,31 @@ func inferActiveModules(cfg *Config, explicitlyDisabled map[string]bool) {
 		m.Enabled = true
 		cfg.Modules[id] = m
 	}
-	for _, m := range moduleRefRE.FindAllStringSubmatch(cfg.Bar.Format, -1) {
-		activate(m[1])
-	}
-	for _, row := range cfg.Bar.Rows {
-		for _, m := range moduleRefRE.FindAllStringSubmatch(row.Format, -1) {
-			activate(m[1])
+	scan := func(formatStr string) {
+		for _, block := range format.ParseFormat(formatStr) {
+			if block.IsLiteral() || block.IsSeparator() {
+				continue
+			}
+			activate(block.ModuleID)
 		}
+	}
+	scan(cfg.Bar.Format)
+	for _, row := range cfg.Bar.Rows {
+		scan(row.Format)
 	}
 }
 
 // ApplyOverlays merges each overlay path (in order, highest precedence last)
 // on top of base, then infers active modules. Empty paths are skipped.
-func ApplyOverlays(base Config, paths ...string) (Config, error) {
+// rootExplicitlyDisabled carries forward the ids the root config file
+// explicitly disabled (via Load), so overlay-triggered inference can't
+// silently re-enable them.
+func ApplyOverlays(base Config, rootExplicitlyDisabled map[string]bool, paths ...string) (Config, error) {
 	result := base
 	explicitlyDisabled := map[string]bool{}
+	for id := range rootExplicitlyDisabled {
+		explicitlyDisabled[id] = true
+	}
 
 	for _, path := range paths {
 		if path == "" {

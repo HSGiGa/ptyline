@@ -22,7 +22,7 @@ func (as *appState) reloadConfig(newProjectPath string, force bool) bool {
 	if !force && old == newProjectPath {
 		return false
 	}
-	newCfg, err := config.ApplyOverlays(as.cfg, as.cliOverlay, newProjectPath)
+	newCfg, err := config.ApplyOverlays(as.cfg, as.cfgExplicitDisabled, as.cliOverlay, newProjectPath)
 	if err != nil {
 		// Don't store newProjectPath: a bad .ptyline should not prevent a retry
 		// when the file is fixed and the user cds back into the directory.

@@ -1,19 +1,10 @@
 #:schema ./config.schema.json
 config_version = 1
-shell = "auto"
-refresh_interval_ms = 1000
 
 [theme]
-# "default" resolves per shell: fish/zsh/bash -> fish/zsh/bash-default palette,
-# powerline for zsh and flat otherwise. Set an explicit name (e.g. "dracula",
-# "catppuccin-mocha", "gruvbox-dark") to pin it regardless of shell.
-color_scheme = "default"
-style = "default"
 
 [icons]
 preset = "nerd-font"
-emoji_width = "auto"
-fallback = true
 
 [bar]
 separator = "|"
@@ -25,93 +16,58 @@ fill = "─"
 
 [[bar.row]]
 separator = " · "
-format = "{cwd} || {cpu} | {memory} | {disk} | {load} {battery:>} || {gh} | {time}"
-
-[module.identity]
-source = "template"
-format = "{user}@{hostname} {cwd}"
+format = "{cwd} || {healh} {battery:>} || {uptime} | {time}"
 
 [module.time]
 format = "%H:%M:%S"
-interval_ms = 1000
 icon = "left"
 
-[module.gh]
+[module.uptime]
 source = "exec"
 command = '''
     set -e
-    acct=$(mise exec -- gh auth status --json hosts --jq '.hosts[][] | select(.active) | .login')
-    printf '%s' "$acct"
+    if uptime -p >/dev/null 2>&1; then
+        uptime -p
+    else
+        uptime
+    fi
     '''
-# Mirror gh's auth/context vars from the live shell (supports NAME* prefixes).
-# env = ["GH_*", "GITHUB_*", "PATH", "XDG_CONFIG_HOME"]
+format = "{stdout}"
 icon = "left"
-icon_glyph = ""
-icon_fallback = "gh"
-refresh_on_command = ["gh auth login", "gh auth logout", "gh auth refresh"]
-refresh_on_cwd = true
-
-[module.env]
-env = ["PTYLINE_ENV"]
 
 [module.git]
 icon = "left"
 format = "{branch}{dirty} | {ahead} | {behind} | {conflict}"
-separator = ":"
 
 [module.cwd]
 mode = "shell-integration"
 icon = "left"
 
 [module.command]
-enabled = true
 icon = "left"
 format = "{active} {last} {exit} {duration}"
-max_width = 60
-# Commands shorter than this never appear, so instant commands (ls, cd) don't
-# flash into the bar and straight back out. Default 200ms.
-active_min_duration_ms = 200
-done_min_duration_ms = 2000
-done_success_ttl_ms = 3000
-done_failure_ttl_ms = 0
 animation = "glint"
-animation_interval_ms = 80
 
-[module.ssh]
-enabled = true
-animation = "pulse"
-
-# System metrics. Probe-driven: each is hidden if its source is unavailable on
-# this host (e.g. {battery} on a desktop/VM/WSL with no battery). Disabled by
-# default — enabled here so they show in the bar above.
 [module.cpu]
-enabled = true
-interval_ms = 2000
 format = "{percent}%"
 icon = "left"
 
 [module.memory]
-enabled = true
-interval_ms = 5000
 format = "{percent}%"
 icon = "left"
 
 [module.disk]
-enabled = true
-interval_ms = 60000
 format = "{percent}%"
 icon = "left"
 
 [module.load]
-enabled = true
-interval_ms = 5000
 format = "{load1}"
 icon = "left"
 
-# Add {battery} to a bar.row format to show it; hidden when no battery exists.
-# {icon} is a dynamic Nerd Font glyph that changes with charge level and charging
-# state (so no static icon = "left" here).
 [module.battery]
-enabled = true
-interval_ms = 30000
-format = "{icon} {percent}%"
+format = "{percent}%"
+icon = "left"
+
+[module.healh]
+source = "template"
+format = "{cpu} | {memory} | {disk} | {load}"

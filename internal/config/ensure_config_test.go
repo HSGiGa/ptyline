@@ -22,7 +22,7 @@ func TestEnsureUserConfig(t *testing.T) {
 		t.Fatalf("path = %q, want %q", path, want)
 	}
 	// The seeded file must be a valid config that loads cleanly.
-	if _, err := Load(""); err != nil {
+	if _, _, err := Load(""); err != nil {
 		t.Fatalf("Load seeded config: %v", err)
 	}
 
