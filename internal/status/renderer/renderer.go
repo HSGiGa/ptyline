@@ -225,7 +225,7 @@ func (r *Renderer) RenderRow(st status.StatusState, blocks []layout.Block, fill 
 		if block.IsSeparator() {
 			values[i] = separator
 		} else {
-			values[i] = blockValue(st, block, r.templates, separator)
+			values[i] = blockValue(st, block, r.templates, r.icons, separator)
 		}
 		if !block.IsLiteral() && !block.IsSeparator() && values[i] != "" {
 			values[i] = r.applyIcon(canonicalModuleID(block.ModuleID), values[i])
@@ -404,7 +404,15 @@ func (r *Renderer) sectionGaps(target, wLeft, wCenter, wRight int, hasCenter boo
 }
 
 func (r *Renderer) applyIcon(moduleID, value string) string {
-	icon, ok := r.icons[moduleID]
+	return applyModuleIcon(r.icons, moduleID, value)
+}
+
+// applyModuleIcon prepends/appends a module's configured icon to value. Shared
+// by top-level block rendering (via applyIcon) and template resolution, so a
+// module keeps its own icon whether referenced directly in a bar row or nested
+// inside another module's template format.
+func applyModuleIcon(icons map[string]ModuleIcon, moduleID, value string) string {
+	icon, ok := icons[moduleID]
 	if !ok || icon.Text == "" {
 		return value
 	}
@@ -677,13 +685,13 @@ func spansText(spans []status.TextSpan) string {
 	return b.String()
 }
 
-func blockValue(st status.StatusState, block layout.Block, templates map[string]TemplateSpec, separator string) string {
+func blockValue(st status.StatusState, block layout.Block, templates map[string]TemplateSpec, icons map[string]ModuleIcon, separator string) string {
 	if block.IsLiteral() {
 		return block.Text // trusted user config, no sanitization
 	}
 	id := canonicalModuleID(block.ModuleID)
 	if tmpl, ok := templates[id]; ok {
-		return resolveTemplate(st, tmpl, separator)
+		return resolveTemplate(st, tmpl, icons, separator)
 	}
 	snapshot, ok := st.Modules[status.ModuleID(id)]
 	if !ok || snapshot.Err != nil {

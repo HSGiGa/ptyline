@@ -533,6 +533,41 @@ func TestInferActiveModules_DottedID(t *testing.T) {
 	}
 }
 
+func TestLoadInfersEnabledThroughNestedTemplate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := `config_version = 1
+
+[bar]
+format = "{healh} || {time}"
+
+[module.cpu]
+format = "{percent}%"
+
+[module.memory]
+format = "{percent}%"
+
+[module.healh]
+source = "template"
+format = "{cpu} | {memory}"
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := cfg.Modules["healh"]; !m.Enabled {
+		t.Error("healh should be inferred enabled: referenced at the top level")
+	}
+	if m := cfg.Modules["cpu"]; !m.Enabled {
+		t.Error("cpu should be inferred enabled even though it's only referenced inside healh's nested format")
+	}
+	if m := cfg.Modules["memory"]; !m.Enabled {
+		t.Error("memory should be inferred enabled even though it's only referenced inside healh's nested format")
+	}
+}
+
 func TestApplyOverlays_Layering(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, body string) string {

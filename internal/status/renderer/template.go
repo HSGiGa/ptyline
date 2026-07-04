@@ -22,7 +22,10 @@ type TemplateSpec struct {
 // resolveTemplate assembles a template value from cached module snapshots.
 // It never calls any provider — it only reads st.Modules. Template modules
 // cannot reference other template modules (enforced at config validation).
-func resolveTemplate(st status.StatusState, tmpl TemplateSpec, separator string) string {
+// icons carries the same per-module icon config used for top-level blocks, so a
+// module keeps its own icon whether referenced directly in a bar row or nested
+// inside this template's format.
+func resolveTemplate(st status.StatusState, tmpl TemplateSpec, icons map[string]ModuleIcon, separator string) string {
 	if tmpl.Separator != "" {
 		separator = tmpl.Separator
 	}
@@ -39,13 +42,15 @@ func resolveTemplate(st status.StatusState, tmpl TemplateSpec, separator string)
 			segments = append(segments, "")
 			continue
 		}
-		snap, ok := st.Modules[status.ModuleID(b.ModuleID)]
+		id := canonicalModuleID(b.ModuleID)
+		snap, ok := st.Modules[status.ModuleID(id)]
 		v := ""
 		if ok && snap.Err == nil {
 			v = snapshotText(snap)
 		}
 		if v != "" {
 			allEmpty = false
+			v = applyModuleIcon(icons, id, v)
 		}
 		segments[len(segments)-1] += v
 	}

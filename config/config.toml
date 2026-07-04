@@ -20,7 +20,6 @@ format = "{cwd} || {healh} {battery:>} || {uptime} | {time}"
 
 [module.time]
 format = "%H:%M:%S"
-icon = "left"
 
 [module.uptime]
 source = "exec"
@@ -32,8 +31,7 @@ command = '''
         uptime
     fi
     '''
-format = "{stdout}"
-icon = "left"
+format = "| {stdout}"
 
 [module.git]
 icon = "left"

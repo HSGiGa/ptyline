@@ -825,6 +825,25 @@ func TestTemplateConditionalSeparators(t *testing.T) {
 	}
 }
 
+func TestTemplateNestedIcons(t *testing.T) {
+	st := newStateWithModules(80, map[string]string{"cpu": "45%", "memory": "60%"})
+	r := New(layout.New(80), nil)
+	r.SetIcons(map[string]ModuleIcon{
+		"cpu":    {Position: "left", Text: "C"},
+		"memory": {Position: "right", Text: "M"},
+	})
+	r.SetTemplates(map[string]TemplateSpec{
+		"healh": {Blocks: layout.ParseFormat("{cpu} | {memory}")},
+	})
+	out := stripANSI(r.Render(st, layout.ParseFormat("{healh}")).Line)
+	if !strings.Contains(out, "C 45%") {
+		t.Fatalf("nested cpu icon missing, got %q", out)
+	}
+	if !strings.Contains(out, "60% M") {
+		t.Fatalf("nested memory icon missing, got %q", out)
+	}
+}
+
 func TestTemplateMaxWidth(t *testing.T) {
 	st := newStateWithModules(80, map[string]string{"msg": "hello world"})
 	r := New(layout.New(80), nil)

@@ -572,25 +572,36 @@ func mergeStyleConfig(base, overlay StyleConfig) StyleConfig {
 
 // inferActiveModules enables any module referenced in the bar layout (by a
 // {name}/{name:spec} placeholder) unless it was explicitly disabled via
-// enabled=false (tracked by the caller, e.g. Load or ApplyOverlays).
+// enabled=false (tracked by the caller, e.g. Load or ApplyOverlays). A reference
+// nested inside a template module's own format is followed recursively, so
+// composing modules into a template doesn't require restating enabled=true on
+// each of them. visited also guards against a cycle: Validate rejects
+// template-in-template, but that check runs after this scan, so the scan itself
+// must not assume the config is acyclic.
 func inferActiveModules(cfg *Config, explicitlyDisabled map[string]bool) {
-	activate := func(id string) {
-		if explicitlyDisabled[id] {
-			return
-		}
-		if cfg.Modules == nil {
-			cfg.Modules = map[string]ModuleConfig{}
-		}
-		m := cfg.Modules[id]
-		m.Enabled = true
-		cfg.Modules[id] = m
-	}
+	visited := map[string]bool{}
+	var activate func(id string)
 	scan := func(formatStr string) {
 		for _, block := range format.ParseFormat(formatStr) {
 			if block.IsLiteral() || block.IsSeparator() {
 				continue
 			}
 			activate(block.ModuleID)
+		}
+	}
+	activate = func(id string) {
+		if explicitlyDisabled[id] || visited[id] {
+			return
+		}
+		visited[id] = true
+		if cfg.Modules == nil {
+			cfg.Modules = map[string]ModuleConfig{}
+		}
+		m := cfg.Modules[id]
+		m.Enabled = true
+		cfg.Modules[id] = m
+		if ModuleSource(id, m) == "template" {
+			scan(m.Format)
 		}
 	}
 	scan(cfg.Bar.Format)
