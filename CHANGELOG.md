@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.2] - 2026-07-05
+
+### Fixed
+
+- The input line no longer drops to the bottom of the screen after a window
+  resize on macOS. The resize path pinned the cursor to the last child row on
+  every resize; now it preserves the cursor position (like Linux always did)
+  and only pins on an actual shrink in Terminal.app, which clamps the cursor
+  into the reserved bar row on shrink.
+
+### Changed
+
+- The pin-on-shrink workaround is now keyed on the hosting terminal
+  (`$TERM_PROGRAM == "Apple_Terminal"`, exposed as
+  `Capabilities.ClampsCursorOnShrink`) instead of a darwin build tag: iTerm2,
+  WezTerm and other emulators on macOS respect the scroll region on shrink
+  and keep the cursor in place, matching Linux behavior.
+
 ## [0.9.1] - 2026-07-04
 
 ### Fixed

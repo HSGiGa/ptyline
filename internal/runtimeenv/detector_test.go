@@ -28,6 +28,38 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+// Only Terminal.app clamps the cursor into the reserved bar row on shrink;
+// iTerm2 and the rest preserve it, so they must not get pin-to-bottom.
+func TestDetectClampsCursorOnShrink(t *testing.T) {
+	tests := []struct {
+		name string
+		prog string
+		set  bool
+		want bool
+	}{
+		{name: "Terminal.app", prog: "Apple_Terminal", set: true, want: true},
+		{name: "iTerm2", prog: "iTerm.app", set: true, want: false},
+		{name: "WezTerm", prog: "WezTerm", set: true, want: false},
+		{name: "ghostty", prog: "ghostty", set: true, want: false},
+		{name: "unset", set: false, want: false},
+		{name: "empty", prog: "", set: true, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			lookup := func(key string) (string, bool) {
+				if key == "TERM_PROGRAM" && test.set {
+					return test.prog, true
+				}
+				return "", false
+			}
+			if got := detectClampsCursorOnShrink(lookup); got != test.want {
+				t.Errorf("detectClampsCursorOnShrink(TERM_PROGRAM=%q) = %v, want %v", test.prog, got, test.want)
+			}
+		})
+	}
+}
+
 func TestCapabilitiesFor(t *testing.T) {
 	tests := []struct {
 		kind Kind

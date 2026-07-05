@@ -45,4 +45,12 @@ type Capabilities struct {
 	Emoji           bool
 	Mouse           bool
 	AlternateScreen bool
+
+	// ClampsCursorOnShrink marks terminals that ignore the scroll region when the
+	// window shrinks and clamp the cursor into the last physical row — which is
+	// ptyline's reserved bar row. Known offender: Terminal.app (Apple_Terminal).
+	// iTerm2, WezTerm, kitty and Linux terminals preserve the cursor, so the
+	// resize path must not force it to the child bottom there. Detected from
+	// $TERM_PROGRAM, not from the OS (spec §4.2: capabilities, not OS names).
+	ClampsCursorOnShrink bool
 }

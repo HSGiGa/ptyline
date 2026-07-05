@@ -19,6 +19,7 @@ func Detect() Profile {
 	}
 	capabilities.Color = detectColor(os.LookupEnv)
 	capabilities.TrueColor = capabilities.Color == ColorTrue
+	capabilities.ClampsCursorOnShrink = detectClampsCursorOnShrink(os.LookupEnv)
 	return Profile{
 		Kind:         kind,
 		Capabilities: capabilities,
@@ -48,6 +49,19 @@ func detectColor(lookup func(string) (string, bool)) ColorLevel {
 		return ColorBasic
 	}
 	return ColorNone
+}
+
+// detectClampsCursorOnShrink reports whether the hosting terminal clamps the
+// cursor into the last physical row when the window shrinks, ignoring the
+// scroll region. Terminal.app is the only known terminal doing this; every
+// other emulator tested (iTerm2, WezTerm, kitty, Linux terminals) keeps the
+// cursor inside the region, so the resize path can preserve its position.
+// Keyed on $TERM_PROGRAM rather than the OS: iTerm2 on macOS behaves like
+// Linux and must not get the pin-to-bottom treatment. It takes a lookup func
+// so it is testable without mutating the process environment.
+func detectClampsCursorOnShrink(lookup func(string) (string, bool)) bool {
+	prog, _ := lookup("TERM_PROGRAM")
+	return prog == "Apple_Terminal"
 }
 
 func pathExists(path string) bool {

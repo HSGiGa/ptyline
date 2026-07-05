@@ -633,6 +633,11 @@ func run(opts options) int {
 		ResizeCommit: func(cols, rows uint16) {
 			alt := filter.AltActive()
 			resizePending = false
+			// Capture the direction before state.Resize overwrites the old rows.
+			// Terminal.app only clamps the cursor into the bar when the terminal
+			// shrinks in rows; on grow / width-only resizes the cursor must be
+			// preserved (see Capabilities.ClampsCursorOnShrink).
+			shrank := rows < state.Terminal.Rows
 			if !alt && rows > state.Terminal.Rows {
 				_ = writer.ClearBar()
 			}
@@ -650,11 +655,14 @@ func run(opts options) int {
 				return
 			}
 			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
-			// Re-establish the scroll region. On Linux/WSL this preserves the cursor
-			// (SaveCursor/RestoreCursor) so a resize/split does not jump the cursor to
-			// the last line; on macOS it pins the cursor to the last child row because
-			// the OS clamps it into the bar on shrink. See reapplyScrollRegionAfterResize.
-			reapplyScrollRegionAfterResize(ctrl, terminal.Size{Cols: cols, Rows: rows}, area)
+			// Re-establish the scroll region, preserving the cursor position
+			// (SaveCursor/RestoreCursor) so a resize/split does not jump the input
+			// line to the bottom. Terminal.app is the exception: it clamps the
+			// cursor into the bar row on shrink, so there — and only on shrink —
+			// the cursor is pinned to the last child row instead. See
+			// reapplyScrollRegionAfterResize.
+			reapplyScrollRegionAfterResize(ctrl, terminal.Size{Cols: cols, Rows: rows}, area,
+				shrank, profile.Capabilities.ClampsCursorOnShrink)
 			_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 		},
 		ShellMeta: func(key, value string) {
