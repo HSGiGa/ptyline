@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.4] - 2026-08-09
+
+### Fixed
+
+- A deep shrink resize (e.g. triggered by connecting/disconnecting a second
+  monitor) could drop the input line onto ptyline's reserved bar rows, on
+  terminals other than the previously known Terminal.app case (confirmed on
+  iTerm2/WezTerm). A real terminal has to clamp the cursor when it no longer
+  fits after a shrink, and it does so before ptyline reacts to the resulting
+  resize, so blindly trusting cursor save/restore could preserve an
+  already-clamped, already-wrong position. ptyline now asks the terminal
+  where the cursor actually is after a shrink (a DSR query) and only
+  preserves it when that's genuinely still inside the visible content area,
+  falling back to the previous heuristic if the terminal doesn't answer in
+  time.
+
 ## [0.9.3] - 2026-08-09
 
 ### Added

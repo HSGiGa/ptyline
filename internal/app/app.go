@@ -220,6 +220,11 @@ func run(opts options) int {
 	trace := diagState.RecordTrace
 	ctrl.SetTrace(trace)
 	filter.SetTraceHandler(trace)
+	// posQuery matches a DSR cursor-position reply out of the raw stdin stream
+	// (see cursor_query.go); armed by reapplyScrollRegionAfterShrink after a
+	// shrink resize to verify where the terminal actually left the cursor,
+	// instead of trusting SaveCursor/RestoreCursor to have preserved it.
+	posQuery := &terminal.PositionQuery{}
 	loop := proxy.NewLoop(bus, filter)
 	writer := proxy.NewTerminalWriter(os.Stdout)
 	writer.SetTrace(trace)
@@ -642,9 +647,11 @@ func run(opts options) int {
 			alt := filter.AltActive()
 			resizePending = false
 			// Capture the direction before state.Resize overwrites the old rows.
-			// Terminal.app only clamps the cursor into the bar when the terminal
-			// shrinks in rows; on grow / width-only resizes the cursor must be
-			// preserved (see Capabilities.ClampsCursorOnShrink).
+			// A real terminal has to clamp a cursor that no longer fits once rows
+			// shrink, and it does so before ptyline reacts to the resulting
+			// SIGWINCH — on ANY terminal, not just the ones known to always clamp
+			// (Capabilities.ClampsCursorOnShrink). On grow / width-only resizes
+			// nothing gets clamped, so the cursor is simply preserved.
 			shrank := rows < state.Terminal.Rows
 			diagState.RecordTrace("resize-commit", fmt.Sprintf("cols=%d rows=%d prevRows=%d shrank=%v alt=%v", cols, rows, state.Terminal.Rows, shrank, alt))
 			if !alt && rows > state.Terminal.Rows {
@@ -666,12 +673,18 @@ func run(opts options) int {
 			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
 			// Re-establish the scroll region, preserving the cursor position
 			// (SaveCursor/RestoreCursor) so a resize/split does not jump the input
-			// line to the bottom. Terminal.app is the exception: it clamps the
-			// cursor into the bar row on shrink, so there — and only on shrink —
-			// the cursor is pinned to the last child row instead. See
-			// reapplyScrollRegionAfterResize.
-			reapplyScrollRegionAfterResize(ctrl, terminal.Size{Cols: cols, Rows: rows}, area,
-				shrank, profile.Capabilities.ClampsCursorOnShrink)
+			// line to the bottom. On shrink, verify where the terminal actually
+			// left the cursor via a DSR query first — SaveCursor/RestoreCursor
+			// alone can only preserve whatever position the terminal already
+			// clamped it to, which may already be inside the bar. See
+			// reapplyScrollRegionAfterShrink / reapplyScrollRegionAfterResize.
+			resizeSize := terminal.Size{Cols: cols, Rows: rows}
+			if shrank {
+				reapplyScrollRegionAfterShrink(ctx, ctrl, posQuery, resizeSize, area,
+					profile.Capabilities.ClampsCursorOnShrink, trace)
+			} else {
+				reapplyScrollRegionAfterResize(ctrl, resizeSize, area, false, profile.Capabilities.ClampsCursorOnShrink)
+			}
 			_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 		},
 		ShellMeta: func(key, value string) {
@@ -837,7 +850,13 @@ func run(opts options) int {
 		},
 	})
 	filter.SetAltHandler(altCoord.SetPending)
-	proxy.StartReader(ctx, bus, os.Stdin, func(data []byte) event.AppEvent { return event.StdinInput{Data: data} })
+	// posQuery.Filter runs here, on the dedicated stdin-reader goroutine, so it
+	// can strip a DSR reply before it becomes a StdinInput event — the only
+	// safe place to do so without risking a deadlock against the event loop
+	// (see PositionQuery's doc comment).
+	proxy.StartReader(ctx, bus, os.Stdin, func(data []byte) event.AppEvent {
+		return event.StdinInput{Data: posQuery.Filter(data)}
+	})
 	ptyDrained := proxy.StartReader(ctx, bus, sup.PTY(), func(data []byte) event.AppEvent { return event.PtyOutput{Data: data} })
 	go func() {
 		code, _ := sup.Wait()
