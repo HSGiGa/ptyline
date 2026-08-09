@@ -28,6 +28,11 @@ const (
 	// Terminals that do not implement it ignore the private mode harmlessly.
 	BeginSyncUpdate = CSI + "?2026h"
 	EndSyncUpdate   = CSI + "?2026l"
+
+	// QueryCursorPosition is DSR (Device Status Report, "cursor position"): the
+	// terminal replies on its input stream with CSI row;col R (a CPR). See
+	// PositionQuery, which matches that reply.
+	QueryCursorPosition = CSI + "6n"
 )
 
 // CursorTo returns the sequence to move the cursor to a 1-based (row, col).
