@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.3] - 2026-08-09
+
+### Added
+
+- `PTYLINE_DEBUG` now also traces cursor save/restore and resize events
+  (scroll-region reapplication, bar repaints, the child's own untouched
+  ESC7/ESC8, resize request/commit, and periodic module/tick redraws) to
+  help diagnose a reported input-line-on-bar issue after a long
+  minimize/sleep combined with a monitor reconfiguration. Diagnostic only —
+  no behavior change when `PTYLINE_DEBUG` is unset.
+
 ## [0.9.2] - 2026-07-05
 
 ### Fixed
