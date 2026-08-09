@@ -55,6 +55,7 @@ type AnsiFilter struct {
 	scrollReset  bool // child sent ESC c (RIS) or CSI ! p (DECSTR) — scroll region lost
 	onAlt        func(active bool)
 	onDiag       func(msg string)
+	onTrace      func(tag, detail string)
 }
 
 // NewAnsiFilter creates a filter for the given reserved area.
@@ -68,6 +69,11 @@ func (f *AnsiFilter) SetAltHandler(fn func(active bool)) { f.onAlt = fn }
 
 // SetDiagHandler registers a sink for malformed/oversized-sequence diagnostics.
 func (f *AnsiFilter) SetDiagHandler(fn func(msg string)) { f.onDiag = fn }
+
+// SetTraceHandler registers a sink for diagnostic tracing of the child's own
+// cursor save/restore sequences (e.g. wired to PTYLINE_DEBUG). Nil disables
+// tracing; forwarding behavior is unaffected either way.
+func (f *AnsiFilter) SetTraceHandler(fn func(tag, detail string)) { f.onTrace = fn }
 
 // SetRows updates the known terminal height (after resize) so clamping targets
 // the right bottom row.
@@ -280,6 +286,16 @@ func (f *AnsiFilter) handleSequence(seq, out []byte) ([]byte, bool) {
 			return append(out, seq...), false
 		}
 		return append(out, []byte(fmt.Sprintf("\x1b[%d;999H\x1b[1J\x1b[H", bottom))...), false
+	case '7': // DECSC (Save Cursor) — not intercepted, just traced (diagnostic only).
+		if f.onTrace != nil {
+			f.onTrace("child-save", "")
+		}
+		return append(out, seq...), false
+	case '8': // DECRC (Restore Cursor) — not intercepted, just traced (diagnostic only).
+		if f.onTrace != nil {
+			f.onTrace("child-restore", "")
+		}
+		return append(out, seq...), false
 	default:
 		return append(out, seq...), false
 	}

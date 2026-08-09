@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"syscall"
 	"time"
@@ -30,16 +31,27 @@ const maxBarRedrawHz = 20
 // source of truth remains AnsiFilter.AltActive().
 type TerminalWriter struct {
 	out          io.Writer
-	barTop       uint16    // 1-based first bar row
-	barCount     int       // number of reserved bar rows
-	lastBars     []string  // last bar lines written, to skip no-op redraws (spec §16)
-	lastBarAt    time.Time // for rate limiting
-	pendingFrame bool      // a redraw was requested but deferred to a safe boundary
+	barTop       uint16                   // 1-based first bar row
+	barCount     int                      // number of reserved bar rows
+	lastBars     []string                 // last bar lines written, to skip no-op redraws (spec §16)
+	lastBarAt    time.Time                // for rate limiting
+	pendingFrame bool                     // a redraw was requested but deferred to a safe boundary
+	trace        func(tag, detail string) // nil = no-op; see SetTrace
 }
 
 // NewTerminalWriter wraps the real-terminal output.
 func NewTerminalWriter(out io.Writer) *TerminalWriter {
 	return &TerminalWriter{out: out}
+}
+
+// SetTrace registers a sink for diagnostic tracing of bar-paint cursor
+// save/restore (e.g. wired to PTYLINE_DEBUG). Nil disables tracing.
+func (w *TerminalWriter) SetTrace(fn func(tag, detail string)) { w.trace = fn }
+
+func (w *TerminalWriter) traceEvent(tag, detail string) {
+	if w.trace != nil {
+		w.trace(tag, detail)
+	}
 }
 
 // writeAll drains b, retrying short writes and EINTR (spec §8.3, §16). On a
@@ -108,12 +120,15 @@ func (w *TerminalWriter) ClearBar() error {
 	if w.barTop == 0 || w.barCount == 0 {
 		return nil
 	}
+	w.traceEvent("bar-save", fmt.Sprintf("top=%d count=%d", w.barTop, w.barCount))
 	frame := terminal.BeginSyncUpdate + terminal.SaveCursor
 	for i := 0; i < w.barCount; i++ {
 		frame += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine
 	}
 	frame += terminal.ResetAttrs + terminal.RestoreCursor + terminal.EndSyncUpdate
-	return w.writeAll([]byte(frame))
+	err := w.writeAll([]byte(frame))
+	w.traceEvent("bar-restore", fmt.Sprintf("top=%d count=%d", w.barTop, w.barCount))
+	return err
 }
 
 // FlushBarFrame emits a complete bar frame (all reserved rows) if one is pending,
@@ -219,11 +234,14 @@ func (w *TerminalWriter) barPaintBody(lines []string) string {
 	if start < 0 {
 		start = 0
 	}
+	w.traceEvent("bar-save", fmt.Sprintf("top=%d count=%d", w.barTop, w.barCount))
 	body := terminal.SaveCursor
 	for i := 0; i < w.barCount && start+i < len(lines); i++ {
 		body += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine + lines[start+i] + terminal.ResetAttrs
 	}
-	return body + terminal.RestoreCursor
+	body += terminal.RestoreCursor
+	w.traceEvent("bar-restore", fmt.Sprintf("top=%d count=%d", w.barTop, w.barCount))
+	return body
 }
 
 func (w *TerminalWriter) markPainted(lines []string) {

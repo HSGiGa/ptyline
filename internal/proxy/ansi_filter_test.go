@@ -287,3 +287,39 @@ func TestRISMidStreamPreservesNeighbours(t *testing.T) {
 		t.Errorf("suffix = %q, want %q", out[len(out)-5:], "world")
 	}
 }
+
+// The child's own DECSC/DECRC (ESC 7 / ESC 8) are not intercepted — they must
+// pass through byte-for-byte — but are traced (diagnostic-only) so a repro
+// session can see whether ptyline's own cursor save/restore lands in between
+// a child's chunked save/restore pair.
+func TestChildSaveRestoreTracedAndPassedThrough(t *testing.T) {
+	f := newFilter()
+	var tags []string
+	f.SetTraceHandler(func(tag, detail string) { tags = append(tags, tag) })
+
+	if out := string(f.Filter([]byte("\x1b7"))); out != "\x1b7" {
+		t.Fatalf("Filter(ESC 7) = %q, want pass-through", out)
+	}
+	if out := string(f.Filter([]byte("\x1b8"))); out != "\x1b8" {
+		t.Fatalf("Filter(ESC 8) = %q, want pass-through", out)
+	}
+
+	want := []string{"child-save", "child-restore"}
+	if len(tags) != len(want) {
+		t.Fatalf("trace tags = %v, want %v", tags, want)
+	}
+	for i, tag := range want {
+		if tags[i] != tag {
+			t.Errorf("trace[%d] = %q, want %q", i, tags[i], tag)
+		}
+	}
+}
+
+// With no trace handler registered, ESC 7 / ESC 8 must still pass through
+// unchanged (tracing is purely observational).
+func TestChildSaveRestorePassThroughWithoutTraceHandler(t *testing.T) {
+	f := newFilter()
+	if out := string(f.Filter([]byte("\x1b7\x1b8"))); out != "\x1b7\x1b8" {
+		t.Fatalf("Filter(ESC 7 ESC 8) = %q, want pass-through", out)
+	}
+}

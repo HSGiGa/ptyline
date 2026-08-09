@@ -214,8 +214,15 @@ func run(opts options) int {
 	diagState := diagnostics.New()
 	openDebugLog(diagState)
 	filter.SetDiagHandler(func(msg string) { diagState.RecordAnsiWarning(msg) })
+	// Cursor save/restore/resize tracing (PTYLINE_DEBUG only; RecordTrace is a
+	// no-op without a logger) — a diagnostic aid for the input-line-on-bar bug
+	// reported after long minimize/sleep + monitor reconfiguration.
+	trace := diagState.RecordTrace
+	ctrl.SetTrace(trace)
+	filter.SetTraceHandler(trace)
 	loop := proxy.NewLoop(bus, filter)
 	writer := proxy.NewTerminalWriter(os.Stdout)
+	writer.SetTrace(trace)
 	top, count := bar.Geometry(area, size.Rows, len(barRows))
 	writer.SetBarRows(top, count)
 	state := status.NewState()
@@ -624,6 +631,7 @@ func run(opts options) int {
 			return nil
 		},
 		ResizeRequest: func(cols, rows uint16) {
+			diagState.RecordTrace("resize-request", fmt.Sprintf("cols=%d rows=%d", cols, rows))
 			if !resizePending {
 				_, _ = ctrl.Write([]byte(terminal.HideCursor))
 			}
@@ -638,6 +646,7 @@ func run(opts options) int {
 			// shrinks in rows; on grow / width-only resizes the cursor must be
 			// preserved (see Capabilities.ClampsCursorOnShrink).
 			shrank := rows < state.Terminal.Rows
+			diagState.RecordTrace("resize-commit", fmt.Sprintf("cols=%d rows=%d prevRows=%d shrank=%v alt=%v", cols, rows, state.Terminal.Rows, shrank, alt))
 			if !alt && rows > state.Terminal.Rows {
 				_ = writer.ClearBar()
 			}
@@ -769,10 +778,12 @@ func run(opts options) int {
 				}
 			}
 		},
-		ModuleUpdated: func(_ string, snap snapshot.ModuleSnapshot) {
+		ModuleUpdated: func(id string, snap snapshot.ModuleSnapshot) {
+			diagState.RecordTrace("module-updated", id)
 			state.UpdateModule(snap)
 		},
 		Tick: func() {
+			diagState.RecordTrace("tick", "")
 			state.AnimationPhase++
 			if snap := sshAnim.Tick(state.Shell.SSHTarget); snap != nil {
 				state.UpdateModule(*snap)
