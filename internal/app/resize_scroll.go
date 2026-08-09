@@ -53,7 +53,8 @@ func reapplyScrollRegionAfterResize(ctrl *terminal.Controller, size terminal.Siz
 // as reapplyScrollRegionAfterResize would — so behavior can only improve,
 // never regress, versus a terminal this fix doesn't (yet) confirm clamps.
 func reapplyScrollRegionAfterShrink(ctx context.Context, ctrl *terminal.Controller, posQuery *terminal.PositionQuery,
-	size terminal.Size, area reserved.Area, clampsOnShrink bool, trace func(tag, detail string)) {
+	size terminal.Size, area reserved.Area, clampsOnShrink bool, trace func(tag, detail string),
+) {
 	ch := posQuery.Arm()
 	_, _ = ctrl.Write([]byte(terminal.QueryCursorPosition))
 	trace("cursor-query-sent", fmt.Sprintf("size=%dx%d", size.Cols, size.Rows))
