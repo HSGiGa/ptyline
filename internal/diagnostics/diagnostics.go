@@ -66,6 +66,17 @@ func (s *State) RecordAnsiWarning(msg string) {
 	s.log("ansi", msg)
 }
 
+// RecordTrace logs a timestamped diagnostic trace event (e.g. cursor
+// save/restore, resize, redraw) under the given tag. Unlike the other
+// Record* methods it does not update the Record snapshot — it exists purely
+// to feed PTYLINE_DEBUG for tracing hard-to-reproduce bugs, so it is a
+// no-op when no logger is registered.
+func (s *State) RecordTrace(tag, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log(tag, detail)
+}
+
 // Snapshot returns a copy of the current diagnostics for read-only display.
 func (s *State) Snapshot() Record {
 	s.mu.Lock()

@@ -11,14 +11,25 @@ import (
 // changes, it must restore — on normal exit, signal, child exit, or init failure
 // after state was modified.
 type Controller struct {
-	tty *os.File // controlling terminal (typically os.Stdin/os.Stdout)
-	out io.Writer
-	raw rawState
+	tty   *os.File // controlling terminal (typically os.Stdin/os.Stdout)
+	out   io.Writer
+	raw   rawState
+	trace func(tag, detail string) // nil = no-op; see SetTrace
 }
 
 // New creates a Controller over the given tty and output writer.
 func New(tty *os.File, out io.Writer) *Controller {
 	return &Controller{tty: tty, out: out}
+}
+
+// SetTrace registers a sink for diagnostic tracing of cursor save/restore and
+// scroll-region changes (e.g. wired to PTYLINE_DEBUG). Nil disables tracing.
+func (c *Controller) SetTrace(fn func(tag, detail string)) { c.trace = fn }
+
+func (c *Controller) traceEvent(tag, detail string) {
+	if c.trace != nil {
+		c.trace(tag, detail)
+	}
 }
 
 // Enter saves terminal state and enables raw mode. On any failure it restores

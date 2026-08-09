@@ -1,6 +1,10 @@
 package terminal
 
-import "github.com/hsgiga/ptyline/internal/reserved"
+import (
+	"fmt"
+
+	"github.com/hsgiga/ptyline/internal/reserved"
+)
 
 // ApplyScrollRegion sets the real terminal scroll region to exclude the reserved
 // rows: 1..(rows-reserved). This is what keeps normal scrolling above the status
@@ -12,9 +16,11 @@ import "github.com/hsgiga/ptyline/internal/reserved"
 // cursor where it was (spec §8.1).
 func (c *Controller) ApplyScrollRegion(size Size, area reserved.Area) {
 	bottom := area.ChildRows(size.Rows)
+	c.traceEvent("scroll-save", fmt.Sprintf("size=%dx%d bottom=%d", size.Cols, size.Rows, bottom))
 	c.write(SaveCursor)
 	c.write(SetScrollRegion(1, bottom))
 	c.write(RestoreCursor)
+	c.traceEvent("scroll-restore", fmt.Sprintf("size=%dx%d bottom=%d", size.Cols, size.Rows, bottom))
 }
 
 // ApplyScrollRegionAtChildBottom sets the protected normal-screen scroll region
@@ -23,6 +29,7 @@ func (c *Controller) ApplyScrollRegion(size Size, area reserved.Area) {
 // last row, which is ptyline's reserved bar row in the normal screen.
 func (c *Controller) ApplyScrollRegionAtChildBottom(size Size, area reserved.Area) {
 	bottom := area.ChildRows(size.Rows)
+	c.traceEvent("scroll-pin", fmt.Sprintf("size=%dx%d bottom=%d", size.Cols, size.Rows, bottom))
 	c.write(SetScrollRegion(1, bottom))
 	c.write(CursorTo(bottom, 1))
 }
