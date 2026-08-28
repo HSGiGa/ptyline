@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.5] - 2026-08-28
+
+### Fixed
+
+- The git module no longer takes `.git/index.lock` or rewrites `.git/index`
+  while polling. `git status` refreshes the index on disk by default, so a
+  bar tick could race a concurrent `git add`/`commit`/`rebase` in the same
+  repository and make it fail with `Unable to create '.../index.lock': File
+  exists`. Every git invocation now runs with `GIT_OPTIONAL_LOCKS=0`, which
+  keeps the refresh in memory and leaves the repository untouched. Git calls
+  also run with `GIT_TERMINAL_PROMPT=0` so they can never block the bar on a
+  credential prompt.
+
 ## [0.9.4] - 2026-08-09
 
 ### Fixed

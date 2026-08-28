@@ -1,11 +1,13 @@
 package modules
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,6 +333,77 @@ func TestGitWithFormatComposesSnapshot(t *testing.T) {
 	}
 	if snaps["git.dirty"] != "*" {
 		t.Errorf("git.dirty = %q, want *", snaps["git.dirty"])
+	}
+}
+
+// TestGitRunsWithoutOptionalLocks verifies every git invocation disables
+// optional locks, and that the module's value wins over the user's environment.
+func TestGitRunsWithoutOptionalLocks(t *testing.T) {
+	envLog := filepath.Join(t.TempDir(), "env.log")
+	fakeGit := filepath.Join(t.TempDir(), "git")
+	script := "#!/bin/sh\nprintf 'GIT_OPTIONAL_LOCKS=%s\\n' \"$GIT_OPTIONAL_LOCKS\" >>" + envLog + "\n"
+	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake git: %v", err)
+	}
+	t.Setenv("GIT_OPTIONAL_LOCKS", "1") // user environment must not re-enable locks
+
+	m := NewGit(time.Second, time.Second, func() string { return t.TempDir() })
+	m.gitBin = fakeGit
+	m.RefreshAll(context.Background())
+
+	logged, err := os.ReadFile(envLog)
+	if err != nil {
+		t.Fatalf("read env log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(logged)), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		t.Fatal("fake git was never invoked")
+	}
+	for i, line := range lines {
+		if line != "GIT_OPTIONAL_LOCKS=0" {
+			t.Errorf("git invocation %d ran with %q, want GIT_OPTIONAL_LOCKS=0", i, line)
+		}
+	}
+}
+
+// TestGitRefreshDoesNotTouchIndex verifies a refresh never rewrites .git/index
+// (and so never creates .git/index.lock), even in the setup where git would
+// normally write it back: with the untracked cache enabled a plain `git status`
+// stores the refreshed cache inside the index, which takes the index lock.
+func TestGitRefreshDoesNotTouchIndex(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	dir := initGitRepo(t)
+	git(t, dir, "config", "core.untrackedCache", "true")
+	writeFile(t, dir, "untracked.txt", "new\n")
+
+	// Invalidate the cached stat data too: same content, different mtime.
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(filepath.Join(dir, "README.md"), past, past); err != nil {
+		t.Fatalf("chtimes README: %v", err)
+	}
+
+	indexPath := filepath.Join(dir, ".git", "index")
+	before, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+
+	m := NewGit(time.Second, time.Second, func() string { return dir })
+	if got := snapMap(m.RefreshAll(context.Background()))["git.branch"]; got != "main" {
+		t.Fatalf("git.branch = %q, want main (refresh did not run)", got)
+	}
+
+	after, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("read index after refresh: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("refresh rewrote .git/index (%d bytes -> %d bytes)", len(before), len(after))
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "index.lock")); !os.IsNotExist(err) {
+		t.Errorf("refresh left .git/index.lock behind (stat err = %v)", err)
 	}
 }
 

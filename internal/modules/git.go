@@ -173,7 +173,7 @@ func (m *Git) collect(ctx context.Context) (data *gitData, timedOut bool) {
 	}
 
 	args := m.withDir(dir, "status", "--porcelain=v2", "--branch")
-	out, err := exec.CommandContext(ctx, m.gitBin, args...).Output()
+	out, err := m.gitCmd(ctx, args...).Output()
 	if ctx.Err() != nil {
 		return nil, true
 	}
@@ -259,6 +259,27 @@ func parsePortcelainV2Line(line string, d *gitData) {
 	}
 }
 
+// gitCmd builds a git invocation that leaves the repository byte-for-byte
+// untouched. A status bar polls every few seconds while the user is typing git
+// commands in the same repo, so it must never write into .git:
+//
+//	GIT_OPTIONAL_LOCKS=0 makes git skip every operation that would take a lock.
+//	In particular `git status` still refreshes the index in memory but no longer
+//	rewrites .git/index, so it never creates .git/index.lock and can never lose
+//	that race against a real `git add`/`commit`/`rebase` (which would fail with
+//	"Unable to create '.../index.lock': File exists").
+//
+//	GIT_TERMINAL_PROMPT=0 keeps git from ever blocking on a credential prompt.
+//
+// The variables are appended after os.Environ() so they win over any value
+// inherited from the user's shell (os/exec keeps the last duplicate).
+// Both are honored since git 2.15; older versions ignore them harmlessly.
+func (m *Git) gitCmd(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, m.gitBin, args...)
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	return cmd
+}
+
 // withDir prepends -C dir to git args when dir is non-empty.
 func (m *Git) withDir(dir string, args ...string) []string {
 	if dir != "" {
@@ -271,7 +292,7 @@ func (m *Git) withDir(dir string, args ...string) []string {
 // Returns "" on error. The git dir may be relative; we make it absolute.
 func (m *Git) resolveGitDir(ctx context.Context, cwd string) string {
 	args := m.withDir(cwd, "rev-parse", "--git-dir")
-	out, err := exec.CommandContext(ctx, m.gitBin, args...).Output()
+	out, err := m.gitCmd(ctx, args...).Output()
 	if err != nil {
 		return ""
 	}
