@@ -53,6 +53,55 @@ func TestTrackerSuppressesSilentCommandAfterStartGrace(t *testing.T) {
 	}
 }
 
+func TestTrackerFreezesAnimationAfterMaxDuration(t *testing.T) {
+	tracker := NewTracker(config.ModuleConfig{Enabled: true})
+	now := time.Now()
+	tracker.startedAt = now.Add(-commandAnimationMaxDuration - time.Second)
+	tracker.lastActivity = now // still actively producing output, unlike the idle-timeout case
+	tracker.activeShown = true
+	tracker.animating.Store(true)
+
+	st := status.NewState()
+	st.Shell.ActiveCommand = "codex"
+	st.Shell.LastCommand = "codex"
+
+	snap := tracker.Tick(&st)
+	if snap == nil {
+		t.Fatal("Tick() returned nil snapshot")
+	}
+	if st.ActiveCommandAnimating || !snap.AnimationSuppressed {
+		t.Fatalf("command past the max duration should freeze its animation: state=%+v snap=%+v", st, snap)
+	}
+	if tracker.Animating().Load() {
+		t.Fatal("ticker flag should stop once the animation is capped")
+	}
+	if !tracker.capped {
+		t.Fatal("tracker should record the cap so it holds regardless of further output")
+	}
+}
+
+func TestTrackerCapHoldsThroughFurtherOutput(t *testing.T) {
+	tracker := NewTracker(config.ModuleConfig{Enabled: true})
+	now := time.Now()
+	tracker.startedAt = now.Add(-commandAnimationMaxDuration - time.Second)
+	tracker.lastActivity = now
+	tracker.activeShown = true
+	tracker.animating.Store(true)
+
+	st := status.NewState()
+	st.Shell.ActiveCommand = "codex"
+	st.Shell.LastCommand = "codex"
+	_ = tracker.Tick(&st) // trips the cap
+
+	tracker.lastStdin = now.Add(-time.Second) // outside the keystroke-echo window
+	if changed := tracker.RecordOutput(&st.Shell); changed {
+		t.Fatal("RecordOutput should not resume animating once the command is capped")
+	}
+	if tracker.Animating().Load() {
+		t.Fatal("animating flag must stay false while capped, even with fresh output")
+	}
+}
+
 func TestTrackerHidesActiveCommandDuringAppearanceGrace(t *testing.T) {
 	tracker := NewTracker(config.ModuleConfig{Enabled: true})
 

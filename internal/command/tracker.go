@@ -1,7 +1,8 @@
 // Package command owns the command-animation lifecycle state machine: it tracks
 // whether the running command is "working" (producing output that is not just
-// a keystroke echo), enforces the idle timeout, and drives the done-command TTL
-// tick-down. All policy constants live here so app.go stays wiring-only.
+// a keystroke echo), enforces the idle timeout and the max-animation-duration
+// cap, and drives the done-command TTL tick-down. All policy constants live
+// here so app.go stays wiring-only.
 package command
 
 import (
@@ -24,6 +25,17 @@ const commandAnimationIdleTimeout = 1200 * time.Millisecond
 // before it produces output. This covers short silent commands such as `sleep 2`
 // without letting long idle processes animate forever.
 const commandAnimationStartGrace = 3 * time.Second
+
+// commandAnimationMaxDuration bounds how long the glint keeps animating for a
+// single command, even while it keeps producing non-echo output. Without this,
+// a long-lived, continuously-chatty foreground process (e.g. an AI agent CLI
+// that streams output for hours) would animate for its entire lifetime, and the
+// animation ticker drives a bar redraw plus a real-terminal write on every tick
+// (commandAnimationIntervalMS) for as long as it runs. Once capped, the command
+// still shows as active/running — only the shimmer freezes — and the cap does
+// not release early on further output the way the idle timeout does; it holds
+// until the command changes.
+const commandAnimationMaxDuration = 60 * time.Second
 
 // keystrokeEchoWindow is how long after a keystroke output is treated as the
 // program echoing the user's typing rather than doing work; within it the
@@ -48,7 +60,11 @@ type Tracker struct {
 	// grace and is now rendered. Reset on every new command; flipped by Tick once
 	// commandActiveShowDelay has elapsed.
 	activeShown bool
-	cfg         config.ModuleConfig
+	// capped reports that the current command hit commandAnimationMaxDuration.
+	// Unlike the idle timeout, this does not release on further output — it holds
+	// the animation frozen until a new command starts.
+	capped bool
+	cfg    config.ModuleConfig
 }
 
 // NewTracker creates a Tracker from the command module config.
@@ -82,6 +98,9 @@ func (t *Tracker) RecordOutput(shell *status.ShellState) bool {
 	if shell.ActiveCommand == "" {
 		return false
 	}
+	if t.capped {
+		return false // animation cap holds regardless of further output
+	}
 	if time.Since(t.lastStdin) <= keystrokeEchoWindow {
 		return false
 	}
@@ -105,6 +124,7 @@ func (t *Tracker) ApplyShellMeta(key string, st *status.StatusState) *status.Mod
 			t.startedAt = now
 			t.lastActivity = now
 			t.activeShown = false
+			t.capped = false
 			t.animating.Store(true)
 			if t.ActiveShowDelay() > 0 {
 				// Hold the name back through the appearance grace; a later Tick
@@ -149,6 +169,19 @@ func (t *Tracker) Tick(st *status.StatusState) *status.ModuleSnapshot {
 			return nil // still within the appearance grace: stay hidden
 		}
 		t.activeShown = true
+	}
+	if t.capped {
+		return nil // animation already frozen for this command; nothing to advance
+	}
+	if !t.startedAt.IsZero() && now.Sub(t.startedAt) > commandAnimationMaxDuration {
+		t.capped = true
+		st.ActiveCommandAnimating = false
+		t.animating.Store(false)
+		if t.cfg.Enabled {
+			snap := t.snapshot(st.Shell, false)
+			return &snap
+		}
+		return nil
 	}
 	if !t.startedAt.IsZero() && now.Sub(t.startedAt) <= commandAnimationStartGrace {
 		st.ActiveCommandAnimating = true

@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.6] - 2026-09-04
+
+### Fixed
+
+- The `command` module's glint/pulse/blink animation could run indefinitely
+  for a single long-running foreground command that never stays quiet for
+  more than a second or two — for example an AI coding CLI that streams
+  output continuously for hours — driving a bar redraw and a real-terminal
+  write roughly 12 times a second for the entire session. This showed up as
+  elevated CPU from ptyline itself, most noticeably on WSL2, where each of
+  those writes crosses into the Windows console host. The animation now
+  freezes automatically after 60 seconds of continuous activity (the
+  command still shows as running; only the shimmer stops) and stays frozen
+  until the command finishes, unlike the existing short idle timeout, which
+  resumes animating on new output.
+
 ## [0.9.5] - 2026-08-28
 
 ### Fixed
