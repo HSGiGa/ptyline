@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hsgiga/ptyline/internal/proxy"
 	"github.com/hsgiga/ptyline/internal/reserved"
 	"github.com/hsgiga/ptyline/internal/terminal"
 )
@@ -53,7 +54,7 @@ func reapplyScrollRegionAfterResize(ctrl *terminal.Controller, size terminal.Siz
 // as reapplyScrollRegionAfterResize would — so behavior can only improve,
 // never regress, versus a terminal this fix doesn't (yet) confirm clamps.
 func reapplyScrollRegionAfterShrink(ctx context.Context, ctrl *terminal.Controller, posQuery *terminal.PositionQuery,
-	size terminal.Size, area reserved.Area, clampsOnShrink bool, trace func(tag, detail string),
+	filter *proxy.AnsiFilter, size terminal.Size, area reserved.Area, clampsOnShrink bool, trace func(tag, detail string),
 ) {
 	ch := posQuery.Arm()
 	_, _ = ctrl.Write([]byte(terminal.QueryCursorPosition))
@@ -61,6 +62,7 @@ func reapplyScrollRegionAfterShrink(ctx context.Context, ctrl *terminal.Controll
 	select {
 	case pos := <-ch:
 		trace("cursor-query-reply", fmt.Sprintf("row=%d col=%d", pos.Row, pos.Col))
+		filter.SetBelievedRow(pos.Row)
 		// Ground truth is available either way: act on it directly rather than
 		// falling through to the heuristic, which could still pin an in-bounds
 		// cursor this exact reply just proved was never clamped.
@@ -76,4 +78,28 @@ func reapplyScrollRegionAfterShrink(ctx context.Context, ctrl *terminal.Controll
 		trace("cursor-query-timeout", "context canceled")
 	}
 	reapplyScrollRegionAfterResize(ctrl, size, area, true, clampsOnShrink)
+}
+
+// probeCursorRowAsync arms a DSR query and, if a reply arrives before
+// cursorQueryTimeout, reconciles filter's believed cursor row with ground
+// truth. Unlike reapplyScrollRegionAfterShrink it never blocks the caller and
+// has no effect on cursor or scroll-region placement — it exists purely to
+// correct AnsiFilter's row-tracking drift after events where ground truth is
+// cheap to obtain but not already queried by another path (a grow resize, an
+// alt-screen exit, or a large resize jump — see call sites in app.go and
+// altscreen.go).
+func probeCursorRowAsync(ctx context.Context, ctrl *terminal.Controller, posQuery *terminal.PositionQuery,
+	filter *proxy.AnsiFilter, trace func(tag, detail string),
+) {
+	ch := posQuery.Arm()
+	_, _ = ctrl.Write([]byte(terminal.QueryCursorPosition))
+	go func() {
+		select {
+		case pos := <-ch:
+			filter.SetBelievedRow(pos.Row)
+			trace("cursor-row-reconciled", fmt.Sprintf("row=%d", pos.Row))
+		case <-time.After(cursorQueryTimeout):
+		case <-ctx.Done():
+		}
+	}()
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hsgiga/ptyline/internal/proxy"
 	"github.com/hsgiga/ptyline/internal/reserved"
 	"github.com/hsgiga/ptyline/internal/terminal"
 )
@@ -80,6 +81,7 @@ func TestReapplyScrollRegionAfterShrink(t *testing.T) {
 	preserve := terminal.SaveCursor + terminal.SetScrollRegion(1, 29) + terminal.RestoreCursor
 	pin := terminal.SetScrollRegion(1, 29) + terminal.CursorTo(29, 1)
 	query := terminal.QueryCursorPosition
+	filter := proxy.NewAnsiFilter(area)
 
 	t.Run("reply inside child area preserves", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -87,7 +89,7 @@ func TestReapplyScrollRegionAfterShrink(t *testing.T) {
 		posQuery := &terminal.PositionQuery{}
 		done := make(chan struct{})
 		feedCPRReply(posQuery, 15, 1, done)
-		reapplyScrollRegionAfterShrink(context.Background(), ctrl, posQuery, size, area, true, noopTrace)
+		reapplyScrollRegionAfterShrink(context.Background(), ctrl, posQuery, filter, size, area, true, noopTrace)
 		close(done)
 		if got, want := buf.String(), query+preserve; got != want {
 			t.Errorf("wrote %q, want %q", got, want)
@@ -100,7 +102,7 @@ func TestReapplyScrollRegionAfterShrink(t *testing.T) {
 		posQuery := &terminal.PositionQuery{}
 		done := make(chan struct{})
 		feedCPRReply(posQuery, 30, 1, done)
-		reapplyScrollRegionAfterShrink(context.Background(), ctrl, posQuery, size, area, true, noopTrace)
+		reapplyScrollRegionAfterShrink(context.Background(), ctrl, posQuery, filter, size, area, true, noopTrace)
 		close(done)
 		if got, want := buf.String(), query+pin; got != want {
 			t.Errorf("wrote %q, want %q", got, want)
@@ -124,7 +126,7 @@ func TestReapplyScrollRegionAfterShrink(t *testing.T) {
 				var buf bytes.Buffer
 				ctrl := terminal.New(nil, &buf)
 				posQuery := &terminal.PositionQuery{}
-				reapplyScrollRegionAfterShrink(context.Background(), ctrl, posQuery, size, area, test.clampsOnShrink, noopTrace)
+				reapplyScrollRegionAfterShrink(context.Background(), ctrl, posQuery, filter, size, area, test.clampsOnShrink, noopTrace)
 				if got := buf.String(); got != test.want {
 					t.Errorf("wrote %q, want %q", got, test.want)
 				}
@@ -138,7 +140,7 @@ func TestReapplyScrollRegionAfterShrink(t *testing.T) {
 		posQuery := &terminal.PositionQuery{}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		reapplyScrollRegionAfterShrink(ctx, ctrl, posQuery, size, area, true, noopTrace)
+		reapplyScrollRegionAfterShrink(ctx, ctrl, posQuery, filter, size, area, true, noopTrace)
 		if got, want := buf.String(), query+pin; got != want {
 			t.Errorf("wrote %q, want %q", got, want)
 		}

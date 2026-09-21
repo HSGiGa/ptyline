@@ -22,6 +22,12 @@ type altScreenCoordinator struct {
 	state  *status.StatusState
 	area   *reserved.Area
 	redraw func()
+	// probeCursorRow fires a non-blocking DSR probe to reconcile AnsiFilter's
+	// tracked cursor row after alt-screen exit — exactly the boundary where the
+	// next shell-prompt redraw is likely to hit the CSI 0 J bar-clobber path
+	// (see internal/proxy/ansi_filter.go's rewriteEraseDisplay). Nil is a no-op,
+	// so tests that don't need it can leave it unset.
+	probeCursorRow func()
 
 	pendingVal bool
 	hasPending bool
@@ -87,4 +93,7 @@ func (c *altScreenCoordinator) Apply(active bool) {
 		c.ctrl.ApplyScrollRegion(size, *c.area)
 	}
 	c.redraw()
+	if c.probeCursorRow != nil {
+		c.probeCursorRow()
+	}
 }

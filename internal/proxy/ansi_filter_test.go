@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/hsgiga/ptyline/internal/reserved"
@@ -93,6 +94,60 @@ func TestCursorToEndEraseFlagsBarClobber(t *testing.T) {
 	f.Filter([]byte("\x1b[0J"))
 	if f.TakeBarClobbered() {
 		t.Fatal("alt-screen CSI 0 J should not flag bar clobber")
+	}
+}
+
+// Once the filter has a trustworthy tracked cursor row (set here via an
+// absolute move), CSI 0 J is rewritten to erase only from the cursor down to
+// the bar boundary instead of forwarding as-is and flagging a reactive
+// repaint — so the bar never blinks blank for a frame.
+func TestCursorToEndEraseProactiveWhenRowKnown(t *testing.T) {
+	f := newFilter()
+	f.Filter([]byte("\x1b[10;1H")) // move to row 10; also tracks believedRow=10
+	got := string(f.Filter([]byte("\x1b[0J")))
+	want := "\x1b7\x1b[K"
+	for row := 11; row <= 29; row++ {
+		want += fmt.Sprintf("\x1b[%d;1H\x1b[2K", row)
+	}
+	want += "\x1b8"
+	if got != want {
+		t.Fatalf("Filter(CSI 0 J) = %q, want %q", got, want)
+	}
+	if f.TakeBarClobbered() {
+		t.Fatal("proactive erase should not also flag a reactive bar clobber")
+	}
+}
+
+// If the believed row is stale (already past the bar boundary), the filter
+// falls back to the old reactive path rather than risking an erase that
+// misses real content it can no longer be sure about.
+func TestCursorToEndEraseFallsBackWhenRowStale(t *testing.T) {
+	f := newFilter()
+	f.believedRow = 30 // past bottom (29): treated as unknown/stale
+	got := string(f.Filter([]byte("\x1b[0J")))
+	if got != "\x1b[0J" {
+		t.Fatalf("Filter(CSI 0 J) = %q, want pass-through", got)
+	}
+	if !f.TakeBarClobbered() {
+		t.Fatal("stale believed row should still flag a reactive bar clobber")
+	}
+}
+
+// Plain \n also advances the tracked cursor row, clamped at the bar boundary
+// the way a real terminal scrolls instead of moving the cursor further once
+// it is at the bottom margin of its scroll region.
+func TestNewlineAdvancesBelievedRow(t *testing.T) {
+	f := newFilter()
+	f.Filter([]byte("\x1b[1;1H")) // seed a known row (1)
+	f.Filter([]byte("line one\nline two\nline three\n"))
+	if f.believedRow != 4 {
+		t.Fatalf("believedRow = %d, want 4", f.believedRow)
+	}
+	for i := 0; i < 40; i++ {
+		f.Filter([]byte("\n"))
+	}
+	if f.believedRow != 29 {
+		t.Fatalf("believedRow = %d, want clamped to bottom (29)", f.believedRow)
 	}
 }
 

@@ -37,6 +37,17 @@ import (
 // grandchild can keep the slave open indefinitely, so this caps the wait.
 const ptyDrainGrace = 100 * time.Millisecond
 
+// geometrySyncMinInterval throttles how often a raw SIGWINCH propagates the
+// child/bar geometry immediately (see syncResizeGeometry in run), bounding a
+// fast drag-resize to roughly this rate instead of syncing on every event.
+const geometrySyncMinInterval = 30 * time.Millisecond
+
+// largeResizeJumpRows is the row-count delta above which ResizeCommit treats a
+// resize as a "large jump" — e.g. minimize/restore across a monitor or DPI
+// change — and forces a full bar repaint rather than trusting the no-op diff
+// cache. A same-monitor drag resize rarely jumps this much in one commit.
+const largeResizeJumpRows = 15
+
 // userModEntry tracks a running user-defined module goroutine (exec or custom-time).
 type userModEntry struct {
 	cancel    context.CancelFunc
@@ -276,6 +287,14 @@ func run(opts options) int {
 	// change pulses and glints are not interrupted.
 	var animState *renderer.AnimationState
 	var resizePending bool
+	// lastGeometrySync/preResizeBarTop/preResizeBarCount back syncResizeGeometry
+	// and the ResizeRequest/ResizeCommit handlers below (spec: resize geometry
+	// race fix). preResizeBar* capture the bar's position at the START of a
+	// resize burst, before syncResizeGeometry starts moving it, so a grow's
+	// stale-row cleanup at commit time erases where the bar actually was.
+	var lastGeometrySync time.Time
+	var preResizeBarTop uint16
+	var preResizeBarCount int
 	renderFn := func() []string { return bar.Render(render, state, barRows) }
 	redraw := func() {
 		if resizePending {
@@ -296,6 +315,7 @@ func run(opts options) int {
 	}
 	altCoord := &altScreenCoordinator{
 		ctrl: ctrl, sup: sup, writer: writer, state: &state, area: &area, redraw: redraw,
+		probeCursorRow: func() { probeCursorRowAsync(ctx, ctrl, posQuery, filter, trace) },
 	}
 
 	// projectOverlayPath tracks the active project .ptyline so we skip rebuilds
@@ -593,6 +613,44 @@ func run(opts options) int {
 		updateModules:       updateModules,
 	}
 
+	// syncResizeGeometry propagates a new terminal size to the child process
+	// (TIOCSWINSZ) and to the bar-painting layers (writer.SetBarRows, the
+	// renderer) immediately, independent of the resize-commit debounce below.
+	//
+	// Without this, a raw SIGWINCH reflows the physical terminal to its new
+	// geometry instantly, but the child and the bar writer's row/column
+	// bookkeeping only caught up once per debounced ResizeCommit — up to
+	// ResizeCommitDelay after the LAST SIGWINCH of a burst, which for a real
+	// drag-resize or a minimize/restore burst can be much longer end-to-end.
+	// During that window the child kept emitting output sized for the old
+	// geometry onto an already-reflowed terminal, and a bar-clobbering erase
+	// (WriteOutputFramed) painted using stale bar row/width bookkeeping —
+	// both produce duplicated or mis-wrapped lines. ResizeRequest calls this,
+	// throttled, on (almost) every raw SIGWINCH to close that window;
+	// ResizeCommit still calls it once more, unconditionally, as a final
+	// authoritative sync (safe to repeat: TIOCSWINSZ/SetBarRows/the renderer
+	// rebuild are all cheap and idempotent for an unchanged size). The more
+	// disruptive settle-only work — state.Resize, the scroll-region reapply,
+	// the DSR shrink probe — stays debounced; doing those on every throttle
+	// tick during a drag would reintroduce the flicker/flood debouncing
+	// exists to avoid, and cursor safety only needs to settle once the drag
+	// stops.
+	syncResizeGeometry := func(cols, rows uint16) {
+		alt := filter.AltActive()
+		if alt {
+			_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
+		} else {
+			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
+		}
+		top, count := bar.Geometry(area, rows, len(barRows))
+		writer.SetBarRows(top, count)
+		animState = render.TakeAnimationState()
+		render = renderer.NewWithState(newEngine(int(cols)), visuals.Theme, animState)
+		configureRenderer(render)
+		lastGeometrySync = time.Now()
+		diagState.RecordTrace("resize-immediate-sync", fmt.Sprintf("cols=%d rows=%d alt=%v", cols, rows, alt))
+	}
+
 	resizeDebouncer := proxy.NewResizeDebouncer(proxy.ResizeCommitDelay)
 	resizeDebouncer.Start(ctx, bus)
 	var pendingRefreshCommand string
@@ -637,40 +695,58 @@ func run(opts options) int {
 		},
 		ResizeRequest: func(cols, rows uint16) {
 			diagState.RecordTrace("resize-request", fmt.Sprintf("cols=%d rows=%d", cols, rows))
-			if !resizePending {
+			firstOfBurst := !resizePending
+			if firstOfBurst {
 				_, _ = ctrl.Write([]byte(terminal.HideCursor))
+				preResizeBarTop, preResizeBarCount = writer.BarRows()
 			}
 			resizePending = true
+			// Sync geometry now (not just at ResizeCommit) on the first event of a
+			// burst — so a lone minimize/restore SIGWINCH gets zero-delay
+			// propagation — and, during a longer burst, at most every
+			// geometrySyncMinInterval, so a fast drag still gets frequent, bounded
+			// syncs instead of only one at the very end. See syncResizeGeometry.
+			if firstOfBurst || time.Since(lastGeometrySync) >= geometrySyncMinInterval {
+				syncResizeGeometry(cols, rows)
+			}
 			resizeDebouncer.Send(terminal.Size{Cols: cols, Rows: rows})
 		},
 		ResizeCommit: func(cols, rows uint16) {
 			alt := filter.AltActive()
 			resizePending = false
-			// Capture the direction before state.Resize overwrites the old rows.
+			// Capture the direction/prevRows before state.Resize overwrites them.
 			// A real terminal has to clamp a cursor that no longer fits once rows
 			// shrink, and it does so before ptyline reacts to the resulting
 			// SIGWINCH — on ANY terminal, not just the ones known to always clamp
 			// (Capabilities.ClampsCursorOnShrink). On grow / width-only resizes
 			// nothing gets clamped, so the cursor is simply preserved.
-			shrank := rows < state.Terminal.Rows
-			diagState.RecordTrace("resize-commit", fmt.Sprintf("cols=%d rows=%d prevRows=%d shrank=%v alt=%v", cols, rows, state.Terminal.Rows, shrank, alt))
-			if !alt && rows > state.Terminal.Rows {
-				_ = writer.ClearBar()
+			prevRows := state.Terminal.Rows
+			shrank := rows < prevRows
+			rowDelta := int(rows) - int(prevRows)
+			if rowDelta < 0 {
+				rowDelta = -rowDelta
+			}
+			// A jump this large (e.g. minimize/restore across a monitor or DPI
+			// change) is more likely to leave the terminal emulator's own screen
+			// buffer in a state ptyline cannot otherwise detect, so the bar is
+			// force-repainted below rather than trusting the no-op diff cache.
+			largeJump := rowDelta >= largeResizeJumpRows
+			diagState.RecordTrace("resize-commit", fmt.Sprintf("cols=%d rows=%d prevRows=%d shrank=%v alt=%v largeJump=%v", cols, rows, prevRows, shrank, alt, largeJump))
+			if !alt && rows > prevRows {
+				// The bar moved further down as the terminal grew; erase where it
+				// used to be (captured at the start of this burst, before
+				// syncResizeGeometry started moving it) so no stale bar text
+				// lingers in what is now plain child/scrollback area.
+				_ = writer.ClearRows(preResizeBarTop, preResizeBarCount)
 			}
 			state.Resize(cols, rows, alt)
-			top, count := bar.Geometry(area, rows, len(barRows))
-			writer.SetBarRows(top, count)
-			animState = render.TakeAnimationState()
-			render = renderer.NewWithState(newEngine(int(cols)), visuals.Theme, animState)
-			configureRenderer(render)
+			syncResizeGeometry(cols, rows)
 			if alt {
 				altCoord.MarkResizedDuringAlt()
-				_ = sup.ResizeFull(pty.Size{Cols: cols, Rows: rows})
 				ctrl.ResetScrollRegion()
 				_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 				return
 			}
-			_ = sup.Resize(pty.Size{Cols: cols, Rows: rows})
 			// Re-establish the scroll region, preserving the cursor position
 			// (SaveCursor/RestoreCursor) so a resize/split does not jump the input
 			// line to the bottom. On shrink, verify where the terminal actually
@@ -680,10 +756,16 @@ func run(opts options) int {
 			// reapplyScrollRegionAfterShrink / reapplyScrollRegionAfterResize.
 			resizeSize := terminal.Size{Cols: cols, Rows: rows}
 			if shrank {
-				reapplyScrollRegionAfterShrink(ctx, ctrl, posQuery, resizeSize, area,
+				reapplyScrollRegionAfterShrink(ctx, ctrl, posQuery, filter, resizeSize, area,
 					profile.Capabilities.ClampsCursorOnShrink, trace)
 			} else {
 				reapplyScrollRegionAfterResize(ctrl, resizeSize, area, false, profile.Capabilities.ClampsCursorOnShrink)
+				// Grow gets no ground-truth cursor check otherwise; reconcile the
+				// filter's tracked cursor row opportunistically (non-blocking).
+				probeCursorRowAsync(ctx, ctrl, posQuery, filter, trace)
+			}
+			if largeJump {
+				writer.InvalidateBar()
 			}
 			_, _ = ctrl.Write([]byte(terminal.ShowCursor))
 		},

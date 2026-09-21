@@ -101,6 +101,15 @@ func (w *TerminalWriter) SetBarRows(top uint16, count int) {
 	}
 }
 
+// BarRows returns the writer's currently recorded bar geometry (1-based top
+// row and row count), as last set by SetBarRows. Callers use this to capture
+// the bar's position before it moves (e.g. at the start of a resize) so a
+// later cleanup can target where the bar actually was, not wherever it has
+// moved to by the time the cleanup runs.
+func (w *TerminalWriter) BarRows() (top uint16, count int) {
+	return w.barTop, w.barCount
+}
+
 // RequestRedraw marks that the bar should be redrawn at the next safe boundary.
 func (w *TerminalWriter) RequestRedraw() { w.pendingFrame = true }
 
@@ -117,17 +126,26 @@ func (w *TerminalWriter) InvalidateBar() {
 // ClearBar removes the rendered bar (all reserved rows) while preserving the
 // user's cursor position. Called during wrapper shutdown before restoration.
 func (w *TerminalWriter) ClearBar() error {
-	if w.barTop == 0 || w.barCount == 0 {
+	return w.ClearRows(w.barTop, w.barCount)
+}
+
+// ClearRows erases the given rows (1-based top, count) while preserving the
+// user's cursor position. Unlike ClearBar, the rows are explicit rather than
+// the writer's current bar geometry — used during a resize to erase rows that
+// were the bar's position before the resize but, since SetBarRows may already
+// have moved it, no longer are (see ResizeCommit in internal/app/app.go).
+func (w *TerminalWriter) ClearRows(top uint16, count int) error {
+	if top == 0 || count == 0 {
 		return nil
 	}
-	w.traceEvent("bar-save", fmt.Sprintf("top=%d count=%d", w.barTop, w.barCount))
+	w.traceEvent("bar-save", fmt.Sprintf("top=%d count=%d", top, count))
 	frame := terminal.BeginSyncUpdate + terminal.SaveCursor
-	for i := 0; i < w.barCount; i++ {
-		frame += terminal.CursorTo(w.barTop+uint16(i), 1) + terminal.ClearLine
+	for i := 0; i < count; i++ {
+		frame += terminal.CursorTo(top+uint16(i), 1) + terminal.ClearLine
 	}
 	frame += terminal.ResetAttrs + terminal.RestoreCursor + terminal.EndSyncUpdate
 	err := w.writeAll([]byte(frame))
-	w.traceEvent("bar-restore", fmt.Sprintf("top=%d count=%d", w.barTop, w.barCount))
+	w.traceEvent("bar-restore", fmt.Sprintf("top=%d count=%d", top, count))
 	return err
 }
 

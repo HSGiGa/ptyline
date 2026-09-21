@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.7] - 2026-09-21
+
+### Fixed
+
+- Resizing the terminal — including a window drag-resize, and minimizing/
+  restoring the window, which the terminal reports as a resize too — could
+  leave duplicated or mis-wrapped lines on screen, and the same showed up
+  inside full-screen programs like `psql`, `vim`, and `less`. The terminal
+  itself reflows to the new size the instant it sends a resize signal, but
+  ptyline only told the child process and updated its own status-bar
+  bookkeeping once, up to 50ms after the *last* signal of a resize burst —
+  during that window the child kept writing output sized for the old
+  geometry onto an already-resized terminal. Geometry is now kept in sync on
+  (nearly) every resize signal instead of only at the end of a burst.
+- A large, sudden size jump (for example from a monitor or display-scaling
+  change while the window was minimized) now forces the status bar to fully
+  repaint instead of trusting a comparison against its last-known content, so
+  a leftover bar fragment can no longer survive a minimize/restore.
+- `fish`'s multiline-history redraw (stepping through command history) no
+  longer makes the status bar blink blank for a frame. ptyline now tracks the
+  child's cursor row well enough to erase precisely the redrawn region
+  instead of reactively clearing and repainting the whole bar.
+
 ## [0.9.6] - 2026-09-04
 
 ### Fixed

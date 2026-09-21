@@ -56,6 +56,16 @@ type AnsiFilter struct {
 	onAlt        func(active bool)
 	onDiag       func(msg string)
 	onTrace      func(tag, detail string)
+
+	// believedRow is a best-effort, 1-based tracked row for the child's cursor
+	// (0 = unknown). The filter is intentionally not a full terminal emulator
+	// (spec §8.4): believedRow is updated by observing LF/IND/RI, relative
+	// vertical moves (CUU/CUD/CNL/CPL), and absolute moves (CUP/HVP/VPA), but it
+	// does NOT model autowrap — plain text reaching the right margin advances
+	// the real cursor without emitting any of those sequences. Callers close
+	// that gap by reconciling it against a DSR reply wherever one is cheap to
+	// obtain (see SetBelievedRow and internal/app/resize_scroll.go).
+	believedRow uint16
 }
 
 // NewAnsiFilter creates a filter for the given reserved area.
@@ -131,6 +141,69 @@ func (f *AnsiFilter) DrainMeta() []event.ShellMeta {
 // bottom is the last row the child is allowed to touch.
 func (f *AnsiFilter) bottom() uint16 { return f.area.ChildRows(f.rows) }
 
+// effectiveBottom is the last row the tracked cursor may occupy right now:
+// the reserved-area boundary in the normal screen, or the full terminal
+// height on the alternate screen (which owns every row).
+func (f *AnsiFilter) effectiveBottom() uint16 {
+	if f.alt.Active {
+		return f.rows
+	}
+	if b := f.bottom(); b > 0 {
+		return b
+	}
+	return f.rows
+}
+
+// setRow sets the believed cursor row to a known-good absolute value, clamped
+// to the current effective bottom margin.
+func (f *AnsiFilter) setRow(row uint16) {
+	if eb := f.effectiveBottom(); eb > 0 && row > eb {
+		row = eb
+	}
+	if row < 1 {
+		row = 1
+	}
+	f.believedRow = row
+}
+
+// SetBelievedRow reconciles the filter's tracked cursor row with ground truth
+// (e.g. a DSR reply), overriding any drift accumulated since the last
+// reconciliation. See the believedRow field doc for what this does and does
+// not track on its own.
+func (f *AnsiFilter) SetBelievedRow(row uint16) { f.setRow(row) }
+
+// advanceRow moves the believed cursor row by delta (positive = down), bounded
+// to [1, effectiveBottom()] the way a real scroll region bounds it (content
+// scrolls instead of the cursor moving past the margin). A no-op while the
+// believed row is unknown (0), since there is nothing to advance from.
+func (f *AnsiFilter) advanceRow(delta int) {
+	if f.believedRow == 0 {
+		return
+	}
+	row := int(f.believedRow) + delta
+	if row < 1 {
+		row = 1
+	}
+	if eb := int(f.effectiveBottom()); eb > 0 && row > eb {
+		row = eb
+	}
+	f.believedRow = uint16(row)
+}
+
+// parseCount parses a CSI single numeric parameter as used by CUU/CUD/CNL/CPL,
+// defaulting to 1 when absent or invalid — the standard CSI convention for a
+// missing/zero repeat count.
+func parseCount(params string) int {
+	if params == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(params)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
 func (f *AnsiFilter) diag(msg string) {
 	if f.onDiag != nil {
 		f.onDiag(msg)
@@ -158,6 +231,9 @@ func (f *AnsiFilter) Filter(in []byte) []byte {
 	for i < len(data) {
 		b := data[i]
 		if b != escByte {
+			if b == '\n' {
+				f.advanceRow(1)
+			}
 			out = append(out, b)
 			i++
 			continue
@@ -296,6 +372,12 @@ func (f *AnsiFilter) handleSequence(seq, out []byte) ([]byte, bool) {
 			f.onTrace("child-restore", "")
 		}
 		return append(out, seq...), false
+	case 'D': // IND (Index): move down one row, scrolling at the bottom margin.
+		f.advanceRow(1)
+		return append(out, seq...), false
+	case 'M': // RI (Reverse Index): move up one row, scrolling at the top margin.
+		f.advanceRow(-1)
+		return append(out, seq...), false
 	default:
 		return append(out, seq...), false
 	}
@@ -329,6 +411,18 @@ func (f *AnsiFilter) handleCSI(seq []byte) ([]byte, bool) {
 			return seq, false // alt screen: child owns every row
 		}
 		return f.rewriteEraseDisplay(seq, params), false
+	case 'A': // CUU (cursor up n) — relative move, forwarded unchanged; track only.
+		f.advanceRow(-parseCount(params))
+		return seq, false
+	case 'B': // CUD (cursor down n) — relative move, forwarded unchanged; track only.
+		f.advanceRow(parseCount(params))
+		return seq, false
+	case 'E': // CNL (cursor next line n) — relative move, forwarded unchanged; track only.
+		f.advanceRow(parseCount(params))
+		return seq, false
+	case 'F': // CPL (cursor previous line n) — relative move, forwarded unchanged; track only.
+		f.advanceRow(-parseCount(params))
+		return seq, false
 	case 'p':
 		// CSI ! p = DECSTR (Soft Terminal Reset): like RIS, resets the scroll region.
 		if params == "!" && !f.alt.Active {
@@ -351,10 +445,15 @@ func (f *AnsiFilter) handleCSI(seq []byte) ([]byte, bool) {
 // child region (rows 1..childRows), homing the cursor afterwards to match what
 // `clear` (which prefixes CSI H) expects. CSI 0 J / CSI J (erase from cursor to
 // end — what fish emits when redrawing a multiline command or stepping through
-// history) also erases down through the bar rows; its extent depends on the cursor
-// row, which we do not track, so it is forwarded as-is and the bar is flagged for
-// an immediate repaint. Erase-to-cursor (CSI 1 J, above the clamped cursor) and
-// scrollback (CSI 3 J) cannot touch the visible bar and pass through unchanged.
+// history) also erases down through the bar rows; when believedRow gives a
+// trustworthy cursor row (known, and at or above the bar), it is rewritten the
+// same way — erase from the cursor to the end of its line, then erase every
+// row below down to (not including) the bar, leaving the bar untouched and
+// avoiding the reactive repaint's visible blink. When believedRow is unknown
+// or already stale (past the bar boundary), it falls back to forwarding as-is
+// and flagging the bar for an immediate repaint, exactly as before. Erase-to-
+// cursor (CSI 1 J, above the clamped cursor) and scrollback (CSI 3 J) cannot
+// touch the visible bar and pass through unchanged.
 func (f *AnsiFilter) rewriteEraseDisplay(seq []byte, params string) []byte {
 	bottom := f.bottom()
 	if bottom == 0 {
@@ -366,8 +465,18 @@ func (f *AnsiFilter) rewriteEraseDisplay(seq []byte, params string) []byte {
 		// column), erase from the top of the display up to there, then home.
 		return []byte(fmt.Sprintf("\x1b[%d;999H\x1b[1J\x1b[H", bottom))
 	case "", "0":
-		f.barClobbered = true
-		return seq
+		if f.believedRow == 0 || f.believedRow > bottom {
+			f.barClobbered = true
+			return seq
+		}
+		var b strings.Builder
+		b.WriteString("\x1b7")  // DECSC: save cursor
+		b.WriteString("\x1b[K") // erase from cursor to end of its own line
+		for row := f.believedRow + 1; row <= bottom; row++ {
+			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[2K", row)
+		}
+		b.WriteString("\x1b8") // DECRC: restore cursor
+		return []byte(b.String())
 	default:
 		return seq
 	}
@@ -391,12 +500,18 @@ func (f *AnsiFilter) clampCursorRow(seq []byte, params string) []byte {
 		rowStr, rest = params[:i], params[i:] // rest keeps ";col"
 	}
 	if rowStr == "" {
-		return seq // row defaults to 1; nothing to clamp
-	}
-	row, err := strconv.Atoi(rowStr)
-	if err != nil || row <= int(bottom) {
+		f.setRow(1) // row defaults to 1; nothing to clamp
 		return seq
 	}
+	row, err := strconv.Atoi(rowStr)
+	if err != nil {
+		return seq // malformed row: leave the believed cursor row untouched
+	}
+	if row <= int(bottom) {
+		f.setRow(uint16(row))
+		return seq
+	}
+	f.setRow(bottom)
 	return []byte(fmt.Sprintf("\x1b[%d%s%c", bottom, rest, seq[len(seq)-1]))
 }
 
